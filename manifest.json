@@ -1,0 +1,10 @@
+{
+  "id": "metadator",
+  "name": "Metadator",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Automatically generate metadata for your notes using Claude AI",
+  "author": "Mark Ayers",
+  "authorUrl": "https://github.com/markayers",
+  "isDesktopOnly": false
+}

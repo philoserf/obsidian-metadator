@@ -1,0 +1,35 @@
+# Build output
+*.js.map
+
+# Dependencies
+node_modules/
+
+# Bun
+.bun/
+bun.lockb
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/settings.local.json
+
+# Obsidian vault files (except plugins we're developing)
+.obsidian/
+!.obsidian/plugins/obsidian-metadata-tool/
+.obsidian/plugins/obsidian-metadata-tool/data.json
+
+# Test notes (uncomment if you don't want to track them)
+# Sample*.md
