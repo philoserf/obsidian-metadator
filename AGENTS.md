@@ -2,6 +2,15 @@
 
 This file provides guidance to AI agents when working with code in this repository.
 
+## Critical Rules
+
+### Git Workflow
+- **NEVER commit to main without explicit approval**
+- Ask before committing anything
+- Propose changes and wait for go-ahead before git operations
+- Follow the git-workflow skill strictly
+- Do not force push to main
+
 ## Project Overview
 
 Metadator: An Obsidian plugin for automatically generating metadata (tags, descriptions, titles) for your notes using the Anthropic Claude API.
