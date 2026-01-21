@@ -1,11 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  type App,
-  getAllTags,
-  MarkdownView,
-  Notice,
-  type TFile,
-} from "obsidian";
+import { type App, MarkdownView, Notice, type TFile } from "obsidian";
 import type { MetadataToolSettings } from "./settings";
 
 export async function callClaude(
