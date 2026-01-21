@@ -45,8 +45,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         dropdown
           .addOption("claude-sonnet-4-5-20250929", "Claude Sonnet 4.5")
           .addOption("claude-opus-4-5-20251101", "Claude Opus 4.5")
-          .addOption("claude-3-7-sonnet-20250219", "Claude Sonnet 3.7")
-          .addOption("claude-3-5-haiku-20241022", "Claude Haiku 3.5")
+          .addOption("claude-haiku-4-5-20251001", "Claude Haiku 4.5")
           .setValue(this.plugin.settings.anthropicModel)
           .onChange(async (value) => {
             this.plugin.settings.anthropicModel = value;

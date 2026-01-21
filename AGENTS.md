@@ -89,9 +89,9 @@ Pre-release: Run `bun run validate` to check manifest, types, linting, and build
 - Handles errors gracefully with user notifications
 
 **Supported Models:**
-- `claude-3-5-sonnet-20241022` - Balanced (recommended, default)
-- `claude-3-opus-4-1-20250805` - Most capable
-- `claude-3-5-haiku-20241022` - Fastest, cheapest
+- `claude-sonnet-4-5-20250929` - Balanced (recommended, default)
+- `claude-opus-4-5-20251101` - Most capable
+- `claude-haiku-4-5-20251001` - Fastest, cheapest
 
 ### Content Truncation
 
