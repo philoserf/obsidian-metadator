@@ -1,8 +1,4 @@
-import {
-  type App,
-  PluginSettingTab,
-  Setting,
-} from "obsidian";
+import { type App, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
 
 export class MetadataToolSettingTab extends PluginSettingTab {

@@ -1,6 +1,6 @@
 {
   "name": "metadator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Automatically generate metadata for Obsidian notes using Claude AI",
   "main": "main.js",
   "type": "module",

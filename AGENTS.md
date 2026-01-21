@@ -9,18 +9,21 @@ Metadator: An Obsidian plugin for automatically generating metadata (tags, descr
 ## Development Commands
 
 ### Setup
+
 ```bash
 bun install
 ./setup-vault.sh  # Optional, test vault already configured
 ```
 
 ### Build and Development
+
 ```bash
 bun run dev     # Watch mode with auto-rebuild
 bun run build   # Production build (runs check first, minifies output)
 ```
 
 ### Code Quality
+
 ```bash
 bun run check         # Run all checks (biome + markdownlint)
 bun run typecheck     # TypeScript type checking only
@@ -29,6 +32,7 @@ bun run format        # Format code with Biome
 ```
 
 ### Validation and Release
+
 ```bash
 bun run validate      # Full validation (types, checks, build)
 bun run version       # Update manifest.json and versions.json from package.json version
@@ -37,6 +41,7 @@ bun run version       # Update manifest.json and versions.json from package.json
 ## Architecture
 
 ### Key Files
+
 - **[src/main.ts](src/main.ts)**: Plugin entry point, extends Obsidian's Plugin class
 - **[src/metadata.ts](src/metadata.ts)**: Claude API integration and metadata generation
 - **[src/settings.ts](src/settings.ts)**: Type-safe settings interface
@@ -45,12 +50,14 @@ bun run version       # Update manifest.json and versions.json from package.json
 - **[build.ts](build.ts)**: Bun bundler configuration
 
 ### Build System
+
 - Bun's native bundler produces CommonJS output (`main.js`)
 - Watch mode enabled in development with source maps
 - Production build minified for distribution
 - External dependencies: `obsidian`, `electron` (not bundled)
 
 ### Configuration Files
+
 - **manifest.json**: Plugin metadata (id, name, version, minAppVersion: 1.0.0)
 - **versions.json**: Maps versions to minimum Obsidian versions (auto-updated by version-bump.ts)
 - **tsconfig.json**: ES2022 target, bundler module resolution, strict mode
@@ -70,6 +77,7 @@ Pre-release: Run `bun run validate` to check manifest, types, linting, and build
 ## Core Functionality
 
 ### Metadata Generation Flow
+
 1. User opens a note in Obsidian
 2. User runs "Generate metadata for current note" command
 3. Plugin extracts note content
@@ -89,6 +97,7 @@ Pre-release: Run `bun run validate` to check manifest, types, linting, and build
 - Handles errors gracefully with user notifications
 
 **Supported Models:**
+
 - `claude-sonnet-4-5-20250929` - Balanced (recommended, default)
 - `claude-opus-4-5-20251101` - Most capable
 - `claude-haiku-4-5-20251001` - Fastest, cheapest
@@ -98,6 +107,7 @@ Pre-release: Run `bun run validate` to check manifest, types, linting, and build
 **File:** [src/utils.ts](src/utils.ts)
 
 Methods to reduce API costs:
+
 - **head_only**: First N tokens only
 - **head_tail**: Start (80%) + end (20%), omit middle
 - **heading**: Document outline + first paragraph per section
@@ -109,6 +119,7 @@ Token counting supports Unicode, Chinese characters, and word-based counting.
 **File:** [src/settings.ts](src/settings.ts)
 
 Type-safe settings with defaults:
+
 ```typescript
 interface MetadataToolSettings {
   apiKey: string;
@@ -129,6 +140,7 @@ interface MetadataToolSettings {
 ## Code Style
 
 Enforced by Biome:
+
 - 2-space indent
 - No unused imports (auto-organized by type vs value)
 - Type annotations required
@@ -148,6 +160,7 @@ Auto-fix: `bun run format` or `bun run lint:fix`
 7. **Run `bun run validate`** before committing
 
 ### Error Handling Pattern
+
 ```typescript
 try {
   const result = await callClaude(content, settings);
@@ -161,6 +174,7 @@ try {
 ```
 
 ### Working with Frontmatter
+
 ```typescript
 import { parseYaml, stringifyYaml } from "obsidian";
 
