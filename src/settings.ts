@@ -22,9 +22,6 @@ export interface MetadataToolSettings {
   tagsPrompt: string;
   descriptionPrompt: string;
   titlePrompt: string;
-
-  // Custom metadata
-  customMetadata: Array<{ key: string; value: string }>;
 }
 
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
@@ -49,6 +46,4 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
     "Write a concise but useful summary in 1-2 sentences that captures the main purpose and key points",
   titlePrompt:
     "Create a simple, concise title with minimal adjectives that clearly states the topic",
-
-  customMetadata: [],
 };

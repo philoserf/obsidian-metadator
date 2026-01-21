@@ -67,29 +67,6 @@ export async function generateMetadata(
     }
   }
 
-  // Add custom metadata
-  if (settings.customMetadata && settings.customMetadata.length > 0) {
-    for (const meta of settings.customMetadata) {
-      if (meta.key && meta.value) {
-        let finalValue: string | boolean = meta.value;
-        if (
-          meta.value.toLowerCase() === "true" ||
-          meta.value.toLowerCase() === "false"
-        ) {
-          finalValue = meta.value.toLowerCase() === "true";
-        }
-        updateFrontMatter(
-          file,
-          app,
-          meta.key,
-          finalValue,
-          force ? "update" : "keep",
-        );
-      }
-    }
-    hasChanges = true;
-  }
-
   if (hasChanges) {
     new Notice("Metadata updated successfully");
   }

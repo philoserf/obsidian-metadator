@@ -213,47 +213,5 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       });
 
     titlePromptSetting.setDisabled(!this.plugin.settings.enableTitle);
-
-    // Custom Metadata Settings
-    new Setting(containerEl)
-      .setName("Custom Metadata")
-      .setDesc("Add custom key-value pairs")
-      .setHeading()
-      .addButton((button) =>
-        button.setButtonText("Add Field").onClick(async () => {
-          this.plugin.settings.customMetadata.push({ key: "", value: "" });
-          await this.plugin.saveSettings();
-          this.display();
-        }),
-      );
-
-    this.plugin.settings.customMetadata.forEach((meta, index) => {
-      new Setting(containerEl)
-        .addText((text) =>
-          text
-            .setPlaceholder("Field key")
-            .setValue(meta.key)
-            .onChange(async (value) => {
-              this.plugin.settings.customMetadata[index].key = value;
-              await this.plugin.saveSettings();
-            }),
-        )
-        .addText((text) =>
-          text
-            .setPlaceholder("Field value")
-            .setValue(meta.value)
-            .onChange(async (value) => {
-              this.plugin.settings.customMetadata[index].value = value;
-              await this.plugin.saveSettings();
-            }),
-        )
-        .addButton((button) =>
-          button.setIcon("trash").onClick(async () => {
-            this.plugin.settings.customMetadata.splice(index, 1);
-            await this.plugin.saveSettings();
-            this.display();
-          }),
-        );
-    });
   }
 }
