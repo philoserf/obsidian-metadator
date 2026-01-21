@@ -2,10 +2,8 @@ import {
   type App,
   PluginSettingTab,
   Setting,
-  type TextAreaComponent,
 } from "obsidian";
 import type MetadataToolPlugin from "./main";
-import { loadTags } from "./utils";
 
 export class MetadataToolSettingTab extends PluginSettingTab {
   plugin: MetadataToolPlugin;
@@ -131,50 +129,6 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
-
-    let tagsTextArea: TextAreaComponent;
-
-    new Setting(containerEl)
-      .setName("Extract Tags")
-      .setDesc("Extract existing tags from your vault")
-      .addButton((btn) =>
-        btn
-          .setButtonText("Extract")
-          .setCta()
-          .onClick(async () => {
-            const tags = await loadTags(this.app);
-            const sortedTags = Object.entries(tags).sort((a, b) => b[1] - a[1]);
-            const topTags = sortedTags
-              .filter(([, count]) => count > 2)
-              .map(([tag]) => tag);
-            const currentTags = this.plugin.settings.tags;
-            for (const tag of topTags) {
-              if (!currentTags.includes(tag)) {
-                currentTags.push(tag);
-              }
-            }
-            this.plugin.settings.tags = currentTags;
-            tagsTextArea.setValue(this.plugin.settings.tags.join("\n"));
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Tag List")
-      .setDesc("Available tags (one per line)")
-      .addTextArea((text) => {
-        tagsTextArea = text;
-        text
-          .setValue(this.plugin.settings.tags.join("\n"))
-          .onChange(async (value) => {
-            this.plugin.settings.tags = value
-              .split("\n")
-              .map((tag) => tag.trim())
-              .filter((tag) => tag !== "");
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.setAttr("rows", "7");
-      });
 
     new Setting(containerEl)
       .setName("Tags Prompt")

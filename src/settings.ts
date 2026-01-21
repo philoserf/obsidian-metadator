@@ -1,7 +1,6 @@
 export interface MetadataToolSettings {
   anthropicApiKey: string;
   anthropicModel: string;
-  tags: string[];
 
   // Field names in frontmatter
   tagsFieldName: string;
@@ -31,7 +30,6 @@ export interface MetadataToolSettings {
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
   anthropicApiKey: "",
   anthropicModel: "claude-sonnet-4-5-20250929",
-  tags: [],
 
   tagsFieldName: "tags",
   descriptionFieldName: "description",

@@ -195,30 +195,6 @@ export function updateFrontMatter(
   });
 }
 
-export async function loadTags(app: App): Promise<Record<string, number>> {
-  const tagsMap: Record<string, number> = {};
-  app.vault.getMarkdownFiles().forEach((file: TFile) => {
-    const cachedMetadata = app.metadataCache.getFileCache(file);
-    if (cachedMetadata) {
-      const tags = getAllTags(cachedMetadata);
-      if (tags) {
-        tags.forEach((tag) => {
-          let tagName = tag;
-          if (tagName.startsWith("#")) {
-            tagName = tagName.slice(1);
-          }
-          if (tagsMap[tagName]) {
-            tagsMap[tagName]++;
-          } else {
-            tagsMap[tagName] = 1;
-          }
-        });
-      }
-    }
-  });
-  return tagsMap;
-}
-
 export function formatDate(date: Date, format: string): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

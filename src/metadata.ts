@@ -117,12 +117,9 @@ async function addMetadataWithClaude(
   console.log("Content extracted (length):", contentStr.length);
   console.log("Content preview:", contentStr.substring(0, 200));
 
-  const tagOptions = settings.tags.join(", ");
-
   const prompt = `I need to generate tags, description, and title for the following article. Requirements:
 
 1. Tags: ${settings.tagsPrompt}
-   Available tags: ${tagOptions}. Feel free to create new ones if none are suitable.
 
 2. Description: ${settings.descriptionPrompt}
 
