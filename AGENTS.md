@@ -37,6 +37,7 @@ bun run build   # Production build (runs check first, minifies output)
 ```bash
 bun run check         # Run all checks (biome + markdownlint)
 bun run typecheck     # TypeScript type checking only
+bun run test          # Run unit tests
 bun run lint:fix      # Auto-fix linting issues
 bun run format        # Format code with Biome
 ```
@@ -53,7 +54,9 @@ bun run version       # Update manifest.json and versions.json from package.json
 ### Key Files
 
 - **[src/main.ts](src/main.ts)**: Plugin entry point, extends Obsidian's Plugin class
-- **[src/metadata.ts](src/metadata.ts)**: Claude API integration and metadata generation
+- **[src/metadata.ts](src/metadata.ts)**: Metadata generation orchestration
+- **[src/responseParser.ts](src/responseParser.ts)**: Zod schema validation for Claude responses
+- **[src/responseParser.test.ts](src/responseParser.test.ts)**: Comprehensive unit tests (13 tests)
 - **[src/settings.ts](src/settings.ts)**: Type-safe settings interface
 - **[src/settingsTab.ts](src/settingsTab.ts)**: Settings UI
 - **[src/utils.ts](src/utils.ts)**: API calls, token counting, content truncation
@@ -98,13 +101,14 @@ Pre-release: Run `bun run validate` to check manifest, types, linting, and build
 
 ### Claude API Integration
 
-**File:** [src/metadata.ts](src/metadata.ts)
+**Files:** [src/metadata.ts](src/metadata.ts), [src/responseParser.ts](src/responseParser.ts)
 
 - Initializes Anthropic client with user's API key
 - Builds custom prompts based on user settings
 - Sends truncated note content to Claude
-- Parses Claude's JSON response for metadata
-- Handles errors gracefully with user notifications
+- Parses and validates Claude's JSON response using Zod schema
+- Handles errors gracefully with helpful, user-friendly messages
+- Schema validation rejects unexpected fields and wrong types
 
 **Supported Models:**
 
@@ -134,7 +138,7 @@ Type-safe settings with defaults:
 interface MetadataToolSettings {
   apiKey: string;
   model: string;
-  updateMethod: "force" | "empty_only";
+  updateMethod: "always_regenerate" | "preserve_existing";
   truncateContent: boolean;
   maxTokens: number;
   truncateMethod: "head_only" | "head_tail" | "heading";

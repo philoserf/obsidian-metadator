@@ -40,6 +40,36 @@ customization for your workflow.
 
 4. Enable the plugin in Obsidian: Settings → Community Plugins → Metadator
 
+## Quick Start
+
+### Test the Plugin Immediately
+
+A test Obsidian vault is already configured in this project directory.
+
+1. **Open the vault in Obsidian**
+   - Launch Obsidian
+   - Click "Open folder as vault" (or "Open another vault")
+   - Navigate to and select this project directory
+   - Obsidian will open with the plugin already loaded
+
+2. **Configure your API key**
+   - Get an API key: Go to [console.anthropic.com](https://console.anthropic.com)
+   - Sign up or log in with billing enabled
+   - Create a new API key
+   - In Obsidian, go to Settings → Metadator
+   - Paste your API key in the "API Key" field
+
+3. **Test with sample notes**
+   - Open **Sample Note 1.md** (about Obsidian)
+   - Press Cmd/Ctrl + P to open Command Palette
+   - Type "metadata" and select "Generate metadata for current note"
+   - Watch the plugin analyze content and update frontmatter
+   - Try **Sample Note 2.md** and **Sample Note 3.md** for other examples
+
+4. **Reload changes during development**
+   - After making code changes, run `bun run dev` for watch mode
+   - In Obsidian, press Cmd/Ctrl + R to reload the plugin
+
 ## Configuration
 
 ### Anthropic API Key
@@ -67,8 +97,8 @@ customization for your workflow.
 
 #### Update Method
 
-- **Force Update**: Regenerate all metadata fields every time
-- **Update Empty Only** (default): Only fill in missing fields, preserve existing metadata
+- **Always Regenerate**: Re-run Claude on every command (regenerate all metadata fields)
+- **Preserve Existing** (default): Only generate empty fields, preserve existing metadata
 
 #### Content Truncation
 
@@ -170,7 +200,12 @@ bun run format
 
 # Full validation (types, lint, format, build)
 bun run validate
+
+# Run unit tests
+bun run test
 ```
+
+For detailed development and architecture information, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ### Build Optimization
 
@@ -243,7 +278,7 @@ metadator/
 
 - Check the Developer Console (Cmd/Ctrl + Shift + I) for error details
 - Ensure the note has enough content
-- Try enabling "Force Update" in settings
+- Try enabling "Always Regenerate" in settings
 - Verify your API key is valid
 
 ### Changes Not Appearing
