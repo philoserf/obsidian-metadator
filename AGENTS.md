@@ -5,6 +5,7 @@ This file provides guidance to AI agents when working with code in this reposito
 ## Critical Rules
 
 ### Git Workflow
+
 - **NEVER commit to main without explicit approval**
 - Ask before committing anything
 - Propose changes and wait for go-ahead before git operations

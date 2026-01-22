@@ -36,7 +36,7 @@ export async function generateMetadata(
   const frontMatter = fm?.frontmatter || {};
   let hasChanges = false;
 
-  const force = settings.updateMethod === "force";
+  const updateAll = settings.updateMethod === "always_regenerate";
 
   // Check if we need to call Claude for metadata
   const needsMetadata =
@@ -47,19 +47,19 @@ export async function generateMetadata(
     (settings.enableTitle &&
       (!frontMatter[settings.titleFieldName] ||
         frontMatter[settings.titleFieldName]?.trim() === "")) ||
-    force;
+    updateAll;
 
   console.log("Metadata generation check:", {
     needsMetadata,
     hasTags: !!frontMatter[settings.tagsFieldName],
     hasDescription: !!frontMatter[settings.descriptionFieldName],
     hasTitle: !!frontMatter[settings.titleFieldName],
-    force,
+    updateAll,
   });
 
   if (needsMetadata) {
     try {
-      await addMetadataWithClaude(file, app, settings, frontMatter, force);
+      await addMetadataWithClaude(file, app, settings, frontMatter, updateAll);
       hasChanges = true;
     } catch (error) {
       console.error("Error generating metadata with Claude:", error);

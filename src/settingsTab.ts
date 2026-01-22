@@ -52,14 +52,18 @@ export class MetadataToolSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Update Method")
-      .setDesc("Force: always update; No-LLM: only update empty fields")
+      .setDesc(
+        "Always Regenerate: re-run Claude on every command; Preserve Existing: only generate empty fields",
+      )
       .addDropdown((dropdown) =>
         dropdown
-          .addOption("force", "Force Update")
-          .addOption("no-llm", "Update Empty Only")
+          .addOption("always_regenerate", "Always Regenerate")
+          .addOption("preserve_existing", "Preserve Existing")
           .setValue(this.plugin.settings.updateMethod)
           .onChange(async (value) => {
-            this.plugin.settings.updateMethod = value as "force" | "no-llm";
+            this.plugin.settings.updateMethod = value as
+              | "always_regenerate"
+              | "preserve_existing";
             await this.plugin.saveSettings();
           }),
       );

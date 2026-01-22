@@ -21,7 +21,22 @@ export default class MetadataToolPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loadedSettings = await this.loadData();
+
+    // Migrate old settings values
+    if (
+      loadedSettings?.updateMethod === "force" ||
+      loadedSettings?.updateMethod === "update_all"
+    ) {
+      loadedSettings.updateMethod = "always_regenerate";
+    } else if (
+      loadedSettings?.updateMethod === "no-llm" ||
+      loadedSettings?.updateMethod === "empty_only"
+    ) {
+      loadedSettings.updateMethod = "preserve_existing";
+    }
+
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedSettings);
   }
 
   async saveSettings(): Promise<void> {
