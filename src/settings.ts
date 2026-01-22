@@ -16,7 +16,7 @@ export interface MetadataToolSettings {
   truncateMethod: "head_only" | "head_tail" | "heading";
 
   // Update behavior
-  updateMethod: "force" | "no-llm";
+  updateMethod: "always_regenerate" | "preserve_existing";
 
   // Prompts
   tagsPrompt: string;
@@ -38,7 +38,7 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   maxTokens: 1000,
   truncateMethod: "head_only",
 
-  updateMethod: "no-llm",
+  updateMethod: "preserve_existing",
 
   tagsPrompt:
     "Select 3-5 relevant tags in lowercase with hyphens instead of spaces (e.g., 'knowledge-management', 'note-taking')",
