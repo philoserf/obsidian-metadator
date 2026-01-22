@@ -1,12 +1,7 @@
 import { type App, Notice, type TFile } from "obsidian";
+import { type MetadataResponse, parseClaudeResponse } from "./responseParser";
 import type { MetadataToolSettings } from "./settings";
 import { callClaude, getContent, updateFrontMatter } from "./utils";
-
-interface MetadataResponse {
-  tags?: string;
-  description?: string;
-  title?: string;
-}
 
 export async function generateMetadata(
   app: App,
@@ -128,24 +123,23 @@ ${contentStr}`;
     return;
   }
 
-  // Clean up response
+  // Clean up response (remove backticks)
   response = response.replace(/`/g, "");
 
-  let metadata: MetadataResponse = {};
-  try {
-    const jsonMatch = response.match(/{[\s\S]*}/);
-    if (jsonMatch) {
-      console.log("Found JSON in response:", jsonMatch[0]);
-      metadata = JSON.parse(jsonMatch[0]) as MetadataResponse;
-      console.log("Parsed metadata:", metadata);
-    } else {
-      console.log("No JSON found in response");
-    }
-  } catch (error) {
-    new Notice(`Error parsing Claude response: ${error}`);
-    console.error("Parse error:", error);
+  // Validate and parse response
+  const parseResult = parseClaudeResponse(response);
+  if (!parseResult.success) {
+    const message = parseResult.suggestion
+      ? `${parseResult.error}. ${parseResult.suggestion}`
+      : parseResult.error;
+    new Notice(`Error parsing Claude response: ${message}`, 8000);
+    console.error("Parse error:", parseResult.error);
     return;
   }
+
+  // At this point, data is guaranteed to exist
+  const metadata = parseResult.data as MetadataResponse;
+  console.log("Parsed metadata:", metadata);
 
   // Update tags
   if (metadata.tags) {

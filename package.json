@@ -9,6 +9,7 @@
     "build": "bun run check && bun run build.ts",
     "check": "biome check . && markdownlint '**/*.md'",
     "typecheck": "tsc --noEmit",
+    "test": "bun test src/",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
@@ -35,6 +36,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2"
+    "@anthropic-ai/sdk": "^0.71.2",
+    "zod": "^4.3.5"
   }
 }
