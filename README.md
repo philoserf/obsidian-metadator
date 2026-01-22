@@ -40,20 +40,37 @@ customization for your workflow.
 
 4. Enable the plugin in Obsidian: Settings → Community Plugins → Metadator
 
-## Configuration
+## Quick Start
 
-### Anthropic API Key
+### Test the Plugin Immediately
 
-1. Get an API key:
-   - Go to [console.anthropic.com](https://console.anthropic.com)
-   - Sign up or log in
-   - Add billing information (Claude API requires a paid account)
+A test Obsidian vault is already configured in this project directory.
+
+1. **Open the vault in Obsidian**
+   - Launch Obsidian
+   - Click "Open folder as vault" (or "Open another vault")
+   - Navigate to and select this project directory
+   - Obsidian will open with the plugin already loaded
+
+2. **Configure your API key**
+   - Get an API key: Go to [console.anthropic.com](https://console.anthropic.com)
+   - Sign up or log in with billing enabled
    - Create a new API key
-
-2. Add to Metadator:
-   - In Obsidian, open Settings (gear icon, bottom left)
-   - Find "Metadator" in Community Plugins
+   - In Obsidian, go to Settings → Metadator
    - Paste your API key in the "API Key" field
+
+3. **Test with sample notes**
+   - Open **Sample Note 1.md** (about Obsidian)
+   - Press Cmd/Ctrl + P to open Command Palette
+   - Type "metadata" and select "Generate metadata for current note"
+   - Watch the plugin analyze content and update frontmatter
+   - Try **Sample Note 2.md** and **Sample Note 3.md** for other examples
+
+4. **Reload changes during development**
+   - After making code changes, run `bun run dev` for watch mode
+   - In Obsidian, press Cmd/Ctrl + R to reload the plugin
+
+## Configuration
 
 ### Metadata Settings
 
@@ -67,8 +84,8 @@ customization for your workflow.
 
 #### Update Method
 
-- **Force Update**: Regenerate all metadata fields every time
-- **Update Empty Only** (default): Only fill in missing fields, preserve existing metadata
+- **Always Regenerate**: Re-run Claude on every command (regenerate all metadata fields)
+- **Preserve Existing** (default): Only generate empty fields, preserve existing metadata
 
 #### Content Truncation
 
@@ -170,47 +187,12 @@ bun run format
 
 # Full validation (types, lint, format, build)
 bun run validate
+
+# Run unit tests
+bun run test
 ```
 
-### Build Optimization
-
-The project uses Bun's bundler with optimizations:
-
-- **Production** (`bun run build`): Minified output (~81 KB)
-- **Development** (`bun run dev`): Watch mode with source maps for debugging
-
-All builds:
-
-- Bundle dependencies (@anthropic-ai/sdk) into a single file
-- Externalize Obsidian API and Electron (provided by Obsidian)
-- Target Node.js runtime with CommonJS format
-- Output to `main.js` (Obsidian plugin entry point)
-
-### Project Structure
-
-```text
-metadator/
-├── src/
-│   ├── main.ts          # Plugin entry point and commands
-│   ├── settings.ts      # Settings interface and management
-│   ├── settingsTab.ts   # Settings UI
-│   ├── metadata.ts      # Claude integration and metadata generation
-│   └── utils.ts         # Utility functions (API calls, token counting, etc.)
-├── scripts/
-│   └── validate-plugin.ts  # Pre-release validation
-├── manifest.json        # Obsidian plugin metadata
-├── package.json         # Dependencies and scripts
-├── tsconfig.json        # TypeScript configuration
-└── biome.json           # Linter/formatter configuration
-```
-
-### Architecture
-
-1. **Main Plugin** (`main.ts`) - Registers commands and manages plugin lifecycle
-2. **Settings** (`settings.ts`) - Configuration interface and data management
-3. **Settings Tab** (`settingsTab.ts`) - Obsidian UI for settings
-4. **Metadata Generator** (`metadata.ts`) - Claude API integration and metadata generation
-5. **Utilities** (`utils.ts`) - Token counting, content truncation, API helpers
+For detailed development, architecture, and build information, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Troubleshooting
 
@@ -243,7 +225,7 @@ metadator/
 
 - Check the Developer Console (Cmd/Ctrl + Shift + I) for error details
 - Ensure the note has enough content
-- Try enabling "Force Update" in settings
+- Try enabling "Always Regenerate" in settings
 - Verify your API key is valid
 
 ### Changes Not Appearing
@@ -252,41 +234,12 @@ metadator/
 - Try disabling and re-enabling the plugin
 - Reload Obsidian (Cmd/Ctrl + R)
 
-## Bun Runtime Features
-
-The project leverages Bun's runtime capabilities:
-
-1. **Native TypeScript execution** - Run .ts files directly without compilation
-2. **Fast bundling** - Sub-10ms builds with Bun's bundler
-3. **Shell scripting** - `scripts/validate-plugin.ts` uses Bun's `$` for shell commands
-4. **Package management** - Faster than npm/yarn with built-in lockfile
-
 ## Release
 
-### Pre-Release Validation
-
-Run full validation before releasing:
-
-```bash
-bun run validate
-```
-
-This checks:
-
-- Plugin manifest is valid JSON with required fields
-- Versions match across files (package.json, manifest.json, versions.json)
-- TypeScript type checking passes
-- Code quality checks (Biome + markdownlint) pass
-- Build succeeds and produces main.js
-
-### Publishing Steps
-
 1. Update version in `package.json`
-2. Run `bun run version` to sync versions
-3. Commit: `git add . && git commit -m "chore: bump version to X.Y.Z"`
-4. Tag: `git tag X.Y.Z`
-5. Push: `git push origin main --follow-tags`
-6. GitHub Actions automatically creates release with artifacts
+2. Run `bun run version` to sync versions and `bun run validate` to verify
+3. Commit and tag: `git tag X.Y.Z && git push origin main --follow-tags`
+4. GitHub Actions automatically creates release with artifacts
 
 ## License
 
@@ -307,5 +260,4 @@ If you encounter issues or have questions:
 
 1. Check the troubleshooting section above
 2. Review the developer console for error details
-3. Check the [GETTING_STARTED.md](GETTING_STARTED.md) guide
-4. Open an issue on GitHub with details and error logs
+3. Open an issue on GitHub with details and error logs
