@@ -98,6 +98,8 @@ Enable to reduce API costs on large notes:
   - **Beginning + End**: Send start and end, omit middle
   - **Headings**: Send document outline plus first paragraph of each section
 
+**Token Counting Note**: The plugin uses a simplified token counter that handles English words, CJK characters (Chinese, Japanese, Korean), and punctuation. It may differ slightly from Claude's actual tokenization (typically within 10-15%). If you set `maxTokens: 1000`, the plugin will send approximately 1000 tokens, but Claude might count slightly differently. To be conservative, set `maxTokens` lower than your comfort level.
+
 #### Field Names
 
 Customize what the frontmatter fields are called:
@@ -193,6 +195,29 @@ bun run test
 ```
 
 For detailed development, architecture, and build information, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Security & Privacy
+
+### API Key Storage
+
+Your Anthropic API key is stored in your Obsidian vault's plugin data folder (`~/.obsidian/plugins/metadator/data.json`) in **plain text**. This is the standard way Obsidian plugins store settings, but be aware:
+
+- **Risk**: If your vault folder is compromised, the API key could be exposed
+- **Mitigation**:
+  - Restrict permissions on your vault folder (not world-readable)
+  - Store your vault on encrypted disk (macOS FileVault, Windows BitLocker, Linux LUKS)
+  - Use a dedicated API key for this plugin (don't reuse your main key)
+  - Revoke the key immediately if you suspect compromise
+
+If you need higher security, consider using OS keychain integration (future enhancement—see CONCERNS.md #15).
+
+### Content Processing
+
+Note content is sent to Anthropic's Claude API for metadata generation. This means:
+
+- Your note text leaves your vault and is processed by Anthropic's servers
+- Anthropic may retain API usage data per their [privacy policy](https://www.anthropic.com/privacy)
+- Review Anthropic's terms before using with sensitive content
 
 ## Troubleshooting
 
