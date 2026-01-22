@@ -72,19 +72,6 @@ A test Obsidian vault is already configured in this project directory.
 
 ## Configuration
 
-### Anthropic API Key
-
-1. Get an API key:
-   - Go to [console.anthropic.com](https://console.anthropic.com)
-   - Sign up or log in
-   - Add billing information (Claude API requires a paid account)
-   - Create a new API key
-
-2. Add to Metadator:
-   - In Obsidian, open Settings (gear icon, bottom left)
-   - Find "Metadator" in Community Plugins
-   - Paste your API key in the "API Key" field
-
 ### Metadata Settings
 
 #### API Settings
@@ -205,47 +192,7 @@ bun run validate
 bun run test
 ```
 
-For detailed development and architecture information, see [DEVELOPMENT.md](DEVELOPMENT.md).
-
-### Build Optimization
-
-The project uses Bun's bundler with optimizations:
-
-- **Production** (`bun run build`): Minified output (~81 KB)
-- **Development** (`bun run dev`): Watch mode with source maps for debugging
-
-All builds:
-
-- Bundle dependencies (@anthropic-ai/sdk) into a single file
-- Externalize Obsidian API and Electron (provided by Obsidian)
-- Target Node.js runtime with CommonJS format
-- Output to `main.js` (Obsidian plugin entry point)
-
-### Project Structure
-
-```text
-metadator/
-├── src/
-│   ├── main.ts          # Plugin entry point and commands
-│   ├── settings.ts      # Settings interface and management
-│   ├── settingsTab.ts   # Settings UI
-│   ├── metadata.ts      # Claude integration and metadata generation
-│   └── utils.ts         # Utility functions (API calls, token counting, etc.)
-├── scripts/
-│   └── validate-plugin.ts  # Pre-release validation
-├── manifest.json        # Obsidian plugin metadata
-├── package.json         # Dependencies and scripts
-├── tsconfig.json        # TypeScript configuration
-└── biome.json           # Linter/formatter configuration
-```
-
-### Architecture
-
-1. **Main Plugin** (`main.ts`) - Registers commands and manages plugin lifecycle
-2. **Settings** (`settings.ts`) - Configuration interface and data management
-3. **Settings Tab** (`settingsTab.ts`) - Obsidian UI for settings
-4. **Metadata Generator** (`metadata.ts`) - Claude API integration and metadata generation
-5. **Utilities** (`utils.ts`) - Token counting, content truncation, API helpers
+For detailed development, architecture, and build information, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Troubleshooting
 
@@ -287,41 +234,12 @@ metadator/
 - Try disabling and re-enabling the plugin
 - Reload Obsidian (Cmd/Ctrl + R)
 
-## Bun Runtime Features
-
-The project leverages Bun's runtime capabilities:
-
-1. **Native TypeScript execution** - Run .ts files directly without compilation
-2. **Fast bundling** - Sub-10ms builds with Bun's bundler
-3. **Shell scripting** - `scripts/validate-plugin.ts` uses Bun's `$` for shell commands
-4. **Package management** - Faster than npm/yarn with built-in lockfile
-
 ## Release
 
-### Pre-Release Validation
-
-Run full validation before releasing:
-
-```bash
-bun run validate
-```
-
-This checks:
-
-- Plugin manifest is valid JSON with required fields
-- Versions match across files (package.json, manifest.json, versions.json)
-- TypeScript type checking passes
-- Code quality checks (Biome + markdownlint) pass
-- Build succeeds and produces main.js
-
-### Publishing Steps
-
 1. Update version in `package.json`
-2. Run `bun run version` to sync versions
-3. Commit: `git add . && git commit -m "chore: bump version to X.Y.Z"`
-4. Tag: `git tag X.Y.Z`
-5. Push: `git push origin main --follow-tags`
-6. GitHub Actions automatically creates release with artifacts
+2. Run `bun run version` to sync versions and `bun run validate` to verify
+3. Commit and tag: `git tag X.Y.Z && git push origin main --follow-tags`
+4. GitHub Actions automatically creates release with artifacts
 
 ## License
 
@@ -342,5 +260,4 @@ If you encounter issues or have questions:
 
 1. Check the troubleshooting section above
 2. Review the developer console for error details
-3. Check the [GETTING_STARTED.md](GETTING_STARTED.md) guide
-4. Open an issue on GitHub with details and error logs
+3. Open an issue on GitHub with details and error logs
