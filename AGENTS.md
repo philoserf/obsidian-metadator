@@ -14,191 +14,71 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Overview
 
-Metadator: An Obsidian plugin for automatically generating metadata (tags, descriptions, titles) for your notes using the Anthropic Claude API.
+Metadator is an Obsidian plugin that generates metadata (tags, description, title) for notes using the Anthropic Claude API. The user runs a command, the plugin sends note content to Claude, parses the JSON response, and writes the results into the note's YAML frontmatter.
 
 ## Development Commands
 
-### Setup
-
 ```bash
-bun install
-./setup-vault.sh  # Optional, test vault already configured
+bun install                # Install dependencies
+bun run dev                # Watch mode with auto-rebuild
+bun run build              # Production build (runs check first, minifies)
+bun run check              # Biome linter and formatter
+bun run typecheck          # TypeScript type checking only
+bun run lint:fix           # Auto-fix linting issues
+bun run format             # Format code with Biome
+bun run validate           # Full validation (types, checks, build)
+bun run version            # Sync manifest.json and versions.json from package.json
 ```
 
-### Build and Development
-
-```bash
-bun run dev     # Watch mode with auto-rebuild
-bun run build   # Production build (runs check first, minifies output)
-```
-
-### Code Quality
-
-```bash
-bun run check         # Run all checks (biome + markdownlint)
-bun run typecheck     # TypeScript type checking only
-bun run test          # Run unit tests
-bun run lint:fix      # Auto-fix linting issues
-bun run format        # Format code with Biome
-```
-
-### Validation and Release
-
-```bash
-bun run validate      # Full validation (types, checks, build)
-bun run version       # Update manifest.json and versions.json from package.json version
-```
+No unit tests exist. The `test` script is not configured.
 
 ## Architecture
 
-### Key Files
+### Source Files
 
-- **[src/main.ts](src/main.ts)**: Plugin entry point, extends Obsidian's Plugin class
-- **[src/metadata.ts](src/metadata.ts)**: Metadata generation orchestration
-- **[src/responseParser.ts](src/responseParser.ts)**: Zod schema validation for Claude responses
-- **[src/responseParser.test.ts](src/responseParser.test.ts)**: Comprehensive unit tests (13 tests)
-- **[src/settings.ts](src/settings.ts)**: Type-safe settings interface
-- **[src/settingsTab.ts](src/settingsTab.ts)**: Settings UI
-- **[src/utils.ts](src/utils.ts)**: API calls, token counting, content truncation
-- **[build.ts](build.ts)**: Bun bundler configuration
+- **[src/main.ts](src/main.ts)** — Plugin entry point. Registers the `generate-metadata` command, loads/saves settings, migrates legacy `updateMethod` values.
+- **[src/metadata.ts](src/metadata.ts)** — Orchestrates metadata generation. Checks whether fields need updating, builds the prompt, calls Claude, parses JSON from the response with regex (`/{[\s\S]*}/`), and writes tags/description/title to frontmatter.
+- **[src/settings.ts](src/settings.ts)** — `MetadataToolSettings` interface and `DEFAULT_SETTINGS`. Field names: `anthropicApiKey`, `anthropicModel`, `tagsFieldName`, `descriptionFieldName`, `titleFieldName`, `enableTitle`, `truncateContent`, `maxTokens`, `truncateMethod`, `updateMethod`, plus per-field prompt strings.
+- **[src/settingsTab.ts](src/settingsTab.ts)** — Settings UI (`PluginSettingTab`). Password-masked API key, model dropdown, toggles, and text inputs for field names and prompts.
+- **[src/utils.ts](src/utils.ts)** — `callClaude()` (Anthropic SDK call with `dangerouslyAllowBrowser: true`), `getContent()` (content extraction and truncation), `updateFrontMatter()` (writes via `app.fileManager.processFrontMatter()`), `formatDate()`.
 
-### Build System
+### Data Flow
 
-- Bun's native bundler produces CommonJS output (`main.js`)
-- Watch mode enabled in development with source maps
-- Production build minified for distribution
-- External dependencies: `obsidian`, `electron` (not bundled)
+1. User runs "Generate metadata for current note" command
+2. `generateMetadata()` checks which fields need population based on `updateMethod`
+3. Content is extracted and optionally truncated via `getContent()`
+4. `callClaude()` sends the prompt to the Anthropic API
+5. Response JSON is extracted with regex and parsed
+6. `updateFrontMatter()` writes each field via `processFrontMatter()`
 
-### Configuration Files
+### Key Patterns
 
-- **manifest.json**: Plugin metadata (id, name, version, minAppVersion: 1.0.0)
-- **versions.json**: Maps versions to minimum Obsidian versions (auto-updated by version-bump.ts)
-- **tsconfig.json**: ES2022 target, bundler module resolution, strict mode
-- **biome.json**: Code formatter and linter (2-space indent, git integration)
+- **Frontmatter updates** use `app.fileManager.processFrontMatter()` — not `parseYaml`/`stringifyYaml`
+- **Token counting** uses a regex that handles CJK characters, words, and punctuation: `/[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g`
+- **Truncation methods**: `head_only` (first N tokens), `head_tail` (80% start + 20% end), `heading` (outline + first paragraph per section)
+- **Anthropic client** is initialized with `dangerouslyAllowBrowser: true` since it runs inside Obsidian's Electron renderer
+- **Tags are appended** (deduped); description and title use update/keep logic based on `updateMethod`
+
+## Build System
+
+- **[build.ts](build.ts)** — Bun's native bundler producing CommonJS output (`main.js`)
+- Externals: `obsidian`, `electron`
+- Production builds are minified; dev builds are not
+- `main.js` is committed to the repo (required by Obsidian plugin distribution)
+
+## Test Vault
+
+The project root is configured as an Obsidian vault. Sample notes: [Sample Note 1.md](Sample%20Note%201.md), [Sample Note 2.md](Sample%20Note%202.md), [Sample Note 3.md](Sample%20Note%203.md). The plugin is symlinked from `.obsidian/plugins/metadator/`. Changes rebuild in watch mode; reload Obsidian (Cmd+R) to pick them up.
 
 ## Release Process
 
 1. Update `package.json` version
 2. Run `bun run version` to sync manifest.json and versions.json
-3. Commit: `git add . && git commit -m "chore: bump version to X.Y.Z"`
-4. Tag: `git tag X.Y.Z`
-5. Push: `git push origin main --follow-tags`
-6. GitHub Actions automatically creates release with artifacts
+3. Commit and tag: `git commit -m "chore: bump version to X.Y.Z"` then `git tag X.Y.Z`
+4. Push with tags — GitHub Actions creates the release
 
-Pre-release: Run `bun run validate` to check manifest, types, linting, and build.
-
-## Core Functionality
-
-### Metadata Generation Flow
-
-1. User opens a note in Obsidian
-2. User runs "Generate metadata for current note" command
-3. Plugin extracts note content
-4. Plugin calls Claude API via Anthropic SDK
-5. Claude generates metadata (tags, description, title)
-6. Plugin updates note's frontmatter
-7. Plugin displays success notification
-
-### Claude API Integration
-
-**Files:** [src/metadata.ts](src/metadata.ts), [src/responseParser.ts](src/responseParser.ts)
-
-- Initializes Anthropic client with user's API key
-- Builds custom prompts based on user settings
-- Sends truncated note content to Claude
-- Parses and validates Claude's JSON response using Zod schema
-- Handles errors gracefully with helpful, user-friendly messages
-- Schema validation rejects unexpected fields and wrong types
-
-**Supported Models:**
-
-- `claude-sonnet-4-5-20250929` - Balanced (recommended, default)
-- `claude-opus-4-5-20251101` - Most capable
-- `claude-haiku-4-5-20251001` - Fastest, cheapest
-
-### Content Truncation
-
-**File:** [src/utils.ts](src/utils.ts)
-
-Methods to reduce API costs:
-
-- **head_only**: First N tokens only
-- **head_tail**: Start (80%) + end (20%), omit middle
-- **heading**: Document outline + first paragraph per section
-
-Token counting supports Unicode, Chinese characters, and word-based counting.
-
-## Settings System
-
-**File:** [src/settings.ts](src/settings.ts)
-
-Type-safe settings with defaults:
-
-```typescript
-interface MetadataToolSettings {
-  apiKey: string;
-  model: string;
-  updateMethod: "always_regenerate" | "preserve_existing";
-  truncateContent: boolean;
-  maxTokens: number;
-  truncateMethod: "head_only" | "head_tail" | "heading";
-  tagsField: string;
-  descriptionField: string;
-  titleField: string;
-  // ... custom fields and prompts
-}
-```
-
-**UI:** [src/settingsTab.ts](src/settingsTab.ts) implements `PluginSettingTab` with password-masked API key, model dropdown, toggles, and sliders.
+Pre-release: run `bun run validate`.
 
 ## Code Style
 
-Enforced by Biome:
-
-- 2-space indent
-- No unused imports (auto-organized by type vs value)
-- Type annotations required
-- Template literals preferred
-- No unused variables/parameters
-
-Auto-fix: `bun run format` or `bun run lint:fix`
-
-## Best Practices
-
-1. **Always validate user input** before sending to Claude API
-2. **Handle network errors gracefully** with user-friendly messages
-3. **Show progress notifications** for long-running operations
-4. **Validate API key** before making requests
-5. **Log errors with context** for debugging (console.error)
-6. **Test with sample notes** before committing changes
-7. **Run `bun run validate`** before committing
-
-### Error Handling Pattern
-
-```typescript
-try {
-  const result = await callClaude(content, settings);
-} catch (error) {
-  if (error instanceof Error) {
-    new Notice(`Failed to generate metadata: ${error.message}`);
-    console.error("Metadata generation error:", error);
-  }
-  throw error;
-}
-```
-
-### Working with Frontmatter
-
-```typescript
-import { parseYaml, stringifyYaml } from "obsidian";
-
-const frontmatter = parseYaml(file.frontmatter);
-frontmatter.tags = generatedTags;
-frontmatter.description = generatedDescription;
-
-app.vault.modify(file, stringifyYaml(frontmatter) + "\n---\n" + content);
-```
-
-## Test Vault
-
-Project root is configured as an Obsidian vault. Sample notes in [Sample Note 1.md](Sample%20Note%201.md), [Sample Note 2.md](Sample%20Note%202.md), [Sample Note 3.md](Sample%20Note%203.md). Plugin symlinked from `.obsidian/plugins/metadator/`. Changes rebuild in watch mode; reload Obsidian (Cmd/Ctrl + R) to see changes.
+Enforced by Biome (`biome.json`): 2-space indent, organized imports, git-aware VCS integration. Run `bun run format` or `bun run lint:fix` to auto-fix.
