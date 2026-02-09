@@ -34,6 +34,6 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2"
+    "@anthropic-ai/sdk": "^0.74.0"
   }
 }
