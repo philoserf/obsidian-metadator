@@ -26,13 +26,8 @@ Thumbs.db
 # Claude Code
 .claude/settings.local.json
 
-# Planning & analysis (local reference only)
+# Planning
 .planning/
 
-# Obsidian vault files (except plugins we're developing)
+# Obsidian vault files
 .obsidian/
-!.obsidian/plugins/obsidian-metadata-tool/
-.obsidian/plugins/obsidian-metadata-tool/data.json
-
-# Test notes (uncomment if you don't want to track them)
-# Sample*.md
