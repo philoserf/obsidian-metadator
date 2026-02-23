@@ -60,8 +60,8 @@ export async function generateMetadata(
       if (hasChanges) {
         new Notice("Metadata updated successfully");
       }
-    } catch (error) {
-      console.error("Error generating metadata with Claude:", error);
+    } catch {
+      // Error already logged and shown to user by callClaude
     }
   }
 }
@@ -134,7 +134,7 @@ async function addMetadataWithClaude(
 
   let metadata: MetadataResponse = {};
   try {
-    const jsonMatch = response.match(/{[\s\S]*?}/);
+    const jsonMatch = response.match(/{[\s\S]*}/);
     if (jsonMatch) {
       metadata = JSON.parse(jsonMatch[0]) as MetadataResponse;
     }

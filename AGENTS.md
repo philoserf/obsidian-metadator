@@ -30,14 +30,14 @@ bun run validate           # Full validation (types, checks, build)
 bun run version            # Sync manifest.json and versions.json from package.json
 ```
 
-No unit tests exist. The `test` script is not configured.
+No unit tests exist.
 
 ## Architecture
 
 ### Source Files
 
 - **[src/main.ts](src/main.ts)** — Plugin entry point. Registers the `generate-metadata` command, loads/saves settings, migrates legacy `updateMethod` values.
-- **[src/metadata.ts](src/metadata.ts)** — Orchestrates metadata generation. Checks whether fields need updating, builds the prompt dynamically (omitting title when disabled), calls Claude, parses JSON from the response with non-greedy regex (`/{[\s\S]*?}/`), and writes tags/description/title to frontmatter.
+- **[src/metadata.ts](src/metadata.ts)** — Orchestrates metadata generation. Checks whether fields need updating, builds the prompt dynamically (omitting title when disabled), calls Claude, parses JSON from the response with regex (`/{[\s\S]*}/`), and writes tags/description/title to frontmatter.
 - **[src/settings.ts](src/settings.ts)** — `MetadataToolSettings` interface and `DEFAULT_SETTINGS`. Field names: `anthropicApiKey`, `anthropicModel`, `tagsFieldName`, `descriptionFieldName`, `titleFieldName`, `enableTitle`, `truncateContent`, `maxTokens`, `truncateMethod`, `updateMethod`, plus per-field prompt strings.
 - **[src/settingsTab.ts](src/settingsTab.ts)** — Settings UI (`PluginSettingTab`). Password-masked API key, model dropdown, toggles, and text inputs for field names and prompts.
 - **[src/utils.ts](src/utils.ts)** — `callClaude()` (Anthropic SDK call with `dangerouslyAllowBrowser: true`), `getContent()` (content extraction and truncation), `updateFrontMatter()` (async writes via `app.fileManager.processFrontMatter()`).

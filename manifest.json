@@ -3,7 +3,7 @@
   "name": "Metadator",
   "version": "1.1.0",
   "minAppVersion": "1.0.0",
-  "description": "Automatically generate metadata for your notes using Claude AI",
+  "description": "Automatically generate metadata for your notes using AI",
   "author": "Mark Ayers",
   "authorUrl": "https://github.com/philoserf",
   "isDesktopOnly": false

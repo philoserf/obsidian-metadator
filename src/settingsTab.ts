@@ -185,11 +185,12 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.enableTitle = value;
             await this.plugin.saveSettings();
+            titleFieldNameSetting.setDisabled(!value);
             titlePromptSetting.setDisabled(!value);
           }),
       );
 
-    new Setting(containerEl)
+    const titleFieldNameSetting = new Setting(containerEl)
       .setName("Title Field Name")
       .setDesc("Frontmatter field name for title")
       .addText((text) =>
@@ -214,6 +215,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text.inputEl.setAttr("rows", "3");
       });
 
+    titleFieldNameSetting.setDisabled(!this.plugin.settings.enableTitle);
     titlePromptSetting.setDisabled(!this.plugin.settings.enableTitle);
   }
 }
