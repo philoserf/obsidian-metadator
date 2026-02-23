@@ -150,14 +150,14 @@ export async function getContent(
   return contentStr;
 }
 
-export function updateFrontMatter(
+export async function updateFrontMatter(
   file: TFile,
   app: App,
   key: string,
   value: string | boolean | string[],
   method: "append" | "update" | "keep",
-): void {
-  app.fileManager.processFrontMatter(file, (frontmatter) => {
+): Promise<void> {
+  await app.fileManager.processFrontMatter(file, (frontmatter) => {
     if (value === undefined || value === null) {
       return;
     }
