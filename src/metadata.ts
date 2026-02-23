@@ -57,7 +57,10 @@ export function parseMetadataResponse(
 }
 
 export function parseTags(tagsString: string): string[] {
-  return tagsString.split(",").map((tag) => tag.trim());
+  return tagsString
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => tag !== "");
 }
 
 export function stripSurroundingQuotes(str: string): string {

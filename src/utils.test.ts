@@ -102,6 +102,16 @@ describe("truncateHeadOnly", () => {
     const tokens = ["one", "two", "three"];
     expect(truncateHeadOnly(tokens, 1)).toBe("one...");
   });
+
+  test("returns all tokens when limit equals length", () => {
+    const tokens = ["one", "two", "three"];
+    expect(truncateHeadOnly(tokens, 3)).toBe("one two three...");
+  });
+
+  test("returns all tokens when limit exceeds length", () => {
+    const tokens = ["one", "two"];
+    expect(truncateHeadOnly(tokens, 10)).toBe("one two...");
+  });
 });
 
 describe("truncateHeadTail", () => {
@@ -119,6 +129,14 @@ describe("truncateHeadTail", () => {
     const tokens = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
     const result = truncateHeadTail(tokens, 5);
     // 80% of 5 = 4, 20% of 5 = 1
+    expect(result).toContain("a");
+    expect(result).toContain("\n...\n");
+  });
+
+  test("handles limit of 1", () => {
+    const tokens = ["a", "b", "c", "d", "e"];
+    const result = truncateHeadTail(tokens, 1);
+    // 80% of 1 = 1, 20% of 1 = 0 — head portion only
     expect(result).toContain("a");
     expect(result).toContain("\n...\n");
   });
@@ -150,5 +168,13 @@ describe("truncateHeading", () => {
     const tokens = splitIntoTokens(content);
     const result = truncateHeading(content, tokens, 1000);
     expect(result).toContain("# Title");
+  });
+
+  test("handles content with no headings", () => {
+    const content = "Just a plain paragraph with no headings at all.";
+    const tokens = splitIntoTokens(content);
+    const result = truncateHeading(content, tokens, 1000);
+    // No headings → empty outline, all budget goes to body
+    expect(result).toContain("Body:");
   });
 });

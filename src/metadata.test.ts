@@ -38,8 +38,10 @@ describe("parseMetadataResponse", () => {
     expect(parseMetadataResponse("no json here")).toBeNull();
   });
 
-  test("throws on malformed JSON", () => {
-    expect(() => parseMetadataResponse("{tags: malformed}")).toThrow();
+  test("throws SyntaxError on malformed JSON", () => {
+    expect(() => parseMetadataResponse("{tags: malformed}")).toThrow(
+      SyntaxError,
+    );
   });
 
   test("preserves backticks inside values", () => {
@@ -81,8 +83,12 @@ describe("parseTags", () => {
     expect(parseTags("only")).toEqual(["only"]);
   });
 
-  test("handles empty string", () => {
-    expect(parseTags("")).toEqual([""]);
+  test("returns empty array for empty string", () => {
+    expect(parseTags("")).toEqual([]);
+  });
+
+  test("filters empty entries from trailing comma", () => {
+    expect(parseTags("one,two,")).toEqual(["one", "two"]);
   });
 });
 
