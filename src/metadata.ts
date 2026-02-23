@@ -34,7 +34,6 @@ export async function generateMetadata(
 
   const fm = app.metadataCache.getFileCache(file);
   const frontMatter = fm?.frontmatter || {};
-  let hasChanges = false;
 
   const updateAll = settings.updateMethod === "always_regenerate";
 
@@ -49,26 +48,21 @@ export async function generateMetadata(
         frontMatter[settings.titleFieldName]?.trim() === "")) ||
     updateAll;
 
-  console.log("Metadata generation check:", {
-    needsMetadata,
-    hasTags: !!frontMatter[settings.tagsFieldName],
-    hasDescription: !!frontMatter[settings.descriptionFieldName],
-    hasTitle: !!frontMatter[settings.titleFieldName],
-    updateAll,
-  });
-
   if (needsMetadata) {
     try {
-      await addMetadataWithClaude(file, app, settings, frontMatter, updateAll);
-      hasChanges = true;
+      const hasChanges = await addMetadataWithClaude(
+        file,
+        app,
+        settings,
+        frontMatter,
+        updateAll,
+      );
+      if (hasChanges) {
+        new Notice("Metadata updated successfully");
+      }
     } catch (error) {
       console.error("Error generating metadata with Claude:", error);
-      return;
     }
-  }
-
-  if (hasChanges) {
-    new Notice("Metadata updated successfully");
   }
 }
 
@@ -78,7 +72,7 @@ async function addMetadataWithClaude(
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
   force: boolean = false,
-): Promise<void> {
+): Promise<boolean> {
   let contentStr = "";
   if (settings.truncateContent) {
     contentStr = await getContent(
@@ -91,69 +85,74 @@ async function addMetadataWithClaude(
     contentStr = await getContent(app, file, -1, "head_only");
   }
 
-  console.log("Content extracted (length):", contentStr.length);
-  console.log("Content preview:", contentStr.substring(0, 200));
+  const promptParts = [
+    "I need to generate metadata for the following article. Requirements:",
+    "",
+    `1. Tags: ${settings.tagsPrompt}`,
+    "",
+    `2. Description: ${settings.descriptionPrompt}`,
+  ];
 
-  const prompt = `I need to generate tags, description, and title for the following article. Requirements:
+  const jsonFields: string[] = [
+    '"tags": "tag1,tag2,tag3"',
+    '"description": "brief summary"',
+  ];
 
-1. Tags: ${settings.tagsPrompt}
+  if (settings.enableTitle) {
+    promptParts.push("", `3. Title: ${settings.titlePrompt}`);
+    jsonFields.push('"title": "article title"');
+  }
 
-2. Description: ${settings.descriptionPrompt}
+  promptParts.push(
+    "",
+    "Please return in the following JSON format:",
+    `{`,
+    `    ${jsonFields.join(",\n    ")}`,
+    `}`,
+    "",
+    "Article content:",
+    "",
+    contentStr,
+  );
 
-3. Title: ${settings.titlePrompt}
-
-Please return in the following JSON format:
-{
-    "tags": "tag1,tag2,tag3",
-    "description": "brief summary",
-    "title": "article title"
-}
-
-Article content:
-
-${contentStr}`;
+  const prompt = promptParts.join("\n");
 
   let response: string;
   try {
-    console.log("Calling Claude with prompt...");
     response = await callClaude(prompt, settings);
-    console.log("Claude response received:", response);
   } catch (error) {
     console.error("Error calling Claude:", error);
-    return;
+    return false;
   }
 
   if (!response) {
-    console.log("No response from Claude");
-    return;
+    return false;
   }
 
-  // Clean up response
-  response = response.replace(/`/g, "");
+  // Strip markdown code fences without removing backticks inside values
+  response = response.replace(/```(?:json)?\n?/g, "");
 
   let metadata: MetadataResponse = {};
   try {
-    const jsonMatch = response.match(/{[\s\S]*}/);
+    const jsonMatch = response.match(/{[\s\S]*?}/);
     if (jsonMatch) {
-      console.log("Found JSON in response:", jsonMatch[0]);
       metadata = JSON.parse(jsonMatch[0]) as MetadataResponse;
-      console.log("Parsed metadata:", metadata);
-    } else {
-      console.log("No JSON found in response");
     }
   } catch (error) {
     new Notice(
       `Error parsing response: ${error instanceof Error ? error.message : String(error)}`,
     );
     console.error("Parse error:", error);
-    return;
+    return false;
   }
+
+  let hasChanges = false;
 
   // Update tags
   if (metadata.tags) {
-    console.log("Updating tags:", metadata.tags);
     const tags = metadata.tags.split(",").map((tag) => tag.trim());
-    updateFrontMatter(file, app, settings.tagsFieldName, tags, "append");
+    await updateFrontMatter(file, app, settings.tagsFieldName, tags, "append");
+    hasChanges = true;
   }
 
   // Update description
@@ -162,13 +161,17 @@ ${contentStr}`;
     const isEmpty =
       !currentValue ||
       (typeof currentValue === "string" && currentValue.trim() === "");
-    updateFrontMatter(
+    const method = force || isEmpty ? "update" : "keep";
+    await updateFrontMatter(
       file,
       app,
       settings.descriptionFieldName,
       metadata.description,
-      force || isEmpty ? "update" : "keep",
+      method,
     );
+    if (method === "update") {
+      hasChanges = true;
+    }
   }
 
   // Update title
@@ -184,12 +187,12 @@ ${contentStr}`;
     const isEmpty =
       !currentValue ||
       (typeof currentValue === "string" && currentValue.trim() === "");
-    updateFrontMatter(
-      file,
-      app,
-      settings.titleFieldName,
-      title,
-      force || isEmpty ? "update" : "keep",
-    );
+    const method = force || isEmpty ? "update" : "keep";
+    await updateFrontMatter(file, app, settings.titleFieldName, title, method);
+    if (method === "update") {
+      hasChanges = true;
+    }
   }
+
+  return hasChanges;
 }
