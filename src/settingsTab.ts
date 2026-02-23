@@ -34,7 +34,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Model")
-      .setDesc("Claude model to use")
+      .setDesc("Model to use for metadata generation")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("claude-sonnet-4-6", "Claude Sonnet 4.6")
@@ -55,7 +55,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Update Method")
       .setDesc(
-        "Always Regenerate: re-run Claude on every command; Preserve Existing: only generate empty fields",
+        "Always Regenerate: regenerate on every command; Preserve Existing: only generate empty fields",
       )
       .addDropdown((dropdown) =>
         dropdown
