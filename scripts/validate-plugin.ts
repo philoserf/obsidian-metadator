@@ -42,6 +42,16 @@ if (typecheckResult.exitCode === 0) {
   errors++;
 }
 
+// Run tests
+console.log("\n🧪 Running tests...");
+const testResult = await $`bun test`.nothrow();
+if (testResult.exitCode === 0) {
+  console.log("✓ Tests passed");
+} else {
+  console.error("✗ Tests failed");
+  errors++;
+}
+
 // Run checks
 console.log("\n🔧 Checking code quality...");
 const checkResult = await $`bun run check`.nothrow();
