@@ -88,10 +88,10 @@ export function truncateHeadOnly(tokens: string[], limit: number): string {
 }
 
 export function truncateHeadTail(tokens: string[], limit: number): string {
-  const left = Math.round(limit * 0.8);
-  const right = Math.round(limit * 0.2);
+  const left = Math.max(1, Math.floor(limit * 0.8));
+  const right = Math.max(0, limit - left);
   const leftTokens = tokens.slice(0, left);
-  const rightTokens = tokens.slice(-right);
+  const rightTokens = right > 0 ? tokens.slice(-right) : [];
   return `${joinTokens(leftTokens)}\n...\n${joinTokens(rightTokens)}`;
 }
 

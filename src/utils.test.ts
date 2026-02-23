@@ -136,9 +136,10 @@ describe("truncateHeadTail", () => {
   test("handles limit of 1", () => {
     const tokens = ["a", "b", "c", "d", "e"];
     const result = truncateHeadTail(tokens, 1);
-    // 80% of 1 = 1, 20% of 1 = 0 — head portion only
+    // All budget goes to head, tail is empty
     expect(result).toContain("a");
     expect(result).toContain("\n...\n");
+    expect(result).not.toContain("e");
   });
 });
 
