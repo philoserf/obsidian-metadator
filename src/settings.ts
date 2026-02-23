@@ -26,7 +26,7 @@ export interface MetadataToolSettings {
 
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
   anthropicApiKey: "",
-  anthropicModel: "claude-sonnet-4-5-20250929",
+  anthropicModel: "claude-sonnet-4-6",
 
   tagsFieldName: "tags",
   descriptionFieldName: "description",

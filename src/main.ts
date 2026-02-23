@@ -36,6 +36,11 @@ export default class MetadataToolPlugin extends Plugin {
       loadedSettings.updateMethod = "preserve_existing";
     }
 
+    // Migrate default model to Claude 4.6
+    if (loadedSettings?.anthropicModel === "claude-sonnet-4-5-20250929") {
+      loadedSettings.anthropicModel = "claude-sonnet-4-6";
+    }
+
     this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedSettings);
   }
 
