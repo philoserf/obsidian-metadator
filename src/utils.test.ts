@@ -76,7 +76,7 @@ describe("joinTokens", () => {
   });
 
   test("preserves newlines", () => {
-    expect(joinTokens(["hello", "\n", "world"])).toBe("hello\n world");
+    expect(joinTokens(["hello", "\n", "world"])).toBe("hello\nworld");
   });
 
   test("returns empty string for empty array", () => {

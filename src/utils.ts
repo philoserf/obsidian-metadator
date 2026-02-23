@@ -75,7 +75,9 @@ export function joinTokens(tokens: string[]): string {
     } else if (/[\u4e00-\u9fa5]|[.,!?;，。！？；#]/.test(token)) {
       result += token;
     } else {
-      result += (i > 0 ? " " : "") + token;
+      const prevToken = i > 0 ? tokens[i - 1] : undefined;
+      const needsSpace = i > 0 && prevToken !== "\n";
+      result += (needsSpace ? " " : "") + token;
     }
   }
   return result.trim();
