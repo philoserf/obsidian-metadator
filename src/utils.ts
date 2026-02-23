@@ -143,10 +143,6 @@ export async function updateFrontMatter(
   method: "append" | "update" | "keep",
 ): Promise<void> {
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
-    if (value === undefined || value === null) {
-      return;
-    }
-
     if (method === "append") {
       let oldValue = frontmatter[key];
       if (typeof value === "string") {
