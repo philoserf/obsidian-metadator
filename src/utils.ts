@@ -60,13 +60,13 @@ export async function callClaude(
   }
 }
 
-function splitIntoTokens(str: string): string[] {
+export function splitIntoTokens(str: string): string[] {
   const regex = /[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g;
   const tokens = str.match(regex);
   return tokens || [];
 }
 
-function joinTokens(tokens: string[]): string {
+export function joinTokens(tokens: string[]): string {
   let result = "";
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
@@ -79,6 +79,50 @@ function joinTokens(tokens: string[]): string {
     }
   }
   return result.trim();
+}
+
+export function truncateHeadOnly(tokens: string[], limit: number): string {
+  return `${joinTokens(tokens.slice(0, limit))}...`;
+}
+
+export function truncateHeadTail(tokens: string[], limit: number): string {
+  const left = Math.round(limit * 0.8);
+  const right = Math.round(limit * 0.2);
+  const leftTokens = tokens.slice(0, left);
+  const rightTokens = tokens.slice(-right);
+  return `${joinTokens(leftTokens)}\n...\n${joinTokens(rightTokens)}`;
+}
+
+export function truncateHeading(
+  contentStr: string,
+  tokens: string[],
+  limit: number,
+): string {
+  let lines = contentStr.split("\n");
+  lines = lines.filter((line) => line.trim() !== "");
+
+  const newLines: string[] = [];
+  let captureNextParagraph = false;
+  for (const line of lines) {
+    if (line.startsWith("#")) {
+      newLines.push(line);
+      captureNextParagraph = true;
+    } else if (captureNextParagraph && line.trim() !== "") {
+      const lineTokens = splitIntoTokens(line);
+      newLines.push(`${joinTokens(lineTokens.slice(0, 30))}...`);
+      captureNextParagraph = false;
+    }
+  }
+  let result = newLines.join("\n");
+  const totalTokens = splitIntoTokens(result);
+  if (totalTokens.length > limit) {
+    result = joinTokens(totalTokens.slice(0, limit));
+  } else {
+    const remainingTokens = limit - totalTokens.length;
+    const head = `${joinTokens(tokens.slice(0, remainingTokens))}...`;
+    result = `Outline: \n${result}\n\nBody: ${head}`;
+  }
+  return result;
 }
 
 export async function getContent(
@@ -97,38 +141,11 @@ export async function getContent(
 
   if (tokens.length > limit && limit > 0) {
     if (method === "head_tail") {
-      const left = Math.round(limit * 0.8);
-      const right = Math.round(limit * 0.2);
-      const leftTokens = tokens.slice(0, left);
-      const rightTokens = tokens.slice(-right);
-      contentStr = `${joinTokens(leftTokens)}\n...\n${joinTokens(rightTokens)}`;
+      contentStr = truncateHeadTail(tokens, limit);
     } else if (method === "head_only") {
-      contentStr = `${joinTokens(tokens.slice(0, limit))}...`;
+      contentStr = truncateHeadOnly(tokens, limit);
     } else if (method === "heading") {
-      let lines = contentStr.split("\n");
-      lines = lines.filter((line) => line.trim() !== "");
-
-      const newLines: string[] = [];
-      let captureNextParagraph = false;
-      for (const line of lines) {
-        if (line.startsWith("#")) {
-          newLines.push(line);
-          captureNextParagraph = true;
-        } else if (captureNextParagraph && line.trim() !== "") {
-          const lineTokens = splitIntoTokens(line);
-          newLines.push(`${joinTokens(lineTokens.slice(0, 30))}...`);
-          captureNextParagraph = false;
-        }
-      }
-      contentStr = newLines.join("\n");
-      const totalTokens = splitIntoTokens(contentStr);
-      if (totalTokens.length > limit) {
-        contentStr = joinTokens(totalTokens.slice(0, limit));
-      } else {
-        const remainingTokens = limit - totalTokens.length;
-        const head = `${joinTokens(tokens.slice(0, remainingTokens))}...`;
-        contentStr = `Outline: \n${contentStr}\n\nBody: ${head}`;
-      }
+      contentStr = truncateHeading(contentStr, tokens, limit);
     }
   }
 

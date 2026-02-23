@@ -3,6 +3,27 @@ import { generateMetadata } from "./metadata";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 import { MetadataToolSettingTab } from "./settingsTab";
 
+export function migrateSettings(
+  loaded: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!loaded) return loaded;
+
+  if (loaded.updateMethod === "force" || loaded.updateMethod === "update_all") {
+    loaded.updateMethod = "always_regenerate";
+  } else if (
+    loaded.updateMethod === "no-llm" ||
+    loaded.updateMethod === "empty_only"
+  ) {
+    loaded.updateMethod = "preserve_existing";
+  }
+
+  if (loaded.anthropicModel === "claude-sonnet-4-5-20250929") {
+    loaded.anthropicModel = "claude-sonnet-4-6";
+  }
+
+  return loaded;
+}
+
 export default class MetadataToolPlugin extends Plugin {
   settings: MetadataToolSettings = DEFAULT_SETTINGS;
 
@@ -23,26 +44,7 @@ export default class MetadataToolPlugin extends Plugin {
   onunload(): void {}
 
   async loadSettings(): Promise<void> {
-    const loadedSettings = await this.loadData();
-
-    // Migrate old settings values
-    if (
-      loadedSettings?.updateMethod === "force" ||
-      loadedSettings?.updateMethod === "update_all"
-    ) {
-      loadedSettings.updateMethod = "always_regenerate";
-    } else if (
-      loadedSettings?.updateMethod === "no-llm" ||
-      loadedSettings?.updateMethod === "empty_only"
-    ) {
-      loadedSettings.updateMethod = "preserve_existing";
-    }
-
-    // Migrate default model to Claude 4.6
-    if (loadedSettings?.anthropicModel === "claude-sonnet-4-5-20250929") {
-      loadedSettings.anthropicModel = "claude-sonnet-4-6";
-    }
-
+    const loadedSettings = migrateSettings(await this.loadData());
     this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedSettings);
   }
 
