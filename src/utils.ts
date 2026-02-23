@@ -6,7 +6,7 @@ export async function callClaude(
   prompt: string,
   settings: MetadataToolSettings,
 ): Promise<string> {
-  const notice = new Notice("Generating metadata with Claude...", 0);
+  const notice = new Notice("Generating metadata...", 0);
 
   const anthropic = new Anthropic({
     apiKey: settings.anthropicApiKey,
@@ -34,7 +34,7 @@ export async function callClaude(
     if (error instanceof Error) {
       if (error.message.includes("authentication_error")) {
         new Notice(
-          "Authentication failed. Please check your API key in Settings → Metadata Tool",
+          "Authentication failed. Please check your API key in Settings → Metadator",
           8000,
         );
       } else if (error.message.includes("rate_limit")) {
@@ -44,14 +44,14 @@ export async function callClaude(
         );
       } else if (error.message.includes("overloaded")) {
         new Notice(
-          "Claude API is currently overloaded. Please try again in a moment.",
+          "API is currently overloaded. Please try again in a moment.",
           8000,
         );
       } else {
-        new Notice(`Error calling Claude API: ${error.message}`, 8000);
+        new Notice(`API error: ${error.message}`, 8000);
       }
     } else {
-      new Notice("An unknown error occurred while calling Claude API", 8000);
+      new Notice("An unknown API error occurred", 8000);
     }
 
     console.error("Claude API error:", error);

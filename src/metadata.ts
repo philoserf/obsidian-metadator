@@ -26,7 +26,7 @@ export async function generateMetadata(
   // Check if API key is configured
   if (!settings.anthropicApiKey || settings.anthropicApiKey === "") {
     new Notice(
-      "Please configure your Anthropic API key in Settings → Metadata Tool",
+      "Please configure your Anthropic API key in Settings → Metadator",
       8000,
     );
     return;
@@ -142,7 +142,9 @@ ${contentStr}`;
       console.log("No JSON found in response");
     }
   } catch (error) {
-    new Notice(`Error parsing Claude response: ${error}`);
+    new Notice(
+      `Error parsing response: ${error instanceof Error ? error.message : String(error)}`,
+    );
     console.error("Parse error:", error);
     return;
   }
