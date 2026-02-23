@@ -2,10 +2,87 @@ import { type App, Notice, type TFile } from "obsidian";
 import type { MetadataToolSettings } from "./settings";
 import { callClaude, getContent, updateFrontMatter } from "./utils";
 
-interface MetadataResponse {
+export interface MetadataResponse {
   tags?: string;
   description?: string;
   title?: string;
+}
+
+export function buildPrompt(
+  contentStr: string,
+  settings: MetadataToolSettings,
+): string {
+  const promptParts = [
+    "I need to generate metadata for the following article. Requirements:",
+    "",
+    `1. Tags: ${settings.tagsPrompt}`,
+    "",
+    `2. Description: ${settings.descriptionPrompt}`,
+  ];
+
+  const jsonFields: string[] = [
+    '"tags": "tag1,tag2,tag3"',
+    '"description": "brief summary"',
+  ];
+
+  if (settings.enableTitle) {
+    promptParts.push("", `3. Title: ${settings.titlePrompt}`);
+    jsonFields.push('"title": "article title"');
+  }
+
+  promptParts.push(
+    "",
+    "Please return in the following JSON format:",
+    `{`,
+    `    ${jsonFields.join(",\n    ")}`,
+    `}`,
+    "",
+    "Article content:",
+    "",
+    contentStr,
+  );
+
+  return promptParts.join("\n");
+}
+
+export function parseMetadataResponse(
+  response: string,
+): MetadataResponse | null {
+  const stripped = response.replace(/```(?:json)?\n?/g, "");
+  const jsonMatch = stripped.match(/{[\s\S]*}/);
+  if (!jsonMatch) {
+    return null;
+  }
+  return JSON.parse(jsonMatch[0]) as MetadataResponse;
+}
+
+export function parseTags(tagsString: string): string[] {
+  return tagsString.split(",").map((tag) => tag.trim());
+}
+
+export function stripSurroundingQuotes(str: string): string {
+  const trimmed = str.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.substring(1, trimmed.length - 1);
+  }
+  return trimmed;
+}
+
+export function resolveUpdateMethod(
+  force: boolean,
+  currentValue: unknown,
+): "update" | "keep" {
+  if (force) return "update";
+  if (
+    !currentValue ||
+    (typeof currentValue === "string" && currentValue.trim() === "")
+  ) {
+    return "update";
+  }
+  return "keep";
 }
 
 export async function generateMetadata(
@@ -85,37 +162,7 @@ async function addMetadataWithClaude(
     contentStr = await getContent(app, file, -1, "head_only");
   }
 
-  const promptParts = [
-    "I need to generate metadata for the following article. Requirements:",
-    "",
-    `1. Tags: ${settings.tagsPrompt}`,
-    "",
-    `2. Description: ${settings.descriptionPrompt}`,
-  ];
-
-  const jsonFields: string[] = [
-    '"tags": "tag1,tag2,tag3"',
-    '"description": "brief summary"',
-  ];
-
-  if (settings.enableTitle) {
-    promptParts.push("", `3. Title: ${settings.titlePrompt}`);
-    jsonFields.push('"title": "article title"');
-  }
-
-  promptParts.push(
-    "",
-    "Please return in the following JSON format:",
-    `{`,
-    `    ${jsonFields.join(",\n    ")}`,
-    `}`,
-    "",
-    "Article content:",
-    "",
-    contentStr,
-  );
-
-  const prompt = promptParts.join("\n");
+  const prompt = buildPrompt(contentStr, settings);
 
   let response: string;
   try {
@@ -129,15 +176,9 @@ async function addMetadataWithClaude(
     return false;
   }
 
-  // Strip markdown code fences without removing backticks inside values
-  response = response.replace(/```(?:json)?\n?/g, "");
-
   let metadata: MetadataResponse = {};
   try {
-    const jsonMatch = response.match(/{[\s\S]*}/);
-    if (jsonMatch) {
-      metadata = JSON.parse(jsonMatch[0]) as MetadataResponse;
-    }
+    metadata = parseMetadataResponse(response) ?? {};
   } catch (error) {
     new Notice(
       `Error parsing response: ${error instanceof Error ? error.message : String(error)}`,
@@ -150,18 +191,17 @@ async function addMetadataWithClaude(
 
   // Update tags
   if (metadata.tags) {
-    const tags = metadata.tags.split(",").map((tag) => tag.trim());
+    const tags = parseTags(metadata.tags);
     await updateFrontMatter(file, app, settings.tagsFieldName, tags, "append");
     hasChanges = true;
   }
 
   // Update description
   if (metadata.description) {
-    const currentValue = frontMatter[settings.descriptionFieldName];
-    const isEmpty =
-      !currentValue ||
-      (typeof currentValue === "string" && currentValue.trim() === "");
-    const method = force || isEmpty ? "update" : "keep";
+    const method = resolveUpdateMethod(
+      force,
+      frontMatter[settings.descriptionFieldName],
+    );
     await updateFrontMatter(
       file,
       app,
@@ -176,18 +216,11 @@ async function addMetadataWithClaude(
 
   // Update title
   if (settings.enableTitle && metadata.title) {
-    let title = metadata.title.trim();
-    if (
-      (title.startsWith('"') && title.endsWith('"')) ||
-      (title.startsWith("'") && title.endsWith("'"))
-    ) {
-      title = title.substring(1, title.length - 1);
-    }
-    const currentValue = frontMatter[settings.titleFieldName];
-    const isEmpty =
-      !currentValue ||
-      (typeof currentValue === "string" && currentValue.trim() === "");
-    const method = force || isEmpty ? "update" : "keep";
+    const title = stripSurroundingQuotes(metadata.title);
+    const method = resolveUpdateMethod(
+      force,
+      frontMatter[settings.titleFieldName],
+    );
     await updateFrontMatter(file, app, settings.titleFieldName, title, method);
     if (method === "update") {
       hasChanges = true;
