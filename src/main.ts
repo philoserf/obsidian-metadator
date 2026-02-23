@@ -20,6 +20,8 @@ export default class MetadataToolPlugin extends Plugin {
     this.addSettingTab(new MetadataToolSettingTab(this.app, this));
   }
 
+  onunload(): void {}
+
   async loadSettings(): Promise<void> {
     const loadedSettings = await this.loadData();
 

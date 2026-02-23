@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { type App, MarkdownView, Notice, type TFile } from "obsidian";
+import { type App, Notice, type TFile } from "obsidian";
 import type { MetadataToolSettings } from "./settings";
 
 export async function callClaude(
@@ -8,6 +8,7 @@ export async function callClaude(
 ): Promise<string> {
   const notice = new Notice("Generating metadata...", 0);
 
+  // Safe in Obsidian's Electron renderer — no browser security concerns apply
   const anthropic = new Anthropic({
     apiKey: settings.anthropicApiKey,
     dangerouslyAllowBrowser: true,
@@ -60,7 +61,6 @@ export async function callClaude(
 }
 
 function splitIntoTokens(str: string): string[] {
-  // eslint-disable-next-line no-useless-escape
   const regex = /[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g;
   const tokens = str.match(regex);
   return tokens || [];
@@ -72,7 +72,6 @@ function joinTokens(tokens: string[]): string {
     const token = tokens[i];
     if (token === "\n") {
       result += token;
-      // eslint-disable-next-line no-useless-escape
     } else if (/[\u4e00-\u9fa5]|[.,!?;，。！？；#]/.test(token)) {
       result += token;
     } else {
@@ -84,25 +83,11 @@ function joinTokens(tokens: string[]): string {
 
 export async function getContent(
   app: App,
-  file: TFile | null,
+  file: TFile,
   limit: number = 1000,
   method: "head_only" | "head_tail" | "heading" = "head_only",
 ): Promise<string> {
-  let contentStr = "";
-
-  if (file !== null) {
-    contentStr = await app.vault.read(file);
-  } else {
-    const editor = app.workspace.getActiveViewOfType(MarkdownView)?.editor;
-    if (!editor) {
-      return "";
-    }
-    contentStr = editor.getSelection();
-    contentStr = contentStr.trim();
-    if (contentStr.length === 0) {
-      contentStr = editor.getValue();
-    }
-  }
+  let contentStr = await app.vault.read(file);
 
   if (contentStr.length === 0) {
     return "";
@@ -187,21 +172,4 @@ export async function updateFrontMatter(
       frontmatter[key] = value;
     }
   });
-}
-
-export function formatDate(date: Date, format: string): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-
-  return format
-    .replace("YYYY", year.toString())
-    .replace("MM", month)
-    .replace("DD", day)
-    .replace("HH", hours)
-    .replace("mm", minutes)
-    .replace("ss", seconds);
 }
