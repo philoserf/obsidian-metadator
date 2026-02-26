@@ -1,11 +1,31 @@
 import { describe, expect, test } from "bun:test";
+import type { App, TFile } from "obsidian";
 import {
   joinTokens,
   splitIntoTokens,
   truncateHeading,
   truncateHeadOnly,
   truncateHeadTail,
+  updateFrontMatter,
 } from "./utils";
+
+function makeApp(initial: Record<string, unknown> = {}): {
+  app: App;
+  fm: Record<string, unknown>;
+} {
+  const fm = { ...initial };
+  const app = {
+    fileManager: {
+      processFrontMatter: async (
+        _file: unknown,
+        fn: (fm: Record<string, unknown>) => void,
+      ) => {
+        fn(fm);
+      },
+    },
+  } as unknown as App;
+  return { app, fm };
+}
 
 describe("splitIntoTokens", () => {
   test("splits English words", () => {
@@ -177,5 +197,61 @@ describe("truncateHeading", () => {
     const result = truncateHeading(content, tokens, 1000);
     // No headings → empty outline, all budget goes to body
     expect(result).toContain("Body:");
+  });
+});
+
+describe("updateFrontMatter", () => {
+  test("keep: preserves an existing value", async () => {
+    const { app, fm } = makeApp({ description: "existing" });
+    await updateFrontMatter(
+      {} as TFile,
+      app,
+      "description",
+      "new value",
+      "keep",
+    );
+    expect(fm.description).toBe("existing");
+  });
+
+  test("keep: sets the value when field is absent", async () => {
+    const { app, fm } = makeApp({});
+    await updateFrontMatter(
+      {} as TFile,
+      app,
+      "description",
+      "new value",
+      "keep",
+    );
+    expect(fm.description).toBe("new value");
+  });
+
+  test("update: overwrites an existing value", async () => {
+    const { app, fm } = makeApp({ description: "old" });
+    await updateFrontMatter(
+      {} as TFile,
+      app,
+      "description",
+      "new value",
+      "update",
+    );
+    expect(fm.description).toBe("new value");
+  });
+
+  test("append: merges and deduplicates array oldValue", async () => {
+    const { app, fm } = makeApp({ tags: ["a", "b"] });
+    await updateFrontMatter({} as TFile, app, "tags", ["b", "c"], "append");
+    expect(fm.tags).toEqual(["a", "b", "c"]);
+  });
+
+  test("append: normalises string oldValue to array before merge", async () => {
+    const { app, fm } = makeApp({ tags: "existing-tag" });
+    await updateFrontMatter({} as TFile, app, "tags", ["new-tag"], "append");
+    expect(fm.tags).toEqual(["existing-tag", "new-tag"]);
+  });
+
+  test("append: initialises correctly when field is absent", async () => {
+    const { app, fm } = makeApp({});
+    await updateFrontMatter({} as TFile, app, "tags", ["a", "b"], "append");
+    expect(fm.tags).toEqual(["a", "b"]);
   });
 });

@@ -45,6 +45,16 @@ export function buildPrompt(
   return promptParts.join("\n");
 }
 
+function isValidMetadataResponse(obj: unknown): obj is MetadataResponse {
+  if (typeof obj !== "object" || obj === null) return false;
+  const r = obj as Record<string, unknown>;
+  return (
+    (r.tags === undefined || typeof r.tags === "string") &&
+    (r.description === undefined || typeof r.description === "string") &&
+    (r.title === undefined || typeof r.title === "string")
+  );
+}
+
 export function parseMetadataResponse(
   response: string,
 ): MetadataResponse | null {
@@ -53,7 +63,8 @@ export function parseMetadataResponse(
   if (!jsonMatch) {
     return null;
   }
-  return JSON.parse(jsonMatch[0]) as MetadataResponse;
+  const parsed: unknown = JSON.parse(jsonMatch[0]);
+  return isValidMetadataResponse(parsed) ? parsed : null;
 }
 
 export function parseTags(tagsString: string): string[] {
@@ -195,8 +206,21 @@ async function addMetadataWithClaude(
   // Update tags
   if (metadata.tags) {
     const tags = parseTags(metadata.tags);
-    await updateFrontMatter(file, app, settings.tagsFieldName, tags, "append");
-    hasChanges = true;
+    try {
+      await updateFrontMatter(
+        file,
+        app,
+        settings.tagsFieldName,
+        tags,
+        "append",
+      );
+      hasChanges = true;
+    } catch (error) {
+      new Notice(
+        `Failed to write tags: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error("updateFrontMatter error (tags):", error);
+    }
   }
 
   // Update description
@@ -205,15 +229,22 @@ async function addMetadataWithClaude(
       force,
       frontMatter[settings.descriptionFieldName],
     );
-    await updateFrontMatter(
-      file,
-      app,
-      settings.descriptionFieldName,
-      metadata.description,
-      method,
-    );
-    if (method === "update") {
-      hasChanges = true;
+    try {
+      await updateFrontMatter(
+        file,
+        app,
+        settings.descriptionFieldName,
+        metadata.description,
+        method,
+      );
+      if (method === "update") {
+        hasChanges = true;
+      }
+    } catch (error) {
+      new Notice(
+        `Failed to write description: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error("updateFrontMatter error (description):", error);
     }
   }
 
@@ -224,9 +255,22 @@ async function addMetadataWithClaude(
       force,
       frontMatter[settings.titleFieldName],
     );
-    await updateFrontMatter(file, app, settings.titleFieldName, title, method);
-    if (method === "update") {
-      hasChanges = true;
+    try {
+      await updateFrontMatter(
+        file,
+        app,
+        settings.titleFieldName,
+        title,
+        method,
+      );
+      if (method === "update") {
+        hasChanges = true;
+      }
+    } catch (error) {
+      new Notice(
+        `Failed to write title: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error("updateFrontMatter error (title):", error);
     }
   }
 

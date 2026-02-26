@@ -31,26 +31,23 @@ export async function callClaude(
   } catch (error) {
     notice.hide();
 
-    // Provide user-friendly error messages
-    if (error instanceof Error) {
-      if (error.message.includes("authentication_error")) {
-        new Notice(
-          "Authentication failed. Please check your API key in Settings → Metadator",
-          8000,
-        );
-      } else if (error.message.includes("rate_limit")) {
-        new Notice(
-          "Rate limit exceeded. Please wait a moment and try again.",
-          8000,
-        );
-      } else if (error.message.includes("overloaded")) {
-        new Notice(
-          "API is currently overloaded. Please try again in a moment.",
-          8000,
-        );
-      } else {
-        new Notice(`API error: ${error.message}`, 8000);
-      }
+    if (error instanceof Anthropic.AuthenticationError) {
+      new Notice(
+        "Authentication failed. Please check your API key in Settings → Metadator",
+        8000,
+      );
+    } else if (error instanceof Anthropic.RateLimitError) {
+      new Notice(
+        "Rate limit exceeded. Please wait a moment and try again.",
+        8000,
+      );
+    } else if (error instanceof Anthropic.InternalServerError) {
+      new Notice(
+        "API is currently overloaded. Please try again in a moment.",
+        8000,
+      );
+    } else if (error instanceof Anthropic.APIError) {
+      new Notice(`API error: ${error.message}`, 8000);
     } else {
       new Notice("An unknown API error occurred", 8000);
     }
@@ -163,19 +160,14 @@ export async function updateFrontMatter(
 ): Promise<void> {
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
     if (method === "append") {
-      let oldValue = frontmatter[key];
-      if (typeof value === "string") {
-        if (oldValue === undefined) {
-          oldValue = "";
-        }
-        frontmatter[key] = oldValue + value;
-      } else if (Array.isArray(value)) {
-        if (oldValue === undefined) {
-          oldValue = [];
-        }
-        const newValue = oldValue.concat(value);
-        const uniqueValue = Array.from(new Set(newValue));
-        frontmatter[key] = uniqueValue;
+      if (Array.isArray(value)) {
+        const existing = frontmatter[key];
+        const base = Array.isArray(existing)
+          ? existing
+          : existing != null
+            ? [String(existing)]
+            : [];
+        frontmatter[key] = Array.from(new Set(base.concat(value)));
       }
     } else if (method === "update") {
       frontmatter[key] = value;
