@@ -68,6 +68,12 @@ describe("parseMetadataResponse", () => {
       description: "b",
     });
   });
+
+  test("returns null when field types are invalid", () => {
+    expect(parseMetadataResponse('{"tags": 42}')).toBeNull();
+    expect(parseMetadataResponse('{"description": null}')).toBeNull();
+    expect(parseMetadataResponse('{"title": ["array"]}')).toBeNull();
+  });
 });
 
 describe("parseTags", () => {

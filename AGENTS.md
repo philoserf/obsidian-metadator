@@ -28,9 +28,8 @@ bun run lint:fix           # Auto-fix linting issues
 bun run format             # Format code with Biome
 bun run validate           # Full validation (types, checks, build)
 bun run version            # Sync manifest.json and versions.json from package.json
+bun test                   # Run unit tests
 ```
-
-No unit tests exist.
 
 ## Architecture
 
