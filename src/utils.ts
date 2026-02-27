@@ -171,11 +171,7 @@ export async function updateFrontMatter(
       }
     } else if (method === "update") {
       frontmatter[key] = value;
-    } else {
-      const oldValue = frontmatter[key];
-      if (oldValue !== undefined) {
-        return;
-      }
+    } else if (frontmatter[key] === undefined) {
       frontmatter[key] = value;
     }
   });
