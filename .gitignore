@@ -31,3 +31,4 @@ Thumbs.db
 
 # Obsidian vault files
 .obsidian/
+.issues/
