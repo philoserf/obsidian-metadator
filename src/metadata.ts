@@ -58,13 +58,24 @@ function isValidMetadataResponse(obj: unknown): obj is MetadataResponse {
 export function parseMetadataResponse(
   response: string,
 ): MetadataResponse | null {
-  const stripped = response.replace(/```(?:json)?\n?/g, "");
-  const jsonMatch = stripped.match(/{[\s\S]*}/);
+  // Try matching JSON directly first to avoid corrupting embedded backticks
+  let jsonMatch = response.match(/{[\s\S]*}/);
+  if (!jsonMatch) {
+    // Extract content from code fence wrapper, then match JSON from that
+    const fenceMatch = response.match(/```(?:json)?\n?([\s\S]*?)```/);
+    if (fenceMatch) {
+      jsonMatch = fenceMatch[1].match(/{[\s\S]*}/);
+    }
+  }
   if (!jsonMatch) {
     return null;
   }
-  const parsed: unknown = JSON.parse(jsonMatch[0]);
-  return isValidMetadataResponse(parsed) ? parsed : null;
+  try {
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
+    return isValidMetadataResponse(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export function parseTags(tagsString: string): string[] {
@@ -204,16 +215,7 @@ async function addMetadataWithClaude(
     return false;
   }
 
-  let metadata: MetadataResponse = {};
-  try {
-    metadata = parseMetadataResponse(response) ?? {};
-  } catch (error) {
-    new Notice(
-      `Error parsing response: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    console.error("Parse error:", error);
-    return false;
-  }
+  const metadata: MetadataResponse = parseMetadataResponse(response) ?? {};
 
   let hasChanges = false;
 

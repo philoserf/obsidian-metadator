@@ -39,10 +39,8 @@ describe("parseMetadataResponse", () => {
     expect(parseMetadataResponse("no json here")).toBeNull();
   });
 
-  test("throws SyntaxError on malformed JSON", () => {
-    expect(() => parseMetadataResponse("{tags: malformed}")).toThrow(
-      SyntaxError,
-    );
+  test("returns null on malformed JSON", () => {
+    expect(parseMetadataResponse("{tags: malformed}")).toBeNull();
   });
 
   test("preserves backticks inside values", () => {
@@ -68,6 +66,13 @@ describe("parseMetadataResponse", () => {
       tags: "a",
       description: "b",
     });
+  });
+
+  test("preserves triple backticks inside JSON values", () => {
+    const response =
+      '{"tags": "code", "description": "Use ```code``` in markdown"}';
+    const result = parseMetadataResponse(response);
+    expect(result?.description).toBe("Use ```code``` in markdown");
   });
 
   test("returns null when field types are invalid", () => {
