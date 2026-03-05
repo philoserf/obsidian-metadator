@@ -180,8 +180,12 @@ describe("truncateHeading", () => {
     const tokens = splitIntoTokens(content);
     // Very small limit to force truncation of the outline itself
     const result = truncateHeading(content, tokens, 2);
-    // Should just be the first 2 tokens from the outline
-    expect(result.length).toBeGreaterThan(0);
+    const resultTokens = splitIntoTokens(result);
+    // Output should be truncated to at most the token limit
+    expect(resultTokens.length).toBeLessThanOrEqual(2);
+    // Should not contain the Outline:/Body: wrapper since outline exceeded limit
+    expect(result).not.toContain("Outline:");
+    expect(result).not.toContain("Body:");
   });
 
   test("filters empty lines", () => {

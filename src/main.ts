@@ -21,6 +21,10 @@ export function migrateSettings(
     loaded.anthropicModel = "claude-sonnet-4-6";
   }
 
+  if (loaded.anthropicModel === "claude-opus-4-5-20251101") {
+    loaded.anthropicModel = "claude-opus-4-6";
+  }
+
   return loaded;
 }
 
