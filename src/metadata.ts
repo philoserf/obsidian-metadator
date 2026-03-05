@@ -110,13 +110,7 @@ export function resolveUpdateMethod(
   currentValue: unknown,
 ): "update" | "keep" {
   if (force) return "update";
-  if (
-    !currentValue ||
-    (typeof currentValue === "string" && currentValue.trim() === "")
-  ) {
-    return "update";
-  }
-  return "keep";
+  return isEmptyValue(currentValue) ? "update" : "keep";
 }
 
 export async function generateMetadata(
@@ -169,14 +163,10 @@ export async function generateMetadata(
         new Notice("Metadata updated successfully");
       }
     } catch (error) {
-      // callClaude already shows a Notice for API errors and re-throws.
-      // Surface unexpected errors that aren't from the API call.
-      if (!(error instanceof Error && error.message.includes("API"))) {
-        new Notice(
-          `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
-          8000,
-        );
-      }
+      new Notice(
+        `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+        8000,
+      );
       console.error("generateMetadata error:", error);
     }
   }

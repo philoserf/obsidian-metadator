@@ -94,7 +94,9 @@ export function truncateHeadTail(tokens: string[], limit: number): string {
     return joinTokens(leftTokens);
   }
   const rightTokens = tokens.slice(-right);
-  return `${joinTokens(leftTokens)}\n...\n${joinTokens(rightTokens)}`;
+  const separator =
+    leftTokens.length + rightTokens.length < tokens.length ? "\n...\n" : "\n";
+  return `${joinTokens(leftTokens)}${separator}${joinTokens(rightTokens)}`;
 }
 
 export function truncateHeading(
@@ -126,9 +128,13 @@ export function truncateHeading(
   } else {
     const remainingTokens = limit - totalTokens.length;
     const headTokens = tokens.slice(0, remainingTokens);
-    const suffix = headTokens.length < tokens.length ? "..." : "";
-    const head = `${joinTokens(headTokens)}${suffix}`;
-    result = `Outline: \n${result}\n\nBody: ${head}`;
+    if (headTokens.length > 0) {
+      const suffix = headTokens.length < tokens.length ? "..." : "";
+      const head = `${joinTokens(headTokens)}${suffix}`;
+      result = `Outline: \n${result}\n\nBody: ${head}`;
+    } else {
+      result = `Outline: \n${result}`;
+    }
   }
   return result;
 }
@@ -145,9 +151,13 @@ export async function getContent(
     return "";
   }
 
+  if (limit <= 0) {
+    return contentStr;
+  }
+
   const tokens = splitIntoTokens(contentStr);
 
-  if (tokens.length > limit && limit > 0) {
+  if (tokens.length > limit) {
     if (method === "head_tail") {
       contentStr = truncateHeadTail(tokens, limit);
     } else if (method === "head_only") {
