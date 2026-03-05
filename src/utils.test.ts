@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { App, TFile } from "obsidian";
 import {
+  getContent,
   joinTokens,
   splitIntoTokens,
   truncateHeading,
@@ -135,14 +136,18 @@ describe("truncateHeadOnly", () => {
 });
 
 describe("truncateHeadTail", () => {
-  test("splits 80/20 with separator", () => {
+  test("returns full content when limit covers all tokens", () => {
     const tokens = Array.from({ length: 10 }, (_, i) => `t${i}`);
     const result = truncateHeadTail(tokens, 10);
-    // 80% of 10 = 8, 20% of 10 = 2
-    expect(result).toContain("t0");
-    expect(result).toContain("t7"); // 8th token (0-indexed)
-    expect(result).not.toContain("..."); // no truncation when limit covers all tokens
-    expect(result).toContain("t9"); // last token
+    expect(result).toBe(joinTokens(tokens));
+    expect(result).not.toContain("...");
+  });
+
+  test("returns full content when limit exceeds token count", () => {
+    const tokens = ["a", "b", "c"];
+    const result = truncateHeadTail(tokens, 100);
+    expect(result).toBe(joinTokens(tokens));
+    expect(result).not.toContain("...");
   });
 
   test("handles small limit", () => {
@@ -201,6 +206,17 @@ describe("truncateHeading", () => {
     // "Short paragraph." is < 30 tokens, should not get "..."
     expect(result).toContain("Short paragraph.");
     expect(result).not.toMatch(/Short paragraph\.\.\.\./);
+  });
+
+  test("omits body when outline consumes entire budget", () => {
+    // Outline for "# A\nword" is ["# A", "word"] → "# A\nword"
+    // tokenized: ["#", "A", "\n", "word"] = 4 tokens
+    // limit=4 → remainingTokens=0 → no body section
+    const content = "# A\nword";
+    const tokens = splitIntoTokens(content);
+    const result = truncateHeading(content, tokens, 4);
+    expect(result).toContain("Outline:");
+    expect(result).not.toContain("Body:");
   });
 
   test("handles content with no headings", () => {
@@ -265,5 +281,27 @@ describe("updateFrontMatter", () => {
     const { app, fm } = makeApp({});
     await updateFrontMatter({} as TFile, app, "tags", ["a", "b"], "append");
     expect(fm.tags).toEqual(["a", "b"]);
+  });
+});
+
+describe("getContent", () => {
+  function makeVaultApp(content: string) {
+    return {
+      vault: { read: async () => content },
+    } as unknown as App;
+  }
+
+  test("returns full content when limit is 0", async () => {
+    const content = "Hello world, this is some content.";
+    const app = makeVaultApp(content);
+    const result = await getContent(app, {} as TFile, 0);
+    expect(result).toBe(content);
+  });
+
+  test("returns full content when limit is negative", async () => {
+    const content = "Hello world, this is some content.";
+    const app = makeVaultApp(content);
+    const result = await getContent(app, {} as TFile, -1);
+    expect(result).toBe(content);
   });
 });
