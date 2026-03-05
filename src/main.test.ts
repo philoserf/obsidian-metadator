@@ -26,11 +26,18 @@ describe("migrateSettings", () => {
     expect(result?.updateMethod).toBe("preserve_existing");
   });
 
-  test("migrates old model to claude-sonnet-4-6", () => {
+  test("migrates old sonnet model to claude-sonnet-4-6", () => {
     const result = migrateSettings({
       anthropicModel: "claude-sonnet-4-5-20250929",
     });
     expect(result?.anthropicModel).toBe("claude-sonnet-4-6");
+  });
+
+  test("migrates old opus model to claude-opus-4-6", () => {
+    const result = migrateSettings({
+      anthropicModel: "claude-opus-4-5-20251101",
+    });
+    expect(result?.anthropicModel).toBe("claude-opus-4-6");
   });
 
   test("does not change current values", () => {

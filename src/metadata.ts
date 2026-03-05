@@ -85,6 +85,15 @@ export function stripSurroundingQuotes(str: string): string {
   return trimmed;
 }
 
+export function isEmptyValue(value: unknown): boolean {
+  if (!value) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) {
+    return value.length === 0 || value.every((v) => String(v).trim() === "");
+  }
+  return false;
+}
+
 export function resolveUpdateMethod(
   force: boolean,
   currentValue: unknown,
@@ -130,13 +139,10 @@ export async function generateMetadata(
 
   // Check if we need to call Claude for metadata
   const needsMetadata =
-    !frontMatter[settings.tagsFieldName] ||
-    frontMatter[settings.tagsFieldName]?.length === 0 ||
-    !frontMatter[settings.descriptionFieldName] ||
-    frontMatter[settings.descriptionFieldName]?.trim() === "" ||
+    isEmptyValue(frontMatter[settings.tagsFieldName]) ||
+    isEmptyValue(frontMatter[settings.descriptionFieldName]) ||
     (settings.enableTitle &&
-      (!frontMatter[settings.titleFieldName] ||
-        frontMatter[settings.titleFieldName]?.trim() === "")) ||
+      isEmptyValue(frontMatter[settings.titleFieldName])) ||
     updateAll;
 
   if (needsMetadata) {
@@ -151,8 +157,16 @@ export async function generateMetadata(
       if (hasChanges) {
         new Notice("Metadata updated successfully");
       }
-    } catch {
-      // Error already logged and shown to user by callClaude
+    } catch (error) {
+      // callClaude already shows a Notice for API errors and re-throws.
+      // Surface unexpected errors that aren't from the API call.
+      if (!(error instanceof Error && error.message.includes("API"))) {
+        new Notice(
+          `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+          8000,
+        );
+      }
+      console.error("generateMetadata error:", error);
     }
   }
 }

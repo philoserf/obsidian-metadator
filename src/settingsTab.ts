@@ -1,4 +1,4 @@
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
 
 export class MetadataToolSettingTab extends PluginSettingTab {
@@ -40,8 +40,6 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           .addOption("claude-sonnet-4-6", "Claude Sonnet 4.6")
           .addOption("claude-opus-4-6", "Claude Opus 4.6")
           .addOption("claude-haiku-4-5-20251001", "Claude Haiku 4.5")
-          .addOption("claude-sonnet-4-5-20250929", "Claude Sonnet 4.5 (legacy)")
-          .addOption("claude-opus-4-5-20251101", "Claude Opus 4.5 (legacy)")
           .setValue(this.plugin.settings.anthropicModel)
           .onChange(async (value) => {
             this.plugin.settings.anthropicModel = value;
@@ -91,7 +89,13 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.maxTokens.toString())
           .onChange(async (value) => {
-            this.plugin.settings.maxTokens = parseInt(value, 10) || 1000;
+            const parsed = Number.parseInt(value, 10);
+            if (Number.isNaN(parsed) || parsed < 1) {
+              new Notice("Max tokens must be a positive integer");
+              text.setValue(this.plugin.settings.maxTokens.toString());
+              return;
+            }
+            this.plugin.settings.maxTokens = parsed;
             await this.plugin.saveSettings();
           }),
       );

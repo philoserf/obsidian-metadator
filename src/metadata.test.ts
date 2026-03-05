@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildPrompt,
+  isEmptyValue,
   parseMetadataResponse,
   parseTags,
   resolveUpdateMethod,
@@ -159,6 +160,44 @@ describe("resolveUpdateMethod", () => {
 
   test("force overrides existing value", () => {
     expect(resolveUpdateMethod(true, "existing value")).toBe("update");
+  });
+});
+
+describe("isEmptyValue", () => {
+  test("returns true for null", () => {
+    expect(isEmptyValue(null)).toBe(true);
+  });
+
+  test("returns true for undefined", () => {
+    expect(isEmptyValue(undefined)).toBe(true);
+  });
+
+  test("returns true for empty string", () => {
+    expect(isEmptyValue("")).toBe(true);
+  });
+
+  test("returns true for whitespace-only string", () => {
+    expect(isEmptyValue("   ")).toBe(true);
+  });
+
+  test("returns true for empty array", () => {
+    expect(isEmptyValue([])).toBe(true);
+  });
+
+  test("returns true for array of empty strings", () => {
+    expect(isEmptyValue(["", "  "])).toBe(true);
+  });
+
+  test("returns false for non-empty string", () => {
+    expect(isEmptyValue("hello")).toBe(false);
+  });
+
+  test("returns false for array with content", () => {
+    expect(isEmptyValue(["tag1", "tag2"])).toBe(false);
+  });
+
+  test("returns false for mixed array with at least one non-empty", () => {
+    expect(isEmptyValue(["", "tag1"])).toBe(false);
   });
 });
 
