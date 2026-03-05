@@ -81,14 +81,19 @@ export function joinTokens(tokens: string[]): string {
 }
 
 export function truncateHeadOnly(tokens: string[], limit: number): string {
-  return `${joinTokens(tokens.slice(0, limit))}...`;
+  const truncated = tokens.slice(0, limit);
+  const suffix = truncated.length < tokens.length ? "..." : "";
+  return `${joinTokens(truncated)}${suffix}`;
 }
 
 export function truncateHeadTail(tokens: string[], limit: number): string {
   const left = Math.max(1, Math.floor(limit * 0.8));
   const right = Math.max(0, limit - left);
   const leftTokens = tokens.slice(0, left);
-  const rightTokens = right > 0 ? tokens.slice(-right) : [];
+  if (right <= 0) {
+    return joinTokens(leftTokens);
+  }
+  const rightTokens = tokens.slice(-right);
   return `${joinTokens(leftTokens)}\n...\n${joinTokens(rightTokens)}`;
 }
 
@@ -108,7 +113,9 @@ export function truncateHeading(
       captureNextParagraph = true;
     } else if (captureNextParagraph && line.trim() !== "") {
       const lineTokens = splitIntoTokens(line);
-      newLines.push(`${joinTokens(lineTokens.slice(0, 30))}...`);
+      const truncated = lineTokens.slice(0, 30);
+      const suffix = truncated.length < lineTokens.length ? "..." : "";
+      newLines.push(`${joinTokens(truncated)}${suffix}`);
       captureNextParagraph = false;
     }
   }
@@ -118,7 +125,9 @@ export function truncateHeading(
     result = joinTokens(totalTokens.slice(0, limit));
   } else {
     const remainingTokens = limit - totalTokens.length;
-    const head = `${joinTokens(tokens.slice(0, remainingTokens))}...`;
+    const headTokens = tokens.slice(0, remainingTokens);
+    const suffix = headTokens.length < tokens.length ? "..." : "";
+    const head = `${joinTokens(headTokens)}${suffix}`;
     result = `Outline: \n${result}\n\nBody: ${head}`;
   }
   return result;

@@ -125,12 +125,12 @@ describe("truncateHeadOnly", () => {
 
   test("returns all tokens when limit equals length", () => {
     const tokens = ["one", "two", "three"];
-    expect(truncateHeadOnly(tokens, 3)).toBe("one two three...");
+    expect(truncateHeadOnly(tokens, 3)).toBe("one two three");
   });
 
   test("returns all tokens when limit exceeds length", () => {
     const tokens = ["one", "two"];
-    expect(truncateHeadOnly(tokens, 10)).toBe("one two...");
+    expect(truncateHeadOnly(tokens, 10)).toBe("one two");
   });
 });
 
@@ -156,10 +156,9 @@ describe("truncateHeadTail", () => {
   test("handles limit of 1", () => {
     const tokens = ["a", "b", "c", "d", "e"];
     const result = truncateHeadTail(tokens, 1);
-    // All budget goes to head, tail is empty
-    expect(result).toContain("a");
-    expect(result).toContain("\n...\n");
-    expect(result).not.toContain("e");
+    // All budget goes to head, tail is empty — no separator
+    expect(result).toBe("a");
+    expect(result).not.toContain("\n...\n");
   });
 });
 
@@ -193,6 +192,15 @@ describe("truncateHeading", () => {
     const tokens = splitIntoTokens(content);
     const result = truncateHeading(content, tokens, 1000);
     expect(result).toContain("# Title");
+  });
+
+  test("does not append ellipsis to short paragraphs", () => {
+    const content = "# Title\nShort paragraph.";
+    const tokens = splitIntoTokens(content);
+    const result = truncateHeading(content, tokens, 1000);
+    // "Short paragraph." is < 30 tokens, should not get "..."
+    expect(result).toContain("Short paragraph.");
+    expect(result).not.toMatch(/Short paragraph\.\.\.\./);
   });
 
   test("handles content with no headings", () => {
