@@ -141,7 +141,7 @@ describe("truncateHeadTail", () => {
     // 80% of 10 = 8, 20% of 10 = 2
     expect(result).toContain("t0");
     expect(result).toContain("t7"); // 8th token (0-indexed)
-    expect(result).toContain("\n...\n");
+    expect(result).not.toContain("..."); // no truncation when limit covers all tokens
     expect(result).toContain("t9"); // last token
   });
 
