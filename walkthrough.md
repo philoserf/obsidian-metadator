@@ -1263,8 +1263,9 @@ cat -n tsconfig.json
      8	    "strict": true,
      9	    "skipLibCheck": true
     10	  },
-    11	  "include": ["src/**/*.ts", "build.ts", "version-bump.ts"]
-    12	}
+    11	  "include": ["src/**/*.ts", "build.ts", "version-bump.ts"],
+    12	  "exclude": ["src/**/*.test.ts"]
+    13	}
 ```
 
 ```bash
@@ -1348,4 +1349,3 @@ Eight issues were filed from the guidelines assessment:
 | #69 | LOW | Settings tab validation tests |
 
 No critical issues were found. The codebase is clean, well-structured, and follows Obsidian plugin conventions correctly.
-
