@@ -1,8 +1,4 @@
-# Metadator
-
-## Critical Rules
-
-- **NEVER commit to main without explicit approval** — see global git rules for full workflow
+# CLAUDE.md
 
 ## Project Overview
 
@@ -11,18 +7,17 @@ Metadator is an Obsidian plugin that generates metadata (tags, description, titl
 ## Development Commands
 
 ```bash
-bun install                # Install dependencies
-bun run dev                # Watch mode with auto-rebuild
-bun run build              # Production build (runs check first, minifies)
-bun run check              # TypeScript type-check + Biome lint/format
-bun run typecheck          # TypeScript type checking only
-bun run lint:fix           # Auto-fix linting issues
-bun run format             # Format code with Biome
-bun run format:check       # Check formatting without writing
-bun run validate           # Full validation via scripts/validate-plugin.ts
-bun run version            # Sync manifest.json and versions.json from package.json
-bun run deploy             # Copy main.js + manifest.json to notes vault plugin dir
-bun test                   # Run unit tests
+bun install              # Install dependencies
+bun run dev              # Watch mode with auto-rebuild
+bun run build            # Production build (runs check first)
+bun run check            # Run all checks (typecheck + biome)
+bun run typecheck        # TypeScript type checking only
+bun run lint             # Biome lint + format check
+bun run lint:fix         # Auto-fix lint and format issues
+bun run format           # Format code with Biome
+bun run validate         # Full validation (types, checks, build, output)
+bun run version          # Sync package.json version to manifest.json + versions.json
+bun test                 # Run tests
 ```
 
 ## Architecture
@@ -73,10 +68,6 @@ Tests are colocated with source files in `src/`:
 - Production builds are minified; dev builds are not
 - `main.js` is committed to the repo (required by Obsidian plugin distribution)
 
-## Test Vault
-
-The project root is configured as an Obsidian vault. Sample notes: [Sample Note 1.md](Sample%20Note%201.md), [Sample Note 2.md](Sample%20Note%202.md), [Sample Note 3.md](Sample%20Note%203.md). The plugin is symlinked from `.obsidian/plugins/metadator/`. Changes rebuild in watch mode; reload Obsidian (Cmd+R) to pick them up.
-
 ## Release Process
 
 1. Update `package.json` version
@@ -88,4 +79,4 @@ Pre-release: run `bun run validate`.
 
 ## Code Style
 
-Enforced by Biome (`biome.json`): 2-space indent, organized imports, git-aware VCS integration. Run `bun run format` or `bun run lint:fix` to auto-fix.
+Enforced by Biome: 2-space indent, organized imports, git-aware VCS integration.
