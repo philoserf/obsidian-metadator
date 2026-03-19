@@ -75,6 +75,24 @@ describe("parseMetadataResponse", () => {
     expect(result?.description).toBe("Use ```code``` in markdown");
   });
 
+  test("handles multiple JSON objects in response (greedy regex bug)", () => {
+    const response =
+      'Here\'s an example: {"not": "this"} and here\'s the answer: {"tags": "a,b", "description": "correct"}';
+    expect(parseMetadataResponse(response)).toEqual({
+      tags: "a,b",
+      description: "correct",
+    });
+  });
+
+  test("handles prose with braces before valid JSON", () => {
+    const response =
+      'The format is {key: value}. Here is the result: {"tags": "x", "description": "y"}';
+    expect(parseMetadataResponse(response)).toEqual({
+      tags: "x",
+      description: "y",
+    });
+  });
+
   test("returns null when field types are invalid", () => {
     expect(parseMetadataResponse('{"tags": 42}')).toBeNull();
     expect(parseMetadataResponse('{"description": null}')).toBeNull();
