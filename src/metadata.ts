@@ -58,24 +58,41 @@ function isValidMetadataResponse(obj: unknown): obj is MetadataResponse {
 export function parseMetadataResponse(
   response: string,
 ): MetadataResponse | null {
-  // Try matching JSON directly first to avoid corrupting embedded backticks
-  let jsonMatch = response.match(/{[\s\S]*}/);
-  if (!jsonMatch) {
-    // Extract content from code fence wrapper, then match JSON from that
-    const fenceMatch = response.match(/```(?:json)?\n?([\s\S]*?)```/);
-    if (fenceMatch) {
-      jsonMatch = fenceMatch[1].match(/{[\s\S]*}/);
+  const result = tryParseFromText(response);
+  if (result) return result;
+
+  // Fall back to extracting from code fences
+  const fenceMatch = response.match(/```(?:json)?\n?([\s\S]*?)```/);
+  if (fenceMatch) {
+    return tryParseFromText(fenceMatch[1]);
+  }
+
+  return null;
+}
+
+function tryParseFromText(text: string): MetadataResponse | null {
+  // Collect all valid candidates, prefer the last one (LLMs put the answer last)
+  let best: MetadataResponse | null = null;
+  for (const m of text.matchAll(/{[\s\S]*?}/g)) {
+    try {
+      const parsed: unknown = JSON.parse(m[0]);
+      if (isValidMetadataResponse(parsed)) best = parsed;
+    } catch {
+      // not valid JSON, try next match
     }
   }
-  if (!jsonMatch) {
-    return null;
+  if (best) return best;
+  // Fall back to greedy match in case the valid JSON contains nested braces
+  const greedy = text.match(/{[\s\S]*}/);
+  if (greedy) {
+    try {
+      const parsed: unknown = JSON.parse(greedy[0]);
+      if (isValidMetadataResponse(parsed)) return parsed;
+    } catch {
+      // not valid JSON
+    }
   }
-  try {
-    const parsed: unknown = JSON.parse(jsonMatch[0]);
-    return isValidMetadataResponse(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export function parseTags(tagsString: string): string[] {
