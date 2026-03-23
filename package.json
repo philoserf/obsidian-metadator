@@ -21,7 +21,7 @@
     "deploy": "cp main.js manifest.json ~/source/philoserf/notes/.obsidian/plugins/metadator/"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0"
+    "@anthropic-ai/sdk": "^0.80.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.7",
