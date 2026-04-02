@@ -15,7 +15,6 @@ bun run typecheck        # TypeScript type checking only
 bun run lint             # Biome lint + format check
 bun run lint:fix         # Auto-fix lint and format issues
 bun run format           # Format code with Biome
-bun run validate         # Full validation (types, checks, build, output)
 bun run version          # Sync package.json version to manifest.json + versions.json
 bun test                 # Run tests
 ```
@@ -41,7 +40,6 @@ Tests are colocated with source files in `src/`:
 
 ### Scripts
 
-- **[scripts/validate-plugin.ts](scripts/validate-plugin.ts)** — Full plugin validation (typecheck + lint + build)
 - **[version-bump.ts](version-bump.ts)** — Syncs version from `package.json` into `manifest.json` and `versions.json`
 
 ### Data Flow
@@ -75,7 +73,7 @@ Tests are colocated with source files in `src/`:
 3. Commit and tag: `git commit -m "chore: bump version to X.Y.Z"` then `git tag X.Y.Z`
 4. Push with tags — GitHub Actions creates the release
 
-Pre-release: run `bun run validate`.
+Pre-release: run `bun run check` and `bun run build`.
 
 ## Code Style
 
