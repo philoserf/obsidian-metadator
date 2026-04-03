@@ -229,15 +229,16 @@ async function addMetadataWithClaude(
   // Update tags
   if (metadata.tags) {
     const tags = parseTags(metadata.tags);
+    const tagsMethod = resolveUpdateMethod(
+      force,
+      frontMatter[settings.tagsFieldName],
+    );
+    const method = tagsMethod === "update" ? "append" : "keep";
     try {
-      await updateFrontMatter(
-        file,
-        app,
-        settings.tagsFieldName,
-        tags,
-        "append",
-      );
-      hasChanges = true;
+      await updateFrontMatter(file, app, settings.tagsFieldName, tags, method);
+      if (method === "append") {
+        hasChanges = true;
+      }
     } catch (error) {
       new Notice(
         `Failed to write tags: ${error instanceof Error ? error.message : String(error)}`,
