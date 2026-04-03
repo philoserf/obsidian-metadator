@@ -16,6 +16,11 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     // Anthropic API Settings
     new Setting(containerEl).setName("Anthropic API Settings").setHeading();
 
+    containerEl.createEl("p", {
+      text: "Note: When you run the metadata command, your note content is sent to the Anthropic API for processing. No data is stored by Anthropic beyond the API request.",
+      cls: "setting-item-description",
+    });
+
     new Setting(containerEl)
       .setName("API Key")
       .setDesc(
