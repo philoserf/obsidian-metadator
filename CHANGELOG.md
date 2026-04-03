@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.0.0
+
+### Breaking Changes
+
+- Rename `maxTokens` setting to `contentTokenLimit`
+- Refactor API call signatures (system message + XML delimiters)
+
+### Added
+
+- Privacy notice about content sent to Anthropic API
+- Debug logging toggle for prompt and response inspection
+- Integration tests, callClaude error handling tests, settingsTab validation tests
+
+### Fixed
+
+- Respect `updateMethod` for tags instead of always appending
+- Resolve `truncateHeading` body duplicating outline content
+- Revert `isDesktopOnly` to false
+- Implement actual file watching in build script
+- Include test files in type checking
+- Add types to tsconfig for TypeScript 6 compatibility
+
+### Changed
+
+- Use system message and XML delimiters in API call
+- Extract `writeField` helper from repeated try/catch blocks
+- Simplify API key check and `contentStr` variable
+
+### Internal
+
+- Update CLAUDE.md, document token regex rationale
+- CI workflows, dependency updates
+
 ## 1.2.0
 
 ### Features

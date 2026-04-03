@@ -71,10 +71,11 @@ export interface MetadataToolSettings {
 
   // Feature toggles
   enableTitle: boolean;
+  debugLogging: boolean;
 
   // Content truncation
   truncateContent: boolean;
-  maxTokens: number;
+  contentTokenLimit: number;
   truncateMethod: "head_only" | "head_tail" | "heading";
 
   // Update behavior
@@ -84,7 +85,6 @@ export interface MetadataToolSettings {
   tagsPrompt: string;
   descriptionPrompt: string;
   titlePrompt: string;
-}
 ```
 
 ## Plugin Entry — `src/main.ts`
@@ -120,8 +120,8 @@ export function migrateSettings(
     loaded.anthropicModel = "claude-opus-4-6";
   }
 
-  return loaded;
-}
+  if (
+    loaded.maxTokens !== undefined &&
 ```
 
 ```bash
@@ -129,6 +129,14 @@ sed -n '31,58p' src/main.ts
 ```
 
 ```output
+  ) {
+    loaded.contentTokenLimit = loaded.maxTokens;
+    delete loaded.maxTokens;
+  }
+
+  return loaded;
+}
+
 export default class MetadataToolPlugin extends Plugin {
   settings: MetadataToolSettings = DEFAULT_SETTINGS;
 
@@ -149,14 +157,6 @@ export default class MetadataToolPlugin extends Plugin {
   onunload(): void {}
 
   async loadSettings(): Promise<void> {
-    const loadedSettings = migrateSettings(await this.loadData());
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedSettings);
-  }
-
-  async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
-  }
-}
 ```
 
 ## Metadata Orchestration — `src/metadata.ts`
@@ -172,6 +172,9 @@ sed -n '133,190p' src/metadata.ts
 ```
 
 ```output
+  return isEmptyValue(currentValue) ? "update" : "keep";
+}
+
 export async function generateMetadata(
   app: App,
   settings: MetadataToolSettings,
@@ -187,8 +190,7 @@ export async function generateMetadata(
     return;
   }
 
-  // Check if API key is configured
-  if (!settings.anthropicApiKey || settings.anthropicApiKey === "") {
+  if (!settings.anthropicApiKey) {
     new Notice(
       "Please configure your Anthropic API key in Settings → Metadator",
       8000,
@@ -228,8 +230,6 @@ export async function generateMetadata(
       );
       console.error("generateMetadata error:", error);
     }
-  }
-}
 ```
 
 ### Prompt Building: `buildPrompt()`
@@ -241,12 +241,17 @@ sed -n '11,46p' src/metadata.ts
 ```
 
 ```output
+export interface PromptParts {
+  system: string;
+  userMessage: string;
+}
+
 export function buildPrompt(
   contentStr: string,
   settings: MetadataToolSettings,
-): string {
-  const promptParts = [
-    "I need to generate metadata for the following article. Requirements:",
+): PromptParts {
+  const systemParts = [
+    "Generate metadata for the provided article. Requirements:",
     "",
     `1. Tags: ${settings.tagsPrompt}`,
     "",
@@ -259,24 +264,19 @@ export function buildPrompt(
   ];
 
   if (settings.enableTitle) {
-    promptParts.push("", `3. Title: ${settings.titlePrompt}`);
+    systemParts.push("", `3. Title: ${settings.titlePrompt}`);
     jsonFields.push('"title": "article title"');
   }
 
-  promptParts.push(
+  systemParts.push(
     "",
-    "Please return in the following JSON format:",
+    "Return only the following JSON format:",
     `{`,
     `    ${jsonFields.join(",\n    ")}`,
     `}`,
-    "",
-    "Article content:",
-    "",
-    contentStr,
   );
 
-  return promptParts.join("\n");
-}
+  const userMessage = `<article>\n${contentStr}\n</article>`;
 ```
 
 ### Response Parsing: `parseMetadataResponse()` and `tryParseFromText()`
@@ -294,6 +294,9 @@ sed -n '48,96p' src/metadata.ts
 ```
 
 ```output
+  return { system: systemParts.join("\n"), userMessage };
+}
+
 function isValidMetadataResponse(obj: unknown): obj is MetadataResponse {
   if (typeof obj !== "object" || obj === null) return false;
   const r = obj as Record<string, unknown>;
@@ -340,9 +343,6 @@ function tryParseFromText(text: string): MetadataResponse | null {
     } catch {
       // not valid JSON
     }
-  }
-  return null;
-}
 ```
 
 ### Helper Functions: `parseTags()`, `stripSurroundingQuotes()`, `isEmptyValue()`, `resolveUpdateMethod()`
@@ -354,6 +354,9 @@ sed -n '98,131p' src/metadata.ts
 ```
 
 ```output
+  return null;
+}
+
 export function parseTags(tagsString: string): string[] {
   return tagsString
     .split(",")
@@ -385,9 +388,6 @@ export function resolveUpdateMethod(
   force: boolean,
   currentValue: unknown,
 ): "update" | "keep" {
-  if (force) return "update";
-  return isEmptyValue(currentValue) ? "update" : "keep";
-}
 ```
 
 ### Write-back: `addMetadataWithClaude()`
@@ -399,6 +399,8 @@ sed -n '192,301p' src/metadata.ts
 ```
 
 ```output
+}
+
 async function addMetadataWithClaude(
   file: TFile,
   app: App,
@@ -406,26 +408,32 @@ async function addMetadataWithClaude(
   frontMatter: Record<string, unknown>,
   force: boolean = false,
 ): Promise<boolean> {
-  let contentStr = "";
-  if (settings.truncateContent) {
-    contentStr = await getContent(
-      app,
-      file,
-      settings.maxTokens,
-      settings.truncateMethod,
-    );
-  } else {
-    contentStr = await getContent(app, file, -1, "head_only");
-  }
+  const contentStr = settings.truncateContent
+    ? await getContent(
+        app,
+        file,
+        settings.contentTokenLimit,
+        settings.truncateMethod,
+      )
+    : await getContent(app, file, -1, "head_only");
 
-  const prompt = buildPrompt(contentStr, settings);
+  const { system, userMessage } = buildPrompt(contentStr, settings);
+
+  if (settings.debugLogging) {
+    console.log("[Metadator] System:", system);
+    console.log("[Metadator] User message:", userMessage);
+  }
 
   let response: string;
   try {
-    response = await callClaude(prompt, settings);
+    response = await callClaude(system, userMessage, settings);
   } catch (error) {
     console.error("Error calling Claude:", error);
     return false;
+  }
+
+  if (settings.debugLogging) {
+    console.log("[Metadator] Response:", response);
   }
 
   if (!response) {
@@ -436,23 +444,33 @@ async function addMetadataWithClaude(
 
   let hasChanges = false;
 
+  async function writeField(
+    fieldName: string,
+    value: string | string[],
+    method: "append" | "update" | "keep",
+  ): Promise<boolean> {
+    try {
+      await updateFrontMatter(file, app, fieldName, value, method);
+      return method !== "keep";
+    } catch (error) {
+      new Notice(
+        `Failed to write ${fieldName}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error(`updateFrontMatter error (${fieldName}):`, error);
+      return false;
+    }
+  }
+
   // Update tags
   if (metadata.tags) {
     const tags = parseTags(metadata.tags);
-    try {
-      await updateFrontMatter(
-        file,
-        app,
-        settings.tagsFieldName,
-        tags,
-        "append",
-      );
+    const tagsMethod = resolveUpdateMethod(
+      force,
+      frontMatter[settings.tagsFieldName],
+    );
+    const method = tagsMethod === "update" ? "append" : "keep";
+    if (await writeField(settings.tagsFieldName, tags, method)) {
       hasChanges = true;
-    } catch (error) {
-      new Notice(
-        `Failed to write tags: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      console.error("updateFrontMatter error (tags):", error);
     }
   }
 
@@ -462,22 +480,14 @@ async function addMetadataWithClaude(
       force,
       frontMatter[settings.descriptionFieldName],
     );
-    try {
-      await updateFrontMatter(
-        file,
-        app,
+    if (
+      await writeField(
         settings.descriptionFieldName,
         metadata.description,
         method,
-      );
-      if (method === "update") {
-        hasChanges = true;
-      }
-    } catch (error) {
-      new Notice(
-        `Failed to write description: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      console.error("updateFrontMatter error (description):", error);
+      )
+    ) {
+      hasChanges = true;
     }
   }
 
@@ -488,22 +498,8 @@ async function addMetadataWithClaude(
       force,
       frontMatter[settings.titleFieldName],
     );
-    try {
-      await updateFrontMatter(
-        file,
-        app,
-        settings.titleFieldName,
-        title,
-        method,
-      );
-      if (method === "update") {
-        hasChanges = true;
-      }
-    } catch (error) {
-      new Notice(
-        `Failed to write title: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      console.error("updateFrontMatter error (title):", error);
+    if (await writeField(settings.titleFieldName, title, method)) {
+      hasChanges = true;
     }
   }
 
@@ -523,7 +519,8 @@ sed -n '5,58p' src/utils.ts
 
 ```output
 export async function callClaude(
-  prompt: string,
+  system: string,
+  userMessage: string,
   settings: MetadataToolSettings,
 ): Promise<string> {
   const notice = new Notice("Generating metadata...", 0);
@@ -538,7 +535,8 @@ export async function callClaude(
     const message = await anthropic.messages.create({
       model: settings.anthropicModel,
       max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
+      system,
+      messages: [{ role: "user", content: userMessage }],
     });
 
     notice.hide();
@@ -574,8 +572,6 @@ export async function callClaude(
 
     console.error("Claude API error:", error);
     throw error;
-  }
-}
 ```
 
 ### Tokenization: `splitIntoTokens()` and `joinTokens()`
@@ -587,7 +583,13 @@ sed -n '60,81p' src/utils.ts
 ```
 
 ```output
+}
+
 export function splitIntoTokens(str: string): string[] {
+  // CJK ideographs → one token each (they carry meaning per character)
+  // Latin words/numbers → one token per word (whitespace-delimited)
+  // Punctuation (ASCII + CJK) → individual tokens (preserves structure)
+  // Newlines → tokens (headings and paragraphs depend on line breaks)
   const regex = /[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g;
   const tokens = str.match(regex);
   return tokens || [];
@@ -603,12 +605,6 @@ export function joinTokens(tokens: string[]): string {
       result += token;
     } else {
       const prevToken = i > 0 ? tokens[i - 1] : undefined;
-      const needsSpace = i > 0 && prevToken !== "\n";
-      result += (needsSpace ? " " : "") + token;
-    }
-  }
-  return result.trim();
-}
 ```
 
 ### Truncation Strategies
@@ -626,6 +622,12 @@ sed -n '83,141p' src/utils.ts
 ```
 
 ```output
+      result += (needsSpace ? " " : "") + token;
+    }
+  }
+  return result.trim();
+}
+
 export function truncateHeadOnly(tokens: string[], limit: number): string {
   const truncated = tokens.slice(0, limit);
   const suffix = truncated.length < tokens.length ? "..." : "";
@@ -674,17 +676,11 @@ export function truncateHeading(
     result = joinTokens(totalTokens.slice(0, limit));
   } else {
     const remainingTokens = limit - totalTokens.length;
-    const headTokens = tokens.slice(0, remainingTokens);
+    const headTokens = tokens.slice(
+      totalTokens.length,
+      totalTokens.length + remainingTokens,
+    );
     if (headTokens.length > 0) {
-      const suffix = headTokens.length < tokens.length ? "..." : "";
-      const head = `${joinTokens(headTokens)}${suffix}`;
-      result = `Outline: \n${result}\n\nBody: ${head}`;
-    } else {
-      result = `Outline: \n${result}`;
-    }
-  }
-  return result;
-}
 ```
 
 ### Content Extraction: `getContent()`
@@ -696,6 +692,15 @@ sed -n '143,172p' src/utils.ts
 ```
 
 ```output
+      const head = `${joinTokens(headTokens)}${suffix}`;
+      result = `Outline: \n${result}\n\nBody: ${head}`;
+    } else {
+      result = `Outline: \n${result}`;
+    }
+  }
+  return result;
+}
+
 export async function getContent(
   app: App,
   file: TFile,
@@ -717,15 +722,6 @@ export async function getContent(
   if (tokens.length > limit) {
     if (method === "head_tail") {
       contentStr = truncateHeadTail(tokens, limit);
-    } else if (method === "head_only") {
-      contentStr = truncateHeadOnly(tokens, limit);
-    } else if (method === "heading") {
-      contentStr = truncateHeading(contentStr, tokens, limit);
-    }
-  }
-
-  return contentStr;
-}
 ```
 
 ### Frontmatter Updates: `updateFrontMatter()`
@@ -741,6 +737,15 @@ sed -n '174,198p' src/utils.ts
 ```
 
 ```output
+      contentStr = truncateHeadOnly(tokens, limit);
+    } else if (method === "heading") {
+      contentStr = truncateHeading(contentStr, tokens, limit);
+    }
+  }
+
+  return contentStr;
+}
+
 export async function updateFrontMatter(
   file: TFile,
   app: App,
@@ -757,15 +762,6 @@ export async function updateFrontMatter(
           : existing != null
             ? [String(existing)]
             : [];
-        frontmatter[key] = Array.from(new Set(base.concat(value)));
-      }
-    } else if (method === "update") {
-      frontmatter[key] = value;
-    } else if (frontmatter[key] === undefined) {
-      frontmatter[key] = value;
-    }
-  });
-}
 ```
 
 ## Settings UI — `src/settingsTab.ts`
@@ -783,6 +779,11 @@ sed -n '12,48p' src/settingsTab.ts
 
     // Anthropic API Settings
     new Setting(containerEl).setName("Anthropic API Settings").setHeading();
+
+    containerEl.createEl("p", {
+      text: "Note: When you run the metadata command, your note content is sent to the Anthropic API for processing. No data is stored by Anthropic beyond the API request.",
+      cls: "setting-item-description",
+    });
 
     new Setting(containerEl)
       .setName("API Key")
@@ -809,11 +810,6 @@ sed -n '12,48p' src/settingsTab.ts
           .addOption("claude-opus-4-6", "Claude Opus 4.6")
           .addOption("claude-haiku-4-5-20251001", "Claude Haiku 4.5")
           .setValue(this.plugin.settings.anthropicModel)
-          .onChange(async (value) => {
-            this.plugin.settings.anthropicModel = value;
-            await this.plugin.saveSettings();
-          }),
-      );
 ```
 
 ## Build System — `build.ts`
@@ -825,25 +821,25 @@ sed -n '1,19p' build.ts
 ```
 
 ```output
-const watch = process.argv.includes("--watch");
+import { watch } from "node:fs";
+import { resolve } from "node:path";
 
-const result = await Bun.build({
-  entrypoints: ["src/main.ts"],
-  outdir: ".",
-  format: "cjs",
-  external: ["obsidian", "electron"],
-  minify: !watch,
-});
+const isWatch = process.argv.includes("--watch");
 
-if (!result.success) {
-  console.error("Build failed");
-  for (const message of result.logs) console.error(message);
-  process.exit(1);
-}
+async function build() {
+  const result = await Bun.build({
+    entrypoints: ["src/main.ts"],
+    outdir: ".",
+    format: "cjs",
+    external: ["obsidian", "electron"],
+    minify: !isWatch,
+  });
 
-if (watch) console.log("Watching for changes...");
-
-export {};
+  if (!result.success) {
+    console.error("Build failed");
+    for (const message of result.logs) console.error(message);
+    if (!isWatch) process.exit(1);
+    return;
 ```
 
 ## Tests
@@ -855,9 +851,9 @@ grep -c 'test\|it(' src/main.test.ts src/metadata.test.ts src/utils.test.ts
 ```
 
 ```output
-src/main.test.ts:13
-src/metadata.test.ts:53
-src/utils.test.ts:40
+src/main.test.ts:15
+src/metadata.test.ts:54
+src/utils.test.ts:41
 ```
 
 ```bash
@@ -869,7 +865,9 @@ import { mock } from "bun:test";
 
 mock.module("obsidian", () => ({
   Plugin: class Plugin {},
-  Notice: class Notice {},
+  Notice: class Notice {
+    hide() {}
+  },
   PluginSettingTab: class PluginSettingTab {},
   Setting: class Setting {},
 }));
@@ -884,34 +882,7 @@ sed -n '6,33p' scripts/validate-plugin.ts
 ```
 
 ```output
-const manifest = JSON.parse(readFileSync("manifest.json", "utf-8"));
-console.log(`🔍 Validating ${manifest.name || "plugin"}...\n`);
-
-let errors = 0;
-
-// Check manifest.json
-if (!manifest.id || !manifest.name || !manifest.version) {
-  console.error("✗ manifest.json missing required fields");
-  errors++;
-} else {
-  console.log(`✓ manifest.json — ${manifest.name} v${manifest.version}`);
-}
-
-// Check package.json version matches manifest
-try {
-  const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
-  if (pkg.version !== manifest.version) {
-    console.error(
-      `✗ Version mismatch: package.json (${pkg.version}) != manifest.json (${manifest.version})`,
-    );
-    errors++;
-  } else {
-    console.log("✓ Version numbers match");
-  }
-} catch (error) {
-  console.error("✗ Version check failed:", error);
-  errors++;
-}
+sed: scripts/validate-plugin.ts: No such file or directory
 ```
 
 ## Version Bump — `version-bump.ts`
@@ -958,4 +929,3 @@ console.log(`Updated to version ${targetVersion}`);
 - **Token counting is approximate.** The regex-based tokenizer doesn't align with LLM tokenization (BPE). Actual API token usage may differ significantly from the configured `maxTokens`.
 - **No retry logic.** Transient API errors (rate limits, 500s) surface immediately as failures. A simple backoff-retry for `RateLimitError` and `InternalServerError` would improve reliability.
 - **`dangerouslyAllowBrowser: true`** is documented as safe in Electron but will trigger warnings if the code is ever used outside Obsidian's context.
-
