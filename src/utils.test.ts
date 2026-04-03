@@ -235,7 +235,7 @@ describe("truncateHeading", () => {
     // Body should not start with the same tokens as the outline
     const bodyMatch = result.match(/Body:\s*(.*)/s);
     expect(bodyMatch).not.toBeNull();
-    const bodyText = bodyMatch![1];
+    const bodyText = bodyMatch?.[1] ?? "";
     // The outline includes "# Title" so body should not start with "#"
     expect(bodyText.trimStart().startsWith("#")).toBe(false);
   });

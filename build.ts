@@ -1,5 +1,5 @@
-import { watch } from "fs";
-import { resolve } from "path";
+import { watch } from "node:fs";
+import { resolve } from "node:path";
 
 const isWatch = process.argv.includes("--watch");
 
@@ -36,5 +36,3 @@ if (isWatch) {
     }, 100);
   });
 }
-
-export {};

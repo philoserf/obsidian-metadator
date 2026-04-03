@@ -1,35 +1,33 @@
 import { describe, expect, mock, test } from "bun:test";
 import { DEFAULT_SETTINGS } from "./settings";
 
-// Mock the Anthropic SDK before importing callClaude
+// Mock error classes matching the Anthropic SDK shape
+class MockAuthenticationError extends Error {
+  name = "AuthenticationError";
+}
+class MockRateLimitError extends Error {
+  name = "RateLimitError";
+}
+class MockInternalServerError extends Error {
+  name = "InternalServerError";
+}
+class MockAPIError extends Error {
+  name = "APIError";
+}
+
 const mockCreate = mock();
 
 mock.module("@anthropic-ai/sdk", () => {
-  class AuthenticationError extends Error {
-    name = "AuthenticationError";
-  }
-  class RateLimitError extends Error {
-    name = "RateLimitError";
-  }
-  class InternalServerError extends Error {
-    name = "InternalServerError";
-  }
-  class APIError extends Error {
-    name = "APIError";
-  }
-
   class Anthropic {
     messages = { create: mockCreate };
-    static AuthenticationError = AuthenticationError;
-    static RateLimitError = RateLimitError;
-    static InternalServerError = InternalServerError;
-    static APIError = APIError;
+    static AuthenticationError = MockAuthenticationError;
+    static RateLimitError = MockRateLimitError;
+    static InternalServerError = MockInternalServerError;
+    static APIError = MockAPIError;
   }
-
   return { default: Anthropic };
 });
 
-// Import after mocking
 const { callClaude } = await import("./utils");
 
 const settings = {
@@ -58,35 +56,25 @@ describe("callClaude", () => {
   });
 
   test("throws on authentication error", async () => {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    mockCreate.mockRejectedValueOnce(
-      new Anthropic.AuthenticationError("bad key"),
-    );
+    mockCreate.mockRejectedValueOnce(new MockAuthenticationError("bad key"));
 
     expect(callClaude("system", "user", settings)).rejects.toThrow();
   });
 
   test("throws on rate limit error", async () => {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    mockCreate.mockRejectedValueOnce(
-      new Anthropic.RateLimitError("rate limited"),
-    );
+    mockCreate.mockRejectedValueOnce(new MockRateLimitError("rate limited"));
 
     expect(callClaude("system", "user", settings)).rejects.toThrow();
   });
 
   test("throws on internal server error", async () => {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    mockCreate.mockRejectedValueOnce(
-      new Anthropic.InternalServerError("overloaded"),
-    );
+    mockCreate.mockRejectedValueOnce(new MockInternalServerError("overloaded"));
 
     expect(callClaude("system", "user", settings)).rejects.toThrow();
   });
 
   test("throws on generic API error", async () => {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    mockCreate.mockRejectedValueOnce(new Anthropic.APIError("something else"));
+    mockCreate.mockRejectedValueOnce(new MockAPIError("something else"));
 
     expect(callClaude("system", "user", settings)).rejects.toThrow();
   });
