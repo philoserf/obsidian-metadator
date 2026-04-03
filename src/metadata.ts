@@ -217,6 +217,23 @@ async function addMetadataWithClaude(
 
   let hasChanges = false;
 
+  async function writeField(
+    fieldName: string,
+    value: string | string[],
+    method: "append" | "update" | "keep",
+  ): Promise<boolean> {
+    try {
+      await updateFrontMatter(file, app, fieldName, value, method);
+      return method !== "keep";
+    } catch (error) {
+      new Notice(
+        `Failed to write ${fieldName}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error(`updateFrontMatter error (${fieldName}):`, error);
+      return false;
+    }
+  }
+
   // Update tags
   if (metadata.tags) {
     const tags = parseTags(metadata.tags);
@@ -225,16 +242,8 @@ async function addMetadataWithClaude(
       frontMatter[settings.tagsFieldName],
     );
     const method = tagsMethod === "update" ? "append" : "keep";
-    try {
-      await updateFrontMatter(file, app, settings.tagsFieldName, tags, method);
-      if (method === "append") {
-        hasChanges = true;
-      }
-    } catch (error) {
-      new Notice(
-        `Failed to write tags: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      console.error("updateFrontMatter error (tags):", error);
+    if (await writeField(settings.tagsFieldName, tags, method)) {
+      hasChanges = true;
     }
   }
 
@@ -244,22 +253,14 @@ async function addMetadataWithClaude(
       force,
       frontMatter[settings.descriptionFieldName],
     );
-    try {
-      await updateFrontMatter(
-        file,
-        app,
+    if (
+      await writeField(
         settings.descriptionFieldName,
         metadata.description,
         method,
-      );
-      if (method === "update") {
-        hasChanges = true;
-      }
-    } catch (error) {
-      new Notice(
-        `Failed to write description: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      console.error("updateFrontMatter error (description):", error);
+      )
+    ) {
+      hasChanges = true;
     }
   }
 
@@ -270,22 +271,8 @@ async function addMetadataWithClaude(
       force,
       frontMatter[settings.titleFieldName],
     );
-    try {
-      await updateFrontMatter(
-        file,
-        app,
-        settings.titleFieldName,
-        title,
-        method,
-      );
-      if (method === "update") {
-        hasChanges = true;
-      }
-    } catch (error) {
-      new Notice(
-        `Failed to write title: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      console.error("updateFrontMatter error (title):", error);
+    if (await writeField(settings.titleFieldName, title, method)) {
+      hasChanges = true;
     }
   }
 
