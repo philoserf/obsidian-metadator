@@ -47,6 +47,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl)
+      .setName("Debug Logging")
+      .setDesc(
+        "Log prompts and responses to the developer console (View → Toggle Developer Tools)",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.debugLogging)
+          .onChange(async (value) => {
+            this.plugin.settings.debugLogging = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
     // Update Settings
     new Setting(containerEl).setName("Update Settings").setHeading();
 
