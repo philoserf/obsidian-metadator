@@ -3,7 +3,8 @@ import { type App, Notice, type TFile } from "obsidian";
 import type { MetadataToolSettings } from "./settings";
 
 export async function callClaude(
-  prompt: string,
+  system: string,
+  userMessage: string,
   settings: MetadataToolSettings,
 ): Promise<string> {
   const notice = new Notice("Generating metadata...", 0);
@@ -18,7 +19,8 @@ export async function callClaude(
     const message = await anthropic.messages.create({
       model: settings.anthropicModel,
       max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
+      system,
+      messages: [{ role: "user", content: userMessage }],
     });
 
     notice.hide();

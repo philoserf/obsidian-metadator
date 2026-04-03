@@ -227,38 +227,45 @@ describe("isEmptyValue", () => {
 describe("buildPrompt", () => {
   const baseSettings = { ...DEFAULT_SETTINGS };
 
-  test("includes tags and description prompts", () => {
-    const prompt = buildPrompt("my content", baseSettings);
-    expect(prompt).toContain("1. Tags:");
-    expect(prompt).toContain(baseSettings.tagsPrompt);
-    expect(prompt).toContain("2. Description:");
-    expect(prompt).toContain(baseSettings.descriptionPrompt);
+  test("returns system and userMessage parts", () => {
+    const result = buildPrompt("my content", baseSettings);
+    expect(result).toHaveProperty("system");
+    expect(result).toHaveProperty("userMessage");
+  });
+
+  test("includes tags and description prompts in system", () => {
+    const { system } = buildPrompt("my content", baseSettings);
+    expect(system).toContain("1. Tags:");
+    expect(system).toContain(baseSettings.tagsPrompt);
+    expect(system).toContain("2. Description:");
+    expect(system).toContain(baseSettings.descriptionPrompt);
   });
 
   test("excludes title when disabled", () => {
     const settings = { ...baseSettings, enableTitle: false };
-    const prompt = buildPrompt("my content", settings);
-    expect(prompt).not.toContain("3. Title:");
-    expect(prompt).not.toContain('"title"');
+    const { system } = buildPrompt("my content", settings);
+    expect(system).not.toContain("3. Title:");
+    expect(system).not.toContain('"title"');
   });
 
   test("includes title when enabled", () => {
     const settings = { ...baseSettings, enableTitle: true };
-    const prompt = buildPrompt("my content", settings);
-    expect(prompt).toContain("3. Title:");
-    expect(prompt).toContain(settings.titlePrompt);
-    expect(prompt).toContain('"title"');
+    const { system } = buildPrompt("my content", settings);
+    expect(system).toContain("3. Title:");
+    expect(system).toContain(settings.titlePrompt);
+    expect(system).toContain('"title"');
   });
 
-  test("includes content in prompt", () => {
-    const prompt = buildPrompt("the article text", baseSettings);
-    expect(prompt).toContain("the article text");
-    expect(prompt).toContain("Article content:");
+  test("wraps content in XML article tags", () => {
+    const { userMessage } = buildPrompt("the article text", baseSettings);
+    expect(userMessage).toContain("<article>");
+    expect(userMessage).toContain("the article text");
+    expect(userMessage).toContain("</article>");
   });
 
-  test("includes JSON template", () => {
-    const prompt = buildPrompt("content", baseSettings);
-    expect(prompt).toContain('"tags": "tag1,tag2,tag3"');
-    expect(prompt).toContain('"description": "brief summary"');
+  test("includes JSON template in system", () => {
+    const { system } = buildPrompt("content", baseSettings);
+    expect(system).toContain('"tags": "tag1,tag2,tag3"');
+    expect(system).toContain('"description": "brief summary"');
   });
 });

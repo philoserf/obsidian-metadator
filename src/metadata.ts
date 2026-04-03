@@ -8,12 +8,17 @@ export interface MetadataResponse {
   title?: string;
 }
 
+export interface PromptParts {
+  system: string;
+  userMessage: string;
+}
+
 export function buildPrompt(
   contentStr: string,
   settings: MetadataToolSettings,
-): string {
-  const promptParts = [
-    "I need to generate metadata for the following article. Requirements:",
+): PromptParts {
+  const systemParts = [
+    "Generate metadata for the provided article. Requirements:",
     "",
     `1. Tags: ${settings.tagsPrompt}`,
     "",
@@ -26,23 +31,21 @@ export function buildPrompt(
   ];
 
   if (settings.enableTitle) {
-    promptParts.push("", `3. Title: ${settings.titlePrompt}`);
+    systemParts.push("", `3. Title: ${settings.titlePrompt}`);
     jsonFields.push('"title": "article title"');
   }
 
-  promptParts.push(
+  systemParts.push(
     "",
-    "Please return in the following JSON format:",
+    "Return only the following JSON format:",
     `{`,
     `    ${jsonFields.join(",\n    ")}`,
     `}`,
-    "",
-    "Article content:",
-    "",
-    contentStr,
   );
 
-  return promptParts.join("\n");
+  const userMessage = `<article>\n${contentStr}\n</article>`;
+
+  return { system: systemParts.join("\n"), userMessage };
 }
 
 function isValidMetadataResponse(obj: unknown): obj is MetadataResponse {
@@ -204,15 +207,16 @@ async function addMetadataWithClaude(
       )
     : await getContent(app, file, -1, "head_only");
 
-  const prompt = buildPrompt(contentStr, settings);
+  const { system, userMessage } = buildPrompt(contentStr, settings);
 
   if (settings.debugLogging) {
-    console.log("[Metadator] Prompt:", prompt);
+    console.log("[Metadator] System:", system);
+    console.log("[Metadator] User message:", userMessage);
   }
 
   let response: string;
   try {
-    response = await callClaude(prompt, settings);
+    response = await callClaude(system, userMessage, settings);
   } catch (error) {
     console.error("Error calling Claude:", error);
     return false;
