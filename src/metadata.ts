@@ -145,8 +145,7 @@ export async function generateMetadata(
     return;
   }
 
-  // Check if API key is configured
-  if (!settings.anthropicApiKey || settings.anthropicApiKey === "") {
+  if (!settings.anthropicApiKey) {
     new Notice(
       "Please configure your Anthropic API key in Settings → Metadator",
       8000,
@@ -196,17 +195,9 @@ async function addMetadataWithClaude(
   frontMatter: Record<string, unknown>,
   force: boolean = false,
 ): Promise<boolean> {
-  let contentStr = "";
-  if (settings.truncateContent) {
-    contentStr = await getContent(
-      app,
-      file,
-      settings.maxTokens,
-      settings.truncateMethod,
-    );
-  } else {
-    contentStr = await getContent(app, file, -1, "head_only");
-  }
+  const contentStr = settings.truncateContent
+    ? await getContent(app, file, settings.maxTokens, settings.truncateMethod)
+    : await getContent(app, file, -1, "head_only");
 
   const prompt = buildPrompt(contentStr, settings);
 
