@@ -62,10 +62,24 @@ describe("migrateSettings", () => {
     const result = migrateSettings({
       anthropicApiKey: "sk-test",
       tagsFieldName: "tags",
-      maxTokens: 500,
+      contentTokenLimit: 500,
     });
     expect(result?.anthropicApiKey).toBe("sk-test");
     expect(result?.tagsFieldName).toBe("tags");
-    expect(result?.maxTokens).toBe(500);
+    expect(result?.contentTokenLimit).toBe(500);
+  });
+
+  test("migrates maxTokens to contentTokenLimit", () => {
+    const result = migrateSettings({ maxTokens: 500 });
+    expect(result?.contentTokenLimit).toBe(500);
+    expect(result?.maxTokens).toBeUndefined();
+  });
+
+  test("does not overwrite existing contentTokenLimit with maxTokens", () => {
+    const result = migrateSettings({
+      maxTokens: 500,
+      contentTokenLimit: 2000,
+    });
+    expect(result?.contentTokenLimit).toBe(2000);
   });
 });
