@@ -132,7 +132,10 @@ export function truncateHeading(
     result = joinTokens(totalTokens.slice(0, limit));
   } else {
     const remainingTokens = limit - totalTokens.length;
-    const headTokens = tokens.slice(0, remainingTokens);
+    const headTokens = tokens.slice(
+      totalTokens.length,
+      totalTokens.length + remainingTokens,
+    );
     if (headTokens.length > 0) {
       const suffix = headTokens.length < tokens.length ? "..." : "";
       const head = `${joinTokens(headTokens)}${suffix}`;

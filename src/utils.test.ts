@@ -226,6 +226,19 @@ describe("truncateHeading", () => {
     // No headings → empty outline, all budget goes to body
     expect(result).toContain("Body:");
   });
+
+  test("body does not duplicate outline content", () => {
+    const content =
+      "# Title\nFirst paragraph.\n\n## Section\nSecond paragraph.\n\nExtra content beyond the outline.";
+    const tokens = splitIntoTokens(content);
+    const result = truncateHeading(content, tokens, 50);
+    // Body should not start with the same tokens as the outline
+    const bodyMatch = result.match(/Body:\s*(.*)/s);
+    expect(bodyMatch).not.toBeNull();
+    const bodyText = bodyMatch![1];
+    // The outline includes "# Title" so body should not start with "#"
+    expect(bodyText.trimStart().startsWith("#")).toBe(false);
+  });
 });
 
 describe("updateFrontMatter", () => {
