@@ -58,6 +58,10 @@ export async function callClaude(
 }
 
 export function splitIntoTokens(str: string): string[] {
+  // CJK ideographs → one token each (they carry meaning per character)
+  // Latin words/numbers → one token per word (whitespace-delimited)
+  // Punctuation (ASCII + CJK) → individual tokens (preserves structure)
+  // Newlines → tokens (headings and paragraphs depend on line breaks)
   const regex = /[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g;
   const tokens = str.match(regex);
   return tokens || [];
