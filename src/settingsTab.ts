@@ -77,25 +77,25 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.truncateContent = value;
             await this.plugin.saveSettings();
-            maxTokensSetting.setDisabled(!value);
+            contentTokenLimitSetting.setDisabled(!value);
             truncateMethodSetting.setDisabled(!value);
           }),
       );
 
-    const maxTokensSetting = new Setting(containerEl)
-      .setName("Max Tokens")
-      .setDesc("Maximum content length in tokens")
+    const contentTokenLimitSetting = new Setting(containerEl)
+      .setName("Content Token Limit")
+      .setDesc("Maximum number of tokens of note content sent to the API")
       .addText((text) =>
         text
-          .setValue(this.plugin.settings.maxTokens.toString())
+          .setValue(this.plugin.settings.contentTokenLimit.toString())
           .onChange(async (value) => {
             const parsed = Number.parseInt(value, 10);
             if (Number.isNaN(parsed) || parsed < 1) {
-              new Notice("Max tokens must be a positive integer");
-              text.setValue(this.plugin.settings.maxTokens.toString());
+              new Notice("Content token limit must be a positive integer");
+              text.setValue(this.plugin.settings.contentTokenLimit.toString());
               return;
             }
-            this.plugin.settings.maxTokens = parsed;
+            this.plugin.settings.contentTokenLimit = parsed;
             await this.plugin.saveSettings();
           }),
       );
@@ -118,7 +118,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           }),
       );
 
-    maxTokensSetting.setDisabled(!this.plugin.settings.truncateContent);
+    contentTokenLimitSetting.setDisabled(!this.plugin.settings.truncateContent);
     truncateMethodSetting.setDisabled(!this.plugin.settings.truncateContent);
 
     // Tags Settings

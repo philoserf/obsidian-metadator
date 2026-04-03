@@ -196,7 +196,12 @@ async function addMetadataWithClaude(
   force: boolean = false,
 ): Promise<boolean> {
   const contentStr = settings.truncateContent
-    ? await getContent(app, file, settings.maxTokens, settings.truncateMethod)
+    ? await getContent(
+        app,
+        file,
+        settings.contentTokenLimit,
+        settings.truncateMethod,
+      )
     : await getContent(app, file, -1, "head_only");
 
   const prompt = buildPrompt(contentStr, settings);

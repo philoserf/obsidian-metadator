@@ -25,6 +25,14 @@ export function migrateSettings(
     loaded.anthropicModel = "claude-opus-4-6";
   }
 
+  if (
+    loaded.maxTokens !== undefined &&
+    loaded.contentTokenLimit === undefined
+  ) {
+    loaded.contentTokenLimit = loaded.maxTokens;
+    delete loaded.maxTokens;
+  }
+
   return loaded;
 }
 

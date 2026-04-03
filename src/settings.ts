@@ -12,7 +12,7 @@ export interface MetadataToolSettings {
 
   // Content truncation
   truncateContent: boolean;
-  maxTokens: number;
+  contentTokenLimit: number;
   truncateMethod: "head_only" | "head_tail" | "heading";
 
   // Update behavior
@@ -35,7 +35,7 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   enableTitle: true,
 
   truncateContent: true,
-  maxTokens: 1000,
+  contentTokenLimit: 1000,
   truncateMethod: "head_only",
 
   updateMethod: "preserve_existing",
