@@ -25,7 +25,7 @@ bun test                 # Run tests
 
 - **[src/main.ts](src/main.ts)** — Plugin entry point. Registers the `generate-metadata` command, loads/saves settings, migrates legacy `updateMethod` values.
 - **[src/metadata.ts](src/metadata.ts)** — Orchestrates metadata generation. Checks whether fields need updating, builds the prompt dynamically (omitting title when disabled), calls Claude, parses JSON from the response with regex (`/{[\s\S]*}/`), and writes tags/description/title to frontmatter.
-- **[src/settings.ts](src/settings.ts)** — `MetadataToolSettings` interface and `DEFAULT_SETTINGS`. Field names: `anthropicApiKey`, `anthropicModel`, `tagsFieldName`, `descriptionFieldName`, `titleFieldName`, `enableTitle`, `truncateContent`, `maxTokens`, `truncateMethod`, `updateMethod`, plus per-field prompt strings.
+- **[src/settings.ts](src/settings.ts)** — `MetadataToolSettings` interface and `DEFAULT_SETTINGS`. Field names: `anthropicApiKey`, `anthropicModel`, `tagsFieldName`, `descriptionFieldName`, `titleFieldName`, `enableTitle`, `debugLogging`, `truncateContent`, `contentTokenLimit`, `truncateMethod`, `updateMethod`, plus per-field prompt strings.
 - **[src/settingsTab.ts](src/settingsTab.ts)** — Settings UI (`PluginSettingTab`). Password-masked API key, model dropdown, toggles, and text inputs for field names and prompts.
 - **[src/utils.ts](src/utils.ts)** — `callClaude()` (Anthropic SDK call with `dangerouslyAllowBrowser: true`), `getContent()` (content extraction and truncation), `updateFrontMatter()` (async writes via `app.fileManager.processFrontMatter()`).
 
@@ -33,9 +33,12 @@ bun test                 # Run tests
 
 Tests are colocated with source files in `src/`:
 
-- **[src/main.test.ts](src/main.test.ts)** — Plugin lifecycle tests
+- **[src/main.test.ts](src/main.test.ts)** — Plugin lifecycle and settings migration tests
 - **[src/metadata.test.ts](src/metadata.test.ts)** — Metadata generation and parsing tests
 - **[src/utils.test.ts](src/utils.test.ts)** — Utility function tests (truncation, Claude calls, frontmatter)
+- **[src/callClaude.test.ts](src/callClaude.test.ts)** — Claude API call error handling tests
+- **[src/settingsTab.test.ts](src/settingsTab.test.ts)** — Settings validation logic tests
+- **[src/generateMetadata.test.ts](src/generateMetadata.test.ts)** — Integration tests for full metadata generation flow
 - **[src/test-preload.ts](src/test-preload.ts)** — Test mocks for Obsidian API
 
 ### Scripts
@@ -57,7 +60,8 @@ Tests are colocated with source files in `src/`:
 - **Token counting** uses a regex that handles CJK characters, words, and punctuation: `/[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g`
 - **Truncation methods**: `head_only` (first N tokens), `head_tail` (80% start + 20% end), `heading` (outline + first paragraph per section)
 - **Anthropic client** is initialized with `dangerouslyAllowBrowser: true` since it runs inside Obsidian's Electron renderer
-- **Tags are appended** (deduped); description and title use update/keep logic based on `updateMethod`
+- **Tags, description, and title** all respect `updateMethod` — preserve_existing keeps populated fields, always_regenerate updates all
+- **API calls** use a system message for instructions and wrap article content in `<article>` XML tags in the user message
 
 ## Build System
 
