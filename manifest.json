@@ -6,5 +6,5 @@
   "description": "Automatically generate metadata for your notes using AI",
   "author": "Mark Ayers",
   "authorUrl": "https://github.com/philoserf",
-  "isDesktopOnly": false
+  "isDesktopOnly": true
 }
