@@ -9,6 +9,7 @@ export interface MetadataToolSettings {
 
   // Feature toggles
   enableTitle: boolean;
+  debugLogging: boolean;
 
   // Content truncation
   truncateContent: boolean;
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   titleFieldName: "title",
 
   enableTitle: true,
+  debugLogging: false,
 
   truncateContent: true,
   contentTokenLimit: 1000,

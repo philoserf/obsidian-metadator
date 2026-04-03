@@ -206,12 +206,20 @@ async function addMetadataWithClaude(
 
   const prompt = buildPrompt(contentStr, settings);
 
+  if (settings.debugLogging) {
+    console.log("[Metadator] Prompt:", prompt);
+  }
+
   let response: string;
   try {
     response = await callClaude(prompt, settings);
   } catch (error) {
     console.error("Error calling Claude:", error);
     return false;
+  }
+
+  if (settings.debugLogging) {
+    console.log("[Metadator] Response:", response);
   }
 
   if (!response) {
