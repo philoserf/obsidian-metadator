@@ -17,7 +17,7 @@
     "format:check": "biome format .",
     "version": "bun run version-bump.ts",
     "test": "bun test",
-    "deploy": "cp main.js manifest.json \"$OBSIDIAN_METADATOR_DEST\""
+    "deploy": "bun run deploy.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0"
