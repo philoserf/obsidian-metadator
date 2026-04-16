@@ -1,6 +1,6 @@
 {
   "name": "metadator",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Automatically generate metadata for Obsidian notes using AI",
   "main": "main.js",
   "author": "Mark Ayers",

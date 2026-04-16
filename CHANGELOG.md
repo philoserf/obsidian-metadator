@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.1
+
+### Changed
+
+- Extract `MAX_RESPONSE_TOKENS` constant; move Anthropic error-notice mapping out of `callClaude` and into the orchestration layer
+- Normalize `(app, file, ...)` parameter order across `updateFrontMatter` and `addMetadataWithClaude`
+- Collapse duplicated tags/description/title update blocks into a single apply loop
+- Replace hardcoded deploy path with `$OBSIDIAN_METADATOR_DEST` env var
+
+### Removed
+
+- Pre-2.0 settings migrations (`force`, `update_all`, `no-llm`, `empty_only`, `maxTokens`); sonnet/opus model renames retained
+- `claude-code-review` workflow
+
+### Added
+
+- `THEORY.md`
+
+### Internal
+
+- Dependency updates: `@anthropic-ai/sdk` 0.82.0 → 0.89.0, `@biomejs/biome` → 2.4.12, `@types/bun` → 1.3.12, `@types/node` → 25.6.0
+
 ## 2.0.0
 
 ### Breaking Changes
