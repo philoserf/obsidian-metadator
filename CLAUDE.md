@@ -20,7 +20,11 @@ bun test                 # Run tests
 bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_METADATOR_DEST
 ```
 
-The `deploy` script requires `OBSIDIAN_METADATOR_DEST` to be set to the target plugin directory (e.g., `~/your-vault/.obsidian/plugins/metadator/`).
+The `deploy` script reads `OBSIDIAN_METADATOR_DEST` from `.env.local` (gitignored). Set it to the target plugin directory, e.g.:
+
+```text
+OBSIDIAN_METADATOR_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
+```
 
 ## Architecture
 
