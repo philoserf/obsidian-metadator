@@ -1,62 +1,34 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { type App, Notice, type TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import type { MetadataToolSettings } from "./settings";
+
+// Output budget for the model's JSON response (tags + description + title).
+// Distinct from settings.contentTokenLimit, which bounds the input note content.
+const MAX_RESPONSE_TOKENS = 2048;
 
 export async function callClaude(
   system: string,
   userMessage: string,
   settings: MetadataToolSettings,
 ): Promise<string> {
-  const notice = new Notice("Generating metadata...", 0);
-
   // Safe in Obsidian's Electron renderer — no browser security concerns apply
   const anthropic = new Anthropic({
     apiKey: settings.anthropicApiKey,
     dangerouslyAllowBrowser: true,
   });
 
-  try {
-    const message = await anthropic.messages.create({
-      model: settings.anthropicModel,
-      max_tokens: 2048,
-      system,
-      messages: [{ role: "user", content: userMessage }],
-    });
+  const message = await anthropic.messages.create({
+    model: settings.anthropicModel,
+    max_tokens: MAX_RESPONSE_TOKENS,
+    system,
+    messages: [{ role: "user", content: userMessage }],
+  });
 
-    notice.hide();
-
-    if (message.content.length > 0 && message.content[0].type === "text") {
-      return message.content[0].text;
-    }
-
-    throw new Error("No text content in response");
-  } catch (error) {
-    notice.hide();
-
-    if (error instanceof Anthropic.AuthenticationError) {
-      new Notice(
-        "Authentication failed. Please check your API key in Settings → Metadator",
-        8000,
-      );
-    } else if (error instanceof Anthropic.RateLimitError) {
-      new Notice(
-        "Rate limit exceeded. Please wait a moment and try again.",
-        8000,
-      );
-    } else if (error instanceof Anthropic.InternalServerError) {
-      new Notice(
-        "API is currently overloaded. Please try again in a moment.",
-        8000,
-      );
-    } else if (error instanceof Anthropic.APIError) {
-      new Notice(`API error: ${error.message}`, 8000);
-    } else {
-      new Notice("An unknown API error occurred", 8000);
-    }
-
-    console.error("Claude API error:", error);
-    throw error;
+  if (message.content.length > 0 && message.content[0].type === "text") {
+    return message.content[0].text;
   }
+
+  throw new Error("No text content in response");
 }
 
 export function splitIntoTokens(str: string): string[] {
@@ -181,8 +153,8 @@ export async function getContent(
 }
 
 export async function updateFrontMatter(
-  file: TFile,
   app: App,
+  file: TFile,
   key: string,
   value: string | boolean | string[],
   method: "append" | "update" | "keep",

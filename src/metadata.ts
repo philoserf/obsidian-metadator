@@ -1,6 +1,33 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { type App, Notice, type TFile } from "obsidian";
 import type { MetadataToolSettings } from "./settings";
 import { callClaude, getContent, updateFrontMatter } from "./utils";
+
+function notifyApiError(error: unknown): void {
+  if (error instanceof Anthropic.AuthenticationError) {
+    new Notice(
+      "Authentication failed. Please check your API key in Settings → Metadator",
+      8000,
+    );
+  } else if (error instanceof Anthropic.RateLimitError) {
+    new Notice(
+      "Rate limit exceeded. Please wait a moment and try again.",
+      8000,
+    );
+  } else if (error instanceof Anthropic.InternalServerError) {
+    new Notice(
+      "API is currently overloaded. Please try again in a moment.",
+      8000,
+    );
+  } else if (error instanceof Anthropic.APIError) {
+    new Notice(`API error: ${error.message}`, 8000);
+  } else {
+    new Notice(
+      `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+      8000,
+    );
+  }
+}
 
 export interface MetadataResponse {
   tags?: string;
@@ -172,8 +199,8 @@ export async function generateMetadata(
   if (needsMetadata) {
     try {
       const hasChanges = await addMetadataWithClaude(
-        file,
         app,
+        file,
         settings,
         frontMatter,
         updateAll,
@@ -182,18 +209,15 @@ export async function generateMetadata(
         new Notice("Metadata updated successfully");
       }
     } catch (error) {
-      new Notice(
-        `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
-        8000,
-      );
+      notifyApiError(error);
       console.error("generateMetadata error:", error);
     }
   }
 }
 
 async function addMetadataWithClaude(
-  file: TFile,
   app: App,
+  file: TFile,
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
   force: boolean = false,
@@ -214,12 +238,12 @@ async function addMetadataWithClaude(
     console.log("[Metadator] User message:", userMessage);
   }
 
+  const notice = new Notice("Generating metadata...", 0);
   let response: string;
   try {
     response = await callClaude(system, userMessage, settings);
-  } catch (error) {
-    console.error("Error calling Claude:", error);
-    return false;
+  } finally {
+    notice.hide();
   }
 
   if (settings.debugLogging) {
@@ -240,7 +264,7 @@ async function addMetadataWithClaude(
     method: "append" | "update" | "keep",
   ): Promise<boolean> {
     try {
-      await updateFrontMatter(file, app, fieldName, value, method);
+      await updateFrontMatter(app, file, fieldName, value, method);
       return method !== "keep";
     } catch (error) {
       new Notice(
@@ -251,44 +275,39 @@ async function addMetadataWithClaude(
     }
   }
 
-  // Update tags
+  type FieldUpdate = {
+    fieldName: string;
+    value: string | string[];
+    updateMethod: "append" | "update";
+  };
+  const updates: FieldUpdate[] = [];
+
   if (metadata.tags) {
-    const tags = parseTags(metadata.tags);
-    const tagsMethod = resolveUpdateMethod(
-      force,
-      frontMatter[settings.tagsFieldName],
-    );
-    const method = tagsMethod === "update" ? "append" : "keep";
-    if (await writeField(settings.tagsFieldName, tags, method)) {
-      hasChanges = true;
-    }
+    updates.push({
+      fieldName: settings.tagsFieldName,
+      value: parseTags(metadata.tags),
+      updateMethod: "append",
+    });
   }
-
-  // Update description
   if (metadata.description) {
-    const method = resolveUpdateMethod(
-      force,
-      frontMatter[settings.descriptionFieldName],
-    );
-    if (
-      await writeField(
-        settings.descriptionFieldName,
-        metadata.description,
-        method,
-      )
-    ) {
-      hasChanges = true;
-    }
+    updates.push({
+      fieldName: settings.descriptionFieldName,
+      value: metadata.description,
+      updateMethod: "update",
+    });
+  }
+  if (settings.enableTitle && metadata.title) {
+    updates.push({
+      fieldName: settings.titleFieldName,
+      value: stripSurroundingQuotes(metadata.title),
+      updateMethod: "update",
+    });
   }
 
-  // Update title
-  if (settings.enableTitle && metadata.title) {
-    const title = stripSurroundingQuotes(metadata.title);
-    const method = resolveUpdateMethod(
-      force,
-      frontMatter[settings.titleFieldName],
-    );
-    if (await writeField(settings.titleFieldName, title, method)) {
+  for (const u of updates) {
+    const resolved = resolveUpdateMethod(force, frontMatter[u.fieldName]);
+    const method = resolved === "update" ? u.updateMethod : "keep";
+    if (await writeField(u.fieldName, u.value, method)) {
       hasChanges = true;
     }
   }
