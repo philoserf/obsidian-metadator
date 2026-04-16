@@ -17,7 +17,10 @@ bun run lint:fix         # Auto-fix lint and format issues
 bun run format           # Format code with Biome
 bun run version          # Sync package.json version to manifest.json + versions.json
 bun test                 # Run tests
+bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_METADATOR_DEST
 ```
+
+The `deploy` script requires `OBSIDIAN_METADATOR_DEST` to be set to the target plugin directory (e.g., `~/your-vault/.obsidian/plugins/metadator/`).
 
 ## Architecture
 
