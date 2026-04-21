@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.2
+
+### Fixed
+
+- `updateFrontMatter` silently ignoring `append` when value was not an array; narrowed types so the combination is unrepresentable (#103)
+- `truncateHeading` body section using a meaningless offset into the token stream, causing body to duplicate or skip source content; now tracks the consumed source position explicitly and omits the body when it renders empty (#102)
+- `hasChanges` false-positive when every tag returned by Claude was already present; `updateFrontMatter` now returns whether the frontmatter was actually mutated and the success notice fires only on real changes (#100)
+
+### Internal
+
+- `@anthropic-ai/sdk` 0.89.0 → 0.90.0
+- `softprops/action-gh-release` v2 → v3
+
 ## 2.0.1
 
 ### Changed
