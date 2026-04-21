@@ -253,6 +253,16 @@ describe("truncateHeading", () => {
     expect(wordOccurrences).toBe(1);
   });
 
+  test("omits body when remaining tokens render as empty after joinTokens", () => {
+    // Trailing blank lines leave \n tokens past the last consumed line.
+    // bodyTokens.length > 0 is insufficient because joinTokens trims whitespace
+    // to an empty string. Body section must be omitted in that case.
+    const content = "# H\nword\n\n";
+    const tokens = splitIntoTokens(content);
+    const result = truncateHeading(content, tokens, 10);
+    expect(result).not.toContain("Body:");
+  });
+
   test("body captures content after a truncated first paragraph", () => {
     // 31-word paragraph triggers the "..." suffix (3 extra tokens in outline).
     // Buggy offset overshoots the original stream and skips FINALWORD; fix

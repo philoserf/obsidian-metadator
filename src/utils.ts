@@ -119,10 +119,10 @@ export function truncateHeading(
 
   const remainingTokens = limit - outlineTokens.length;
   const bodyTokens = tokens.slice(bodyStart, bodyStart + remainingTokens);
-  if (bodyTokens.length > 0) {
+  const bodyText = joinTokens(bodyTokens);
+  if (bodyText !== "") {
     const suffix = bodyStart + remainingTokens < tokens.length ? "..." : "";
-    const body = `${joinTokens(bodyTokens)}${suffix}`;
-    return `Outline: \n${result}\n\nBody: ${body}`;
+    return `Outline: \n${result}\n\nBody: ${bodyText}${suffix}`;
   }
   return `Outline: \n${result}`;
 }
