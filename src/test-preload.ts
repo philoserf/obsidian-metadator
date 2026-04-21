@@ -7,4 +7,25 @@ mock.module("obsidian", () => ({
   },
   PluginSettingTab: class PluginSettingTab {},
   Setting: class Setting {},
+  Modal: class Modal {
+    app: unknown;
+    contentEl = {
+      empty() {},
+      createEl() {
+        return {};
+      },
+      createDiv() {
+        return {};
+      },
+    };
+    constructor(app: unknown) {
+      this.app = app;
+    }
+    open() {}
+    close() {}
+    onOpen() {}
+    onClose() {}
+  },
+  TFolder: class TFolder {},
+  TFile: class TFile {},
 }));

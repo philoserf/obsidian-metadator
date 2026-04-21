@@ -1,4 +1,5 @@
-import { Plugin } from "obsidian";
+import { Plugin, TFolder } from "obsidian";
+import { runBulkForFolder } from "./bulkOrchestrator";
 import { generateMetadata } from "./metadata";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 import { MetadataToolSettingTab } from "./settingsTab";
@@ -32,6 +33,22 @@ export default class MetadataToolPlugin extends Plugin {
         await generateMetadata(this.app, this.settings);
       },
     });
+
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, fileOrFolder) => {
+        if (!(fileOrFolder instanceof TFolder)) return;
+        menu.addItem((item) =>
+          item
+            .setTitle("Generate metadata (recursive)")
+            .setIcon("tags")
+            .onClick(async () => {
+              await runBulkForFolder(this.app, fileOrFolder, {
+                ...this.settings,
+              });
+            }),
+        );
+      }),
+    );
 
     this.addSettingTab(new MetadataToolSettingTab(this.app, this));
   }
