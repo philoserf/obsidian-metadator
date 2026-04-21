@@ -591,7 +591,7 @@ truncates to fit the budget and labels the two sections (`Outline:`
 and `Body:`) so the model can tell them apart.
 
 ```bash
-sed -n '81,122p' src/utils.ts
+sed -n '81,128p' src/utils.ts
 ```
 
 ```output
@@ -637,19 +637,19 @@ export function truncateHeading(
   const remainingTokens = limit - outlineTokens.length;
   const bodyTokens = tokens.slice(bodyStart, bodyStart + remainingTokens);
   const bodyText = joinTokens(bodyTokens);
-```
-
-```bash
-sed -n '124,153p' src/utils.ts
-```
-
-```output
+  if (bodyText !== "") {
     const suffix = bodyStart + remainingTokens < tokens.length ? "..." : "";
     return `Outline: \n${result}\n\nBody: ${bodyText}${suffix}`;
   }
   return `Outline: \n${result}`;
 }
+```
 
+```bash
+sed -n '130,159p' src/utils.ts
+```
+
+```output
 export async function getContent(
   app: App,
   file: TFile,
@@ -674,6 +674,12 @@ export async function getContent(
     } else if (method === "head_only") {
       contentStr = truncateHeadOnly(tokens, limit);
     } else if (method === "heading") {
+      contentStr = truncateHeading(contentStr, tokens, limit);
+    }
+  }
+
+  return contentStr;
+}
 ```
 
 `getContent` orchestrates the three strategies. A non-positive
@@ -692,17 +698,18 @@ and integrates with the metadata cache. Three methods are supported:
 - `append` — for array fields: normalize current value to an array,
   concatenate, and deduplicate
 
+The function is overloaded so the type system rejects misuse: `"append"`
+requires a `string[]`, `"update"` accepts `string | boolean` only, and
+`"keep"` tolerates the full shape since it writes only when the field is
+absent. Every call returns a boolean indicating whether the frontmatter
+was actually mutated — so the caller knows a no-op append (all tags
+already present) from a real one.
+
 ```bash
-sed -n '155,179p' src/utils.ts
+sed -n '161,214p' src/utils.ts
 ```
 
 ```output
-    }
-  }
-
-  return contentStr;
-}
-
 export function updateFrontMatter(
   app: App,
   file: TFile,
@@ -722,6 +729,41 @@ export function updateFrontMatter(
   file: TFile,
   key: string,
   value: string | boolean | string[],
+  method: "keep",
+): Promise<boolean>;
+export async function updateFrontMatter(
+  app: App,
+  file: TFile,
+  key: string,
+  value: string | boolean | string[],
+  method: "append" | "update" | "keep",
+): Promise<boolean> {
+  let changed = false;
+  await app.fileManager.processFrontMatter(file, (frontmatter) => {
+    if (method === "append") {
+      const values = value as string[];
+      const existing = frontmatter[key];
+      const base = Array.isArray(existing)
+        ? existing
+        : existing != null
+          ? [String(existing)]
+          : [];
+      const merged = Array.from(new Set(base.concat(values)));
+      changed =
+        !Array.isArray(existing) ||
+        base.length !== merged.length ||
+        base.some((item, i) => item !== merged[i]);
+      frontmatter[key] = merged;
+    } else if (method === "update") {
+      if (frontmatter[key] !== value) changed = true;
+      frontmatter[key] = value;
+    } else if (frontmatter[key] === undefined) {
+      frontmatter[key] = value;
+      changed = true;
+    }
+  });
+  return changed;
+}
 ```
 
 ## 13. Update Orchestration (`addMetadataWithClaude`)
