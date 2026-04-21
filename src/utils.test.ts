@@ -332,6 +332,79 @@ describe("updateFrontMatter", () => {
     await updateFrontMatter(app, {} as TFile, "tags", ["a", "b"], "append");
     expect(fm.tags).toEqual(["a", "b"]);
   });
+
+  test("append: returns false when all values already present", async () => {
+    const { app, fm } = makeApp({ tags: ["a", "b", "c"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["a", "b"],
+      "append",
+    );
+    expect(changed).toBe(false);
+    expect(fm.tags).toEqual(["a", "b", "c"]);
+  });
+
+  test("append: returns true when new values added", async () => {
+    const { app } = makeApp({ tags: ["a"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["b"],
+      "append",
+    );
+    expect(changed).toBe(true);
+  });
+
+  test("update: returns false when value is unchanged", async () => {
+    const { app } = makeApp({ description: "same" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "same",
+      "update",
+    );
+    expect(changed).toBe(false);
+  });
+
+  test("update: returns true when value differs", async () => {
+    const { app } = makeApp({ description: "old" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "new",
+      "update",
+    );
+    expect(changed).toBe(true);
+  });
+
+  test("keep: returns false when field already exists", async () => {
+    const { app } = makeApp({ description: "existing" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "new value",
+      "keep",
+    );
+    expect(changed).toBe(false);
+  });
+
+  test("keep: returns true when field is absent", async () => {
+    const { app } = makeApp({});
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "new value",
+      "keep",
+    );
+    expect(changed).toBe(true);
+  });
 });
 
 describe("getContent", () => {

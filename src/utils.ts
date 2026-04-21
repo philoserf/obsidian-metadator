@@ -164,21 +164,22 @@ export function updateFrontMatter(
   key: string,
   value: string[],
   method: "append",
-): Promise<void>;
+): Promise<boolean>;
 export function updateFrontMatter(
   app: App,
   file: TFile,
   key: string,
   value: string | boolean | string[],
   method: "update" | "keep",
-): Promise<void>;
+): Promise<boolean>;
 export async function updateFrontMatter(
   app: App,
   file: TFile,
   key: string,
   value: string | boolean | string[],
   method: "append" | "update" | "keep",
-): Promise<void> {
+): Promise<boolean> {
+  let changed = false;
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
     if (method === "append") {
       const values = value as string[];
@@ -188,11 +189,18 @@ export async function updateFrontMatter(
         : existing != null
           ? [String(existing)]
           : [];
-      frontmatter[key] = Array.from(new Set(base.concat(values)));
+      const merged = Array.from(new Set(base.concat(values)));
+      if (!Array.isArray(existing) || existing.length !== merged.length) {
+        changed = true;
+      }
+      frontmatter[key] = merged;
     } else if (method === "update") {
+      if (frontmatter[key] !== value) changed = true;
       frontmatter[key] = value;
     } else if (frontmatter[key] === undefined) {
       frontmatter[key] = value;
+      changed = true;
     }
   });
+  return changed;
 }
