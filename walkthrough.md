@@ -22,7 +22,7 @@ cat manifest.json
 {
   "id": "metadator",
   "name": "Metadator",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "minAppVersion": "1.4.0",
   "description": "Automatically generate metadata for your notes using AI",
   "author": "Mark Ayers",
@@ -600,43 +600,43 @@ export function truncateHeading(
   tokens: string[],
   limit: number,
 ): string {
-  let lines = contentStr.split("\n");
-  lines = lines.filter((line) => line.trim() !== "");
-
+  const rawLines = contentStr.split("\n");
   const newLines: string[] = [];
   let captureNextParagraph = false;
-  for (const line of lines) {
+  let tokenCursor = 0;
+  // Exclusive index into `tokens` just past the last line the outline consumed.
+  // Used as the body start so body never overlaps or misaligns with the
+  // reconstructed outline's own token count.
+  let bodyStart = 0;
+
+  for (const line of rawLines) {
+    const lineTokens = splitIntoTokens(line);
+    const nextCursor = tokenCursor + lineTokens.length + 1;
+
     if (line.startsWith("#")) {
       newLines.push(line);
       captureNextParagraph = true;
+      bodyStart = nextCursor;
     } else if (captureNextParagraph && line.trim() !== "") {
-      const lineTokens = splitIntoTokens(line);
       const truncated = lineTokens.slice(0, 30);
       const suffix = truncated.length < lineTokens.length ? "..." : "";
       newLines.push(`${joinTokens(truncated)}${suffix}`);
       captureNextParagraph = false;
+      bodyStart = nextCursor;
     }
+
+    tokenCursor = nextCursor;
   }
-  let result = newLines.join("\n");
-  const totalTokens = splitIntoTokens(result);
-  if (totalTokens.length > limit) {
-    result = joinTokens(totalTokens.slice(0, limit));
-  } else {
-    const remainingTokens = limit - totalTokens.length;
-    const headTokens = tokens.slice(
-      totalTokens.length,
-      totalTokens.length + remainingTokens,
-    );
-    if (headTokens.length > 0) {
-      const suffix = headTokens.length < tokens.length ? "..." : "";
-      const head = `${joinTokens(headTokens)}${suffix}`;
-      result = `Outline: \n${result}\n\nBody: ${head}`;
-    } else {
-      result = `Outline: \n${result}`;
-    }
+
+  const result = newLines.join("\n");
+  const outlineTokens = splitIntoTokens(result);
+  if (outlineTokens.length > limit) {
+    return joinTokens(outlineTokens.slice(0, limit));
   }
-  return result;
-}
+
+  const remainingTokens = limit - outlineTokens.length;
+  const bodyTokens = tokens.slice(bodyStart, bodyStart + remainingTokens);
+  const bodyText = joinTokens(bodyTokens);
 ```
 
 ```bash
@@ -644,6 +644,12 @@ sed -n '124,153p' src/utils.ts
 ```
 
 ```output
+    const suffix = bodyStart + remainingTokens < tokens.length ? "..." : "";
+    return `Outline: \n${result}\n\nBody: ${bodyText}${suffix}`;
+  }
+  return `Outline: \n${result}`;
+}
+
 export async function getContent(
   app: App,
   file: TFile,
@@ -668,12 +674,6 @@ export async function getContent(
     } else if (method === "head_only") {
       contentStr = truncateHeadOnly(tokens, limit);
     } else if (method === "heading") {
-      contentStr = truncateHeading(contentStr, tokens, limit);
-    }
-  }
-
-  return contentStr;
-}
 ```
 
 `getContent` orchestrates the three strategies. A non-positive
@@ -697,31 +697,31 @@ sed -n '155,179p' src/utils.ts
 ```
 
 ```output
-export async function updateFrontMatter(
+    }
+  }
+
+  return contentStr;
+}
+
+export function updateFrontMatter(
+  app: App,
+  file: TFile,
+  key: string,
+  value: string[],
+  method: "append",
+): Promise<boolean>;
+export function updateFrontMatter(
+  app: App,
+  file: TFile,
+  key: string,
+  value: string | boolean,
+  method: "update",
+): Promise<boolean>;
+export function updateFrontMatter(
   app: App,
   file: TFile,
   key: string,
   value: string | boolean | string[],
-  method: "append" | "update" | "keep",
-): Promise<void> {
-  await app.fileManager.processFrontMatter(file, (frontmatter) => {
-    if (method === "append") {
-      if (Array.isArray(value)) {
-        const existing = frontmatter[key];
-        const base = Array.isArray(existing)
-          ? existing
-          : existing != null
-            ? [String(existing)]
-            : [];
-        frontmatter[key] = Array.from(new Set(base.concat(value)));
-      }
-    } else if (method === "update") {
-      frontmatter[key] = value;
-    } else if (frontmatter[key] === undefined) {
-      frontmatter[key] = value;
-    }
-  });
-}
 ```
 
 ## 13. Update Orchestration (`addMetadataWithClaude`)
@@ -792,11 +792,20 @@ sed -n '278,315p' src/metadata.ts
 ```
 
 ```output
-  type FieldUpdate = {
-    fieldName: string;
-    value: string | string[];
-    updateMethod: "append" | "update";
-  };
+          u.value,
+          "append",
+        );
+      }
+      return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
+    } catch (error) {
+      new Notice(
+        `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error(`updateFrontMatter error (${u.fieldName}):`, error);
+      return false;
+    }
+  }
+
   const updates: FieldUpdate[] = [];
 
   if (metadata.tags) {
@@ -821,15 +830,6 @@ sed -n '278,315p' src/metadata.ts
     });
   }
 
-  for (const u of updates) {
-    const resolved = resolveUpdateMethod(force, frontMatter[u.fieldName]);
-    const method = resolved === "update" ? u.updateMethod : "keep";
-    if (await writeField(u.fieldName, u.value, method)) {
-      hasChanges = true;
-    }
-  }
-
-  return hasChanges;
 ```
 
 `writeField` is a local helper inside `addMetadataWithClaude` that
@@ -884,7 +884,7 @@ src/generateMetadata.test.ts:7
 src/main.test.ts:5
 src/metadata.test.ts:47
 src/settingsTab.test.ts:7
-src/utils.test.ts:39
+src/utils.test.ts:49
 ```
 
 The suites split into pure-function unit tests (parsing,
@@ -934,4 +934,3 @@ will get a much smaller slice than the budget implies.
 plugin distribution convention** — worth flagging to readers
 surprised by build artifacts in git. Release builds are produced by
 the `release.yml` workflow on tag push.
-
