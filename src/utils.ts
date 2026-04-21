@@ -169,8 +169,15 @@ export function updateFrontMatter(
   app: App,
   file: TFile,
   key: string,
+  value: string | boolean,
+  method: "update",
+): Promise<boolean>;
+export function updateFrontMatter(
+  app: App,
+  file: TFile,
+  key: string,
   value: string | boolean | string[],
-  method: "update" | "keep",
+  method: "keep",
 ): Promise<boolean>;
 export async function updateFrontMatter(
   app: App,
@@ -190,9 +197,10 @@ export async function updateFrontMatter(
           ? [String(existing)]
           : [];
       const merged = Array.from(new Set(base.concat(values)));
-      if (!Array.isArray(existing) || existing.length !== merged.length) {
-        changed = true;
-      }
+      changed =
+        !Array.isArray(existing) ||
+        base.length !== merged.length ||
+        base.some((item, i) => item !== merged[i]);
       frontmatter[key] = merged;
     } else if (method === "update") {
       if (frontmatter[key] !== value) changed = true;

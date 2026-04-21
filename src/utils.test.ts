@@ -358,6 +358,21 @@ describe("updateFrontMatter", () => {
     expect(changed).toBe(true);
   });
 
+  test("append: returns true when dedup swaps an element while preserving length", async () => {
+    // existing has a duplicate 'a'; appending 'c' dedupes to ['a','b','c'].
+    // Length is unchanged (3) but contents differ — a real mutation.
+    const { app, fm } = makeApp({ tags: ["a", "a", "b"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["c"],
+      "append",
+    );
+    expect(changed).toBe(true);
+    expect(fm.tags).toEqual(["a", "b", "c"]);
+  });
+
   test("update: returns false when value is unchanged", async () => {
     const { app } = makeApp({ description: "same" });
     const changed = await updateFrontMatter(
