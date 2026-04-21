@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 ## Project Overview
 
 Metadator is an Obsidian plugin that generates metadata (tags, description, title) for notes using the Anthropic Claude API. The user runs a command, the plugin sends note content to Claude, parses the JSON response, and writes the results into the note's YAML frontmatter.
@@ -17,6 +19,8 @@ bun run lint:fix         # Auto-fix lint and format issues
 bun run format           # Format code with Biome
 bun run version          # Sync package.json version to manifest.json + versions.json
 bun test                 # Run tests
+bun test src/metadata.test.ts            # Run a single test file
+bun test --test-name-pattern "parses"    # Filter tests by name
 bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_METADATOR_DEST
 ```
 
@@ -81,8 +85,9 @@ Tests are colocated with source files in `src/`:
 
 1. Update `package.json` version
 2. Run `bun run version` to sync manifest.json and versions.json
-3. Commit and tag: `git commit -m "chore: bump version to X.Y.Z"` then `git tag X.Y.Z`
-4. Push with tags — GitHub Actions creates the release
+3. Run `bun run build` and commit the rebuilt `main.js` — Obsidian distributes the committed bundle
+4. Open PR and merge to `main` before tagging (tags must point at the merged commit)
+5. Tag `X.Y.Z` on the merged commit and push tags — GitHub Actions creates the release
 
 Pre-release: run `bun run check` and `bun run build`.
 
