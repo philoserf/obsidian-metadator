@@ -160,6 +160,71 @@ export function resolveUpdateMethod(
   return isEmptyValue(currentValue) ? "update" : "keep";
 }
 
+export function shouldGenerate(
+  frontMatter: Record<string, unknown>,
+  settings: MetadataToolSettings,
+): boolean {
+  if (settings.updateMethod === "always_regenerate") return true;
+  return (
+    isEmptyValue(frontMatter[settings.tagsFieldName]) ||
+    isEmptyValue(frontMatter[settings.descriptionFieldName]) ||
+    (settings.enableTitle && isEmptyValue(frontMatter[settings.titleFieldName]))
+  );
+}
+
+export type FileResult =
+  | { kind: "changed"; file: TFile }
+  | { kind: "skipped"; file: TFile; reason: string }
+  | { kind: "error"; file: TFile; reason: string; error: unknown };
+
+export interface GenerateOptions {
+  isBulk?: boolean;
+}
+
+export async function generateMetadataForFile(
+  app: App,
+  file: TFile,
+  settings: MetadataToolSettings,
+  opts: GenerateOptions = {},
+): Promise<FileResult> {
+  if (file.extension !== "md") {
+    return { kind: "skipped", file, reason: "not a markdown file" };
+  }
+
+  if (!settings.anthropicApiKey) {
+    return { kind: "skipped", file, reason: "missing API key" };
+  }
+
+  const fm = app.metadataCache.getFileCache(file);
+  const frontMatter = fm?.frontmatter || {};
+
+  if (!shouldGenerate(frontMatter, settings)) {
+    return { kind: "skipped", file, reason: "all fields already populated" };
+  }
+
+  try {
+    const updateAll = settings.updateMethod === "always_regenerate";
+    const hasChanges = await addMetadataWithClaude(
+      app,
+      file,
+      settings,
+      frontMatter,
+      updateAll,
+      opts.isBulk ?? false,
+    );
+    return hasChanges
+      ? { kind: "changed", file }
+      : { kind: "skipped", file, reason: "no changes" };
+  } catch (error) {
+    return {
+      kind: "error",
+      file,
+      reason: error instanceof Error ? error.message : String(error),
+      error,
+    };
+  }
+}
+
 export async function generateMetadata(
   app: App,
   settings: MetadataToolSettings,
@@ -183,35 +248,12 @@ export async function generateMetadata(
     return;
   }
 
-  const fm = app.metadataCache.getFileCache(file);
-  const frontMatter = fm?.frontmatter || {};
-
-  const updateAll = settings.updateMethod === "always_regenerate";
-
-  // Check if we need to call Claude for metadata
-  const needsMetadata =
-    isEmptyValue(frontMatter[settings.tagsFieldName]) ||
-    isEmptyValue(frontMatter[settings.descriptionFieldName]) ||
-    (settings.enableTitle &&
-      isEmptyValue(frontMatter[settings.titleFieldName])) ||
-    updateAll;
-
-  if (needsMetadata) {
-    try {
-      const hasChanges = await addMetadataWithClaude(
-        app,
-        file,
-        settings,
-        frontMatter,
-        updateAll,
-      );
-      if (hasChanges) {
-        new Notice("Metadata updated successfully");
-      }
-    } catch (error) {
-      notifyApiError(error);
-      console.error("generateMetadata error:", error);
-    }
+  const result = await generateMetadataForFile(app, file, settings);
+  if (result.kind === "changed") {
+    new Notice("Metadata updated successfully");
+  } else if (result.kind === "error") {
+    notifyApiError(result.error);
+    console.error("generateMetadata error:", result.error);
   }
 }
 
@@ -221,6 +263,7 @@ async function addMetadataWithClaude(
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
   force: boolean = false,
+  isBulk: boolean = false,
 ): Promise<boolean> {
   const contentStr = settings.truncateContent
     ? await getContent(
@@ -233,21 +276,27 @@ async function addMetadataWithClaude(
 
   const { system, userMessage } = buildPrompt(contentStr, settings);
 
-  if (settings.debugLogging) {
+  if (settings.debugLogging && !isBulk) {
     console.log("[Metadator] System:", system);
     console.log("[Metadator] User message:", userMessage);
   }
 
-  const notice = new Notice("Generating metadata...", 0);
+  const notice = isBulk ? undefined : new Notice("Generating metadata...", 0);
   let response: string;
   try {
     response = await callClaude(system, userMessage, settings);
   } finally {
-    notice.hide();
+    notice?.hide();
   }
 
   if (settings.debugLogging) {
-    console.log("[Metadator] Response:", response);
+    if (isBulk) {
+      console.log(
+        `[Metadator] [bulk] ${file.path} — response ${response.length} chars`,
+      );
+    } else {
+      console.log("[Metadator] Response:", response);
+    }
   }
 
   if (!response) {
@@ -281,9 +330,11 @@ async function addMetadataWithClaude(
       }
       return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
     } catch (error) {
-      new Notice(
-        `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      if (!isBulk) {
+        new Notice(
+          `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       console.error(`updateFrontMatter error (${u.fieldName}):`, error);
       return false;
     }
