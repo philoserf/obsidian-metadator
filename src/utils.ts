@@ -152,6 +152,20 @@ export async function getContent(
   return contentStr;
 }
 
+export function updateFrontMatter(
+  app: App,
+  file: TFile,
+  key: string,
+  value: string[],
+  method: "append",
+): Promise<void>;
+export function updateFrontMatter(
+  app: App,
+  file: TFile,
+  key: string,
+  value: string | boolean | string[],
+  method: "update" | "keep",
+): Promise<void>;
 export async function updateFrontMatter(
   app: App,
   file: TFile,
@@ -161,15 +175,14 @@ export async function updateFrontMatter(
 ): Promise<void> {
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
     if (method === "append") {
-      if (Array.isArray(value)) {
-        const existing = frontmatter[key];
-        const base = Array.isArray(existing)
-          ? existing
-          : existing != null
-            ? [String(existing)]
-            : [];
-        frontmatter[key] = Array.from(new Set(base.concat(value)));
-      }
+      const values = value as string[];
+      const existing = frontmatter[key];
+      const base = Array.isArray(existing)
+        ? existing
+        : existing != null
+          ? [String(existing)]
+          : [];
+      frontmatter[key] = Array.from(new Set(base.concat(values)));
     } else if (method === "update") {
       frontmatter[key] = value;
     } else if (frontmatter[key] === undefined) {
