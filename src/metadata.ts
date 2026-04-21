@@ -268,15 +268,18 @@ async function addMetadataWithClaude(
   ): Promise<boolean> {
     try {
       if (resolved === "keep") {
-        await updateFrontMatter(app, file, u.fieldName, u.value, "keep");
-        return false;
+        return await updateFrontMatter(app, file, u.fieldName, u.value, "keep");
       }
       if (u.updateMethod === "append") {
-        await updateFrontMatter(app, file, u.fieldName, u.value, "append");
-      } else {
-        await updateFrontMatter(app, file, u.fieldName, u.value, "update");
+        return await updateFrontMatter(
+          app,
+          file,
+          u.fieldName,
+          u.value,
+          "append",
+        );
       }
-      return true;
+      return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
     } catch (error) {
       new Notice(
         `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
