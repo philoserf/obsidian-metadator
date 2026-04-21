@@ -83,42 +83,48 @@ export function truncateHeading(
   tokens: string[],
   limit: number,
 ): string {
-  let lines = contentStr.split("\n");
-  lines = lines.filter((line) => line.trim() !== "");
-
+  const rawLines = contentStr.split("\n");
   const newLines: string[] = [];
   let captureNextParagraph = false;
-  for (const line of lines) {
+  let tokenCursor = 0;
+  // Exclusive index into `tokens` just past the last line the outline consumed.
+  // Used as the body start so body never overlaps or misaligns with the
+  // reconstructed outline's own token count.
+  let bodyStart = 0;
+
+  for (const line of rawLines) {
+    const lineTokens = splitIntoTokens(line);
+    const nextCursor = tokenCursor + lineTokens.length + 1;
+
     if (line.startsWith("#")) {
       newLines.push(line);
       captureNextParagraph = true;
+      bodyStart = nextCursor;
     } else if (captureNextParagraph && line.trim() !== "") {
-      const lineTokens = splitIntoTokens(line);
       const truncated = lineTokens.slice(0, 30);
       const suffix = truncated.length < lineTokens.length ? "..." : "";
       newLines.push(`${joinTokens(truncated)}${suffix}`);
       captureNextParagraph = false;
+      bodyStart = nextCursor;
     }
+
+    tokenCursor = nextCursor;
   }
-  let result = newLines.join("\n");
-  const totalTokens = splitIntoTokens(result);
-  if (totalTokens.length > limit) {
-    result = joinTokens(totalTokens.slice(0, limit));
-  } else {
-    const remainingTokens = limit - totalTokens.length;
-    const headTokens = tokens.slice(
-      totalTokens.length,
-      totalTokens.length + remainingTokens,
-    );
-    if (headTokens.length > 0) {
-      const suffix = headTokens.length < tokens.length ? "..." : "";
-      const head = `${joinTokens(headTokens)}${suffix}`;
-      result = `Outline: \n${result}\n\nBody: ${head}`;
-    } else {
-      result = `Outline: \n${result}`;
-    }
+
+  const result = newLines.join("\n");
+  const outlineTokens = splitIntoTokens(result);
+  if (outlineTokens.length > limit) {
+    return joinTokens(outlineTokens.slice(0, limit));
   }
-  return result;
+
+  const remainingTokens = limit - outlineTokens.length;
+  const bodyTokens = tokens.slice(bodyStart, bodyStart + remainingTokens);
+  if (bodyTokens.length > 0) {
+    const suffix = bodyStart + remainingTokens < tokens.length ? "..." : "";
+    const body = `${joinTokens(bodyTokens)}${suffix}`;
+    return `Outline: \n${result}\n\nBody: ${body}`;
+  }
+  return `Outline: \n${result}`;
 }
 
 export async function getContent(

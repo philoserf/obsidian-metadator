@@ -176,7 +176,9 @@ describe("truncateHeading", () => {
     expect(result).toContain("# Title");
     expect(result).toContain("## Section");
     expect(result).toContain("Outline:");
-    expect(result).toContain("Body:");
+    // No Body section: every source line is either a heading or a first
+    // paragraph captured by the outline, so there is no remaining content.
+    expect(result).not.toContain("Body:");
   });
 
   test("truncates when outline exceeds limit", () => {
@@ -238,6 +240,31 @@ describe("truncateHeading", () => {
     const bodyText = bodyMatch?.[1] ?? "";
     // The outline includes "# Title" so body should not start with "#"
     expect(bodyText.trimStart().startsWith("#")).toBe(false);
+  });
+
+  test("body does not repeat a paragraph pulled into the outline past a blank line", () => {
+    // Blank line adds a \n token to the original but nothing to the outline.
+    // Buggy offset (outline-token-count) undershoots, causing "word" — which
+    // is already in the outline as the first paragraph — to reappear in body.
+    const content = "# H\n\nword";
+    const tokens = splitIntoTokens(content);
+    const result = truncateHeading(content, tokens, 5);
+    const wordOccurrences = (result.match(/\bword\b/g) ?? []).length;
+    expect(wordOccurrences).toBe(1);
+  });
+
+  test("body captures content after a truncated first paragraph", () => {
+    // 31-word paragraph triggers the "..." suffix (3 extra tokens in outline).
+    // Buggy offset overshoots the original stream and skips FINALWORD; fix
+    // advances by source lines consumed, so body begins at FINALWORD.
+    const paragraph = Array.from({ length: 31 }, (_, i) => `W${i + 1}`).join(
+      " ",
+    );
+    const content = `# H\n${paragraph}\nFINALWORD`;
+    const tokens = splitIntoTokens(content);
+    const result = truncateHeading(content, tokens, 40);
+    expect(result).toContain("Body:");
+    expect(result).toContain("FINALWORD");
   });
 });
 
