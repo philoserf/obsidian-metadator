@@ -258,28 +258,34 @@ async function addMetadataWithClaude(
 
   let hasChanges = false;
 
+  type FieldUpdate =
+    | { fieldName: string; value: string[]; updateMethod: "append" }
+    | { fieldName: string; value: string; updateMethod: "update" };
+
   async function writeField(
-    fieldName: string,
-    value: string | string[],
-    method: "append" | "update" | "keep",
+    u: FieldUpdate,
+    resolved: "update" | "keep",
   ): Promise<boolean> {
     try {
-      await updateFrontMatter(app, file, fieldName, value, method);
-      return method !== "keep";
+      if (resolved === "keep") {
+        await updateFrontMatter(app, file, u.fieldName, u.value, "keep");
+        return false;
+      }
+      if (u.updateMethod === "append") {
+        await updateFrontMatter(app, file, u.fieldName, u.value, "append");
+      } else {
+        await updateFrontMatter(app, file, u.fieldName, u.value, "update");
+      }
+      return true;
     } catch (error) {
       new Notice(
-        `Failed to write ${fieldName}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      console.error(`updateFrontMatter error (${fieldName}):`, error);
+      console.error(`updateFrontMatter error (${u.fieldName}):`, error);
       return false;
     }
   }
 
-  type FieldUpdate = {
-    fieldName: string;
-    value: string | string[];
-    updateMethod: "append" | "update";
-  };
   const updates: FieldUpdate[] = [];
 
   if (metadata.tags) {
@@ -306,8 +312,7 @@ async function addMetadataWithClaude(
 
   for (const u of updates) {
     const resolved = resolveUpdateMethod(force, frontMatter[u.fieldName]);
-    const method = resolved === "update" ? u.updateMethod : "keep";
-    if (await writeField(u.fieldName, u.value, method)) {
+    if (await writeField(u, resolved)) {
       hasChanges = true;
     }
   }
