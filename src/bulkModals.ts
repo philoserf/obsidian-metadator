@@ -55,29 +55,37 @@ export class BulkConfirmModal extends Modal {
 
     const buttons = contentEl.createDiv({ cls: "modal-button-container" });
     const cancelBtn = buttons.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.finish(false));
+    cancelBtn.addEventListener("click", () => {
+      this.resolve(false);
+      this.close();
+    });
     const confirmBtn = buttons.createEl("button", {
       text: `Generate (${willChange})`,
       cls: "mod-cta",
     });
-    confirmBtn.addEventListener("click", () => this.finish(true));
+    confirmBtn.addEventListener("click", () => {
+      this.resolve(true);
+      this.close();
+    });
   }
 
   onClose(): void {
-    this.finish(false);
+    // Fires on both button-driven close and Esc/X; resolve(false) is a no-op
+    // if a button already resolved, so Esc defaults to cancel.
+    this.resolve(false);
     this.contentEl.empty();
   }
 
-  private finish(value: boolean): void {
+  private resolve(value: boolean): void {
     if (this.resolved) return;
     this.resolved = true;
     this.resolver?.(value);
-    this.close();
   }
 }
 
 export class BulkProgressModal extends Modal {
   private aborted = false;
+  private finishing = false;
   private statusEl?: HTMLElement;
   private cancelBtn?: HTMLButtonElement;
 
@@ -111,8 +119,15 @@ export class BulkProgressModal extends Modal {
     return this.aborted;
   }
 
+  // Orchestrator calls finish() after the run completes normally. Direct
+  // close() (or Esc) leaves finishing=false, so onClose treats it as abort.
+  finish(): void {
+    this.finishing = true;
+    this.close();
+  }
+
   onClose(): void {
-    this.aborted = true;
+    if (!this.finishing) this.aborted = true;
     this.contentEl.empty();
   }
 }

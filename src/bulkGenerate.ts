@@ -62,8 +62,22 @@ function isRateLimitOrOverload(error: unknown): boolean {
   );
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const ABORT_POLL_MS = 100;
+
+async function sleepAbortable(
+  ms: number,
+  shouldAbort?: () => boolean,
+): Promise<boolean> {
+  if (ms <= 0) return shouldAbort?.() ?? false;
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (shouldAbort?.()) return true;
+    const remaining = deadline - Date.now();
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(ABORT_POLL_MS, remaining)),
+    );
+  }
+  return shouldAbort?.() ?? false;
 }
 
 async function runFileWithRetry(
@@ -73,18 +87,23 @@ async function runFileWithRetry(
   retryDelaysMs: readonly number[],
   shouldAbort?: () => boolean,
 ): Promise<FileResult> {
-  let last: FileResult | undefined;
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
     const r = await generateMetadataForFile(app, file, settings, {
       isBulk: true,
     });
-    last = r;
     if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
     if (attempt === retryDelaysMs.length) return r;
-    await sleep(retryDelaysMs[attempt]);
-    if (shouldAbort?.()) return r;
+    const aborted = await sleepAbortable(retryDelaysMs[attempt], shouldAbort);
+    if (aborted) {
+      return {
+        kind: "skipped",
+        file,
+        reason: "cancelled during retry backoff",
+      };
+    }
   }
-  return last as FileResult;
+  // Unreachable — loop always returns.
+  return { kind: "skipped", file, reason: "retry loop exited unexpectedly" };
 }
 
 export async function runBulk(
