@@ -88,6 +88,9 @@ async function runFileWithRetry(
   shouldAbort?: () => boolean,
 ): Promise<FileResult> {
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+    if (shouldAbort?.()) {
+      return { kind: "skipped", file, reason: "cancelled before attempt" };
+    }
     const r = await generateMetadataForFile(app, file, settings, {
       isBulk: true,
     });
