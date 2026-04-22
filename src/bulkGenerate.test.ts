@@ -311,30 +311,54 @@ describe("runBulk", () => {
     expect(DEFAULT_RETRY_DELAYS_MS).toEqual([2_000, 8_000, 30_000]);
   });
 
-  test("abort during retry backoff returns skipped-cancelled promptly", async () => {
-    const Anthropic = (await import("@anthropic-ai/sdk"))
-      .default as unknown as {
-      RateLimitError: new (msg: string) => Error;
-    };
-    mockCreate.mockRejectedValue(new Anthropic.RateLimitError("429"));
+  test("abort before first attempt skips without calling the API", async () => {
     const files = [file("n1.md")];
     const app = makeApp();
     let aborted = false;
-    const start = Date.now();
     const results = await runBulk(app, files, settings(), {
       retryDelaysMs: [5_000],
       shouldAbort: () => aborted,
       onProgress: () => {
-        // Trigger abort as soon as the loop has picked up this file.
+        // onProgress fires after runBulk's pre-loop shouldAbort check but
+        // before runFileWithRetry calls the API; the per-attempt guard must
+        // catch it so no API call is made.
         aborted = true;
       },
     });
-    const elapsed = Date.now() - start;
     expect(results).toHaveLength(1);
     expect(results[0].kind).toBe("skipped");
     if (results[0].kind === "skipped") {
       expect(results[0].reason).toContain("cancelled");
     }
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test("abort during retry backoff returns skipped-cancelled after one API call", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      RateLimitError: new (msg: string) => Error;
+    };
+    let aborted = false;
+    mockCreate.mockImplementation(async () => {
+      // Fire abort on the next tick, after this throw resolves — so
+      // runFileWithRetry sees the error, enters sleepAbortable, and then
+      // picks up the abort during polling.
+      setTimeout(() => {
+        aborted = true;
+      }, 0);
+      throw new Anthropic.RateLimitError("429");
+    });
+    const files = [file("n1.md")];
+    const app = makeApp();
+    const start = Date.now();
+    const results = await runBulk(app, files, settings(), {
+      retryDelaysMs: [5_000],
+      shouldAbort: () => aborted,
+    });
+    const elapsed = Date.now() - start;
+    expect(results).toHaveLength(1);
+    expect(results[0].kind).toBe("skipped");
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     // Abort polls every 100ms; should return well under the 5s retry delay.
     expect(elapsed).toBeLessThan(1_000);
   });
