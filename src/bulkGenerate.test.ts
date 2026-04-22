@@ -310,4 +310,32 @@ describe("runBulk", () => {
   test("DEFAULT_RETRY_DELAYS_MS is production default", () => {
     expect(DEFAULT_RETRY_DELAYS_MS).toEqual([2_000, 8_000, 30_000]);
   });
+
+  test("abort during retry backoff returns skipped-cancelled promptly", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      RateLimitError: new (msg: string) => Error;
+    };
+    mockCreate.mockRejectedValue(new Anthropic.RateLimitError("429"));
+    const files = [file("n1.md")];
+    const app = makeApp();
+    let aborted = false;
+    const start = Date.now();
+    const results = await runBulk(app, files, settings(), {
+      retryDelaysMs: [5_000],
+      shouldAbort: () => aborted,
+      onProgress: () => {
+        // Trigger abort as soon as the loop has picked up this file.
+        aborted = true;
+      },
+    });
+    const elapsed = Date.now() - start;
+    expect(results).toHaveLength(1);
+    expect(results[0].kind).toBe("skipped");
+    if (results[0].kind === "skipped") {
+      expect(results[0].reason).toContain("cancelled");
+    }
+    // Abort polls every 100ms; should return well under the 5s retry delay.
+    expect(elapsed).toBeLessThan(1_000);
+  });
 });

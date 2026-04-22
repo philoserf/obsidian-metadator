@@ -52,7 +52,7 @@ export async function runBulkForFolder(
   });
 
   const aborted = progress.isAborted();
-  progress.close();
+  progress.finish();
 
   new BulkSummaryModal(app, results, aborted, willChange.length).open();
 }
