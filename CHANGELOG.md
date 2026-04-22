@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+
+- Bulk metadata generation via right-click on a folder in the file explorer. Runs the existing per-note generator sequentially over every `.md` descendant, with a confirmation modal showing pre-run counts, an in-run progress modal with Cancel, and a summary modal listing changed / skipped / errored / remaining counts plus per-file error details. Warns when the batch exceeds 100 notes; no hard cap.
+- Retry-with-backoff (2s / 8s / 30s) on `RateLimitError` and `InternalServerError` during bulk runs. Cancel is responsive during backoff — the sleep polls the abort flag every 100ms.
+
+### Internal
+
+- Extracted `generateMetadataForFile` worker from `generateMetadata`; the single-note command now wraps the worker. Behavior-preserving for single-note runs.
+- `shouldGenerate` helper exported for pre-run classification without API calls (used by the bulk confirm modal).
+- `runBulk` / `runFileWithRetry` guard `shouldAbort` at the top of every attempt, so a Cancel that lands between `onProgress` and the API call skips the file instead of burning a call.
+
 ## 2.0.2
 
 ### Fixed
