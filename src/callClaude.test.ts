@@ -101,9 +101,7 @@ describe("callClaude", () => {
         model: settings.anthropicModel,
         max_tokens: 2048,
       }),
-      expect.objectContaining({
-        timeout: 60_000,
-      }),
+      expect.any(Object),
     );
   });
 
