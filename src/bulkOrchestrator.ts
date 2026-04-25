@@ -7,10 +7,16 @@ import {
 } from "./bulkModals";
 import type { MetadataToolSettings } from "./settings";
 
+export interface RunBulkForFolderOptions {
+  signal?: AbortSignal;
+  shouldAbort?: () => boolean;
+}
+
 export async function runBulkForFolder(
   app: App,
   folder: TFolder,
   settings: MetadataToolSettings,
+  opts: RunBulkForFolderOptions = {},
 ): Promise<void> {
   if (!settings.anthropicApiKey) {
     new Notice(
@@ -48,7 +54,8 @@ export async function runBulkForFolder(
 
   const results = await runBulk(app, willChange, settings, {
     onProgress: (p) => progress.setProgress(p),
-    shouldAbort: () => progress.isAborted(),
+    shouldAbort: () => (opts.shouldAbort?.() ?? false) || progress.isAborted(),
+    signal: opts.signal,
   });
 
   const aborted = progress.isAborted();
