@@ -22,15 +22,19 @@ export function migrateSettings(
 
 export default class MetadataToolPlugin extends Plugin {
   settings: MetadataToolSettings = DEFAULT_SETTINGS;
+  private runController: AbortController = new AbortController();
 
   async onload(): Promise<void> {
+    this.runController = new AbortController();
     await this.loadSettings();
 
     this.addCommand({
       id: "generate-metadata",
       name: "Generate metadata for current note",
       callback: async () => {
-        await generateMetadata(this.app, this.settings);
+        await generateMetadata(this.app, this.settings, {
+          signal: this.runController.signal,
+        });
       },
     });
 
@@ -42,9 +46,16 @@ export default class MetadataToolPlugin extends Plugin {
             .setTitle("Generate metadata (recursive)")
             .setIcon("tags")
             .onClick(async () => {
-              await runBulkForFolder(this.app, fileOrFolder, {
-                ...this.settings,
-              });
+              await runBulkForFolder(
+                this.app,
+                fileOrFolder,
+                {
+                  ...this.settings,
+                },
+                {
+                  signal: this.runController.signal,
+                },
+              );
             }),
         );
       }),
@@ -53,7 +64,9 @@ export default class MetadataToolPlugin extends Plugin {
     this.addSettingTab(new MetadataToolSettingTab(this.app, this));
   }
 
-  onunload(): void {}
+  onunload(): void {
+    this.runController.abort("plugin_unloaded");
+  }
 
   async loadSettings(): Promise<void> {
     const loadedSettings = migrateSettings(await this.loadData());

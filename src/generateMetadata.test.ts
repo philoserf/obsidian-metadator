@@ -183,4 +183,39 @@ describe("generateMetadata integration", () => {
     expect(fm.description).toBe("desc");
     expect(fm.title).toBeUndefined();
   });
+
+  test("passes abort signal to API call when provided", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: "text",
+          text: '{"tags": "a,b", "description": "desc", "title": "T"}',
+        },
+      ],
+    });
+    const controller = new AbortController();
+    const { app } = makeApp({});
+
+    await generateMetadata(app, makeSettings(), { signal: controller.signal });
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        signal: controller.signal,
+      }),
+    );
+  });
+
+  test("skips when abort signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort("plugin_unloaded");
+    const { app, fm } = makeApp({});
+
+    await generateMetadata(app, makeSettings(), { signal: controller.signal });
+
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(fm.tags).toBeUndefined();
+    expect(fm.description).toBeUndefined();
+    expect(fm.title).toBeUndefined();
+  });
 });

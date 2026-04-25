@@ -362,4 +362,36 @@ describe("runBulk", () => {
     // Abort polls every 100ms; should return well under the 5s retry delay.
     expect(elapsed).toBeLessThan(1_000);
   });
+
+  test("passes abort signal through bulk generation calls", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: '{"tags": "a", "description": "d"}' }],
+    });
+    const files = [file("n1.md")];
+    const app = makeApp();
+    const controller = new AbortController();
+
+    await runBulk(app, files, settings(), { signal: controller.signal });
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        signal: controller.signal,
+      }),
+    );
+  });
+
+  test("skips when bulk signal is already aborted", async () => {
+    const files = [file("n1.md")];
+    const app = makeApp();
+    const controller = new AbortController();
+    controller.abort("plugin_unloaded");
+
+    const results = await runBulk(app, files, settings(), {
+      signal: controller.signal,
+    });
+
+    expect(results).toHaveLength(0);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });

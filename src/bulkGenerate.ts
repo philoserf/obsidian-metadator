@@ -53,6 +53,7 @@ export interface RunBulkOptions {
   onProgress?: (p: BulkProgress) => void;
   shouldAbort?: () => boolean;
   retryDelaysMs?: readonly number[];
+  signal?: AbortSignal;
 }
 
 function isRateLimitOrOverload(error: unknown): boolean {
@@ -86,13 +87,15 @@ async function runFileWithRetry(
   settings: MetadataToolSettings,
   retryDelaysMs: readonly number[],
   shouldAbort?: () => boolean,
+  signal?: AbortSignal,
 ): Promise<FileResult> {
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
-    if (shouldAbort?.()) {
+    if (shouldAbort?.() || signal?.aborted) {
       return { kind: "skipped", file, reason: "cancelled before attempt" };
     }
     const r = await generateMetadataForFile(app, file, settings, {
       isBulk: true,
+      signal,
     });
     if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
     if (attempt === retryDelaysMs.length) return r;
@@ -113,14 +116,14 @@ export async function runBulk(
   app: App,
   files: TFile[],
   settings: MetadataToolSettings,
-  { onProgress, shouldAbort, retryDelaysMs }: RunBulkOptions = {},
+  { onProgress, shouldAbort, retryDelaysMs, signal }: RunBulkOptions = {},
 ): Promise<FileResult[]> {
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const results: FileResult[] = [];
   let errors = 0;
 
   for (let i = 0; i < files.length; i++) {
-    if (shouldAbort?.()) break;
+    if (shouldAbort?.() || signal?.aborted) break;
     const file = files[i];
     onProgress?.({ current: i + 1, total: files.length, file, errors });
     const result = await runFileWithRetry(
@@ -129,6 +132,7 @@ export async function runBulk(
       settings,
       delays,
       shouldAbort,
+      signal,
     );
     results.push(result);
     if (result.kind === "error") errors++;

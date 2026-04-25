@@ -179,6 +179,7 @@ export type FileResult =
 
 export interface GenerateOptions {
   isBulk?: boolean;
+  signal?: AbortSignal;
 }
 
 export async function generateMetadataForFile(
@@ -202,6 +203,10 @@ export async function generateMetadataForFile(
     return { kind: "skipped", file, reason: "all fields already populated" };
   }
 
+  if (opts.signal?.aborted) {
+    return { kind: "skipped", file, reason: "cancelled before request" };
+  }
+
   try {
     const updateAll = settings.updateMethod === "always_regenerate";
     const hasChanges = await addMetadataWithClaude(
@@ -211,6 +216,7 @@ export async function generateMetadataForFile(
       frontMatter,
       updateAll,
       opts.isBulk ?? false,
+      opts.signal,
     );
     return hasChanges
       ? { kind: "changed", file }
@@ -228,6 +234,7 @@ export async function generateMetadataForFile(
 export async function generateMetadata(
   app: App,
   settings: MetadataToolSettings,
+  opts: GenerateOptions = {},
 ): Promise<void> {
   const file = app.workspace.getActiveFile();
   if (!file) {
@@ -248,7 +255,9 @@ export async function generateMetadata(
     return;
   }
 
-  const result = await generateMetadataForFile(app, file, settings);
+  const result = await generateMetadataForFile(app, file, settings, {
+    signal: opts.signal,
+  });
   if (result.kind === "changed") {
     new Notice("Metadata updated successfully");
   } else if (result.kind === "error") {
@@ -264,6 +273,7 @@ async function addMetadataWithClaude(
   frontMatter: Record<string, unknown>,
   force: boolean = false,
   isBulk: boolean = false,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const contentStr = settings.truncateContent
     ? await getContent(
@@ -284,7 +294,7 @@ async function addMetadataWithClaude(
   const notice = isBulk ? undefined : new Notice("Generating metadata...", 0);
   let response: string;
   try {
-    response = await callClaude(system, userMessage, settings);
+    response = await callClaude(system, userMessage, settings, { signal });
   } finally {
     notice?.hide();
   }
@@ -300,6 +310,10 @@ async function addMetadataWithClaude(
   }
 
   if (!response) {
+    return false;
+  }
+
+  if (signal?.aborted) {
     return false;
   }
 
@@ -365,6 +379,9 @@ async function addMetadataWithClaude(
   }
 
   for (const u of updates) {
+    if (signal?.aborted) {
+      return hasChanges;
+    }
     const resolved = resolveUpdateMethod(force, frontMatter[u.fieldName]);
     if (await writeField(u, resolved)) {
       hasChanges = true;
