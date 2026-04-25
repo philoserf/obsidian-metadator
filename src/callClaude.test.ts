@@ -101,6 +101,40 @@ describe("callClaude", () => {
         model: settings.anthropicModel,
         max_tokens: 2048,
       }),
+      expect.objectContaining({
+        timeout: 60_000,
+      }),
+    );
+  });
+
+  test("sets an explicit request timeout", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "response" }],
+    });
+
+    await callClaude("system", "user", settings);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        timeout: 60_000,
+      }),
+    );
+  });
+
+  test("passes abort signal when provided", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "response" }],
+    });
+    const controller = new AbortController();
+
+    await callClaude("system", "user", settings, { signal: controller.signal });
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        signal: controller.signal,
+      }),
     );
   });
 });
