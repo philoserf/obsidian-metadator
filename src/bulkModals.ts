@@ -88,6 +88,7 @@ export class BulkProgressModal extends Modal {
   private finishing = false;
   private statusEl?: HTMLElement;
   private cancelBtn?: HTMLButtonElement;
+  private onAbort?: () => void;
 
   onOpen(): void {
     const { contentEl } = this;
@@ -98,11 +99,16 @@ export class BulkProgressModal extends Modal {
     this.cancelBtn = buttons.createEl("button", { text: "Cancel" });
     this.cancelBtn.addEventListener("click", () => {
       this.aborted = true;
+      this.onAbort?.();
       if (this.cancelBtn) {
         this.cancelBtn.disabled = true;
         this.cancelBtn.textContent = "Cancelling…";
       }
     });
+  }
+
+  setAbortHandler(handler: () => void): void {
+    this.onAbort = handler;
   }
 
   setProgress(p: {
@@ -127,7 +133,10 @@ export class BulkProgressModal extends Modal {
   }
 
   onClose(): void {
-    if (!this.finishing) this.aborted = true;
+    if (!this.finishing) {
+      this.aborted = true;
+      this.onAbort?.();
+    }
     this.contentEl.empty();
   }
 }

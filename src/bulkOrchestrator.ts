@@ -50,15 +50,31 @@ export async function runBulkForFolder(
   if (!confirmed) return;
 
   const progress = new BulkProgressModal(app);
+  const runController = new AbortController();
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      runController.abort(opts.signal.reason);
+    } else {
+      opts.signal.addEventListener(
+        "abort",
+        () => runController.abort(opts.signal?.reason),
+        { once: true },
+      );
+    }
+  }
+  progress.setAbortHandler(() => runController.abort("cancelled_by_user"));
   progress.open();
 
   const results = await runBulk(app, willChange, settings, {
     onProgress: (p) => progress.setProgress(p),
     shouldAbort: () => (opts.shouldAbort?.() ?? false) || progress.isAborted(),
-    signal: opts.signal,
+    signal: runController.signal,
   });
 
-  const aborted = progress.isAborted();
+  const aborted =
+    progress.isAborted() ||
+    (opts.shouldAbort?.() ?? false) ||
+    runController.signal.aborted;
   progress.finish();
 
   new BulkSummaryModal(app, results, aborted, willChange.length).open();

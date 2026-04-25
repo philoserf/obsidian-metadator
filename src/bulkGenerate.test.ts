@@ -363,6 +363,32 @@ describe("runBulk", () => {
     expect(elapsed).toBeLessThan(1_000);
   });
 
+  test("signal abort during retry backoff returns skipped quickly", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      RateLimitError: new (msg: string) => Error;
+    };
+    const controller = new AbortController();
+    mockCreate.mockRejectedValueOnce(new Anthropic.RateLimitError("429"));
+    const files = [file("n1.md")];
+    const app = makeApp();
+
+    const run = runBulk(app, files, settings(), {
+      retryDelaysMs: [5_000],
+      signal: controller.signal,
+    });
+    setTimeout(() => controller.abort("plugin_unloaded"), 0);
+
+    const start = Date.now();
+    const results = await run;
+    const elapsed = Date.now() - start;
+
+    expect(results).toHaveLength(1);
+    expect(results[0].kind).toBe("skipped");
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
   test("passes abort signal through bulk generation calls", async () => {
     mockCreate.mockResolvedValueOnce({
       content: [{ type: "text", text: '{"tags": "a", "description": "d"}' }],

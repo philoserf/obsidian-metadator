@@ -182,6 +182,15 @@ export interface GenerateOptions {
   signal?: AbortSignal;
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof Error && error.name === "AbortError") ||
+    (typeof DOMException !== "undefined" &&
+      error instanceof DOMException &&
+      error.name === "AbortError")
+  );
+}
+
 export async function generateMetadataForFile(
   app: App,
   file: TFile,
@@ -222,6 +231,9 @@ export async function generateMetadataForFile(
       ? { kind: "changed", file }
       : { kind: "skipped", file, reason: "no changes" };
   } catch (error) {
+    if (opts.signal?.aborted || isAbortError(error)) {
+      return { kind: "skipped", file, reason: "cancelled" };
+    }
     return {
       kind: "error",
       file,

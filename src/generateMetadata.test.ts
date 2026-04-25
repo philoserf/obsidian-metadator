@@ -17,7 +17,9 @@ mock.module("@anthropic-ai/sdk", () => {
 });
 
 // Import after mocking
-const { generateMetadata } = await import("./metadata");
+const { generateMetadata, generateMetadataForFile } = await import(
+  "./metadata"
+);
 
 function makeApp(opts: {
   file?: { extension: string } | null;
@@ -48,6 +50,10 @@ function makeApp(opts: {
   } as unknown as App;
 
   return { app, fm };
+}
+
+function makeFile(path = "note.md"): { path: string; extension: string } {
+  return { path, extension: "md" };
 }
 
 function makeSettings(
@@ -217,5 +223,42 @@ describe("generateMetadata integration", () => {
     expect(fm.tags).toBeUndefined();
     expect(fm.description).toBeUndefined();
     expect(fm.title).toBeUndefined();
+  });
+
+  test("maps abort rejection to skipped result", async () => {
+    mockCreate.mockImplementationOnce(
+      (_body: unknown, requestOpts: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          if (requestOpts.signal?.aborted) {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+            return;
+          }
+          requestOpts.signal?.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true },
+          );
+        }),
+    );
+    const controller = new AbortController();
+    const { app } = makeApp({});
+    const file = makeFile();
+
+    const run = generateMetadataForFile(app, file as never, makeSettings(), {
+      signal: controller.signal,
+    });
+    controller.abort("plugin_unloaded");
+
+    const result = await run;
+    expect(result.kind).toBe("skipped");
+    if (result.kind === "skipped") {
+      expect(result.reason).toBe("cancelled");
+    }
   });
 });

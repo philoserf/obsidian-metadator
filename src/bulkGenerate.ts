@@ -89,8 +89,11 @@ async function runFileWithRetry(
   shouldAbort?: () => boolean,
   signal?: AbortSignal,
 ): Promise<FileResult> {
+  const shouldStop = () =>
+    (shouldAbort?.() ?? false) || (signal?.aborted ?? false);
+
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
-    if (shouldAbort?.() || signal?.aborted) {
+    if (shouldStop()) {
       return { kind: "skipped", file, reason: "cancelled before attempt" };
     }
     const r = await generateMetadataForFile(app, file, settings, {
@@ -99,7 +102,7 @@ async function runFileWithRetry(
     });
     if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
     if (attempt === retryDelaysMs.length) return r;
-    const aborted = await sleepAbortable(retryDelaysMs[attempt], shouldAbort);
+    const aborted = await sleepAbortable(retryDelaysMs[attempt], shouldStop);
     if (aborted) {
       return {
         kind: "skipped",
