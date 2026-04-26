@@ -1,19 +1,16 @@
 import { Plugin, TFolder } from "obsidian";
 import { runBulkForFolder } from "./bulkOrchestrator";
 import { generateMetadata } from "./metadata";
-import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  type MetadataToolSettings,
+  VALID_MODEL_OPTIONS,
+  VALID_TRUNCATE_METHOD_OPTIONS,
+  VALID_UPDATE_METHOD_OPTIONS,
+} from "./settings";
 import { MetadataToolSettingTab } from "./settingsTab";
 
-const VALID_MODELS = new Set([
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-haiku-4-5-20251001",
-]);
-const VALID_TRUNCATE_METHODS = new Set(["head_only", "head_tail", "heading"]);
-const VALID_UPDATE_METHODS = new Set([
-  "always_regenerate",
-  "preserve_existing",
-]);
+const VALID_MODELS = new Set<string>(VALID_MODEL_OPTIONS);
 
 function readString(
   value: unknown,
@@ -35,12 +32,34 @@ function readPositiveInt(value: unknown, fallback: number): number {
     : fallback;
 }
 
-export function migrateSettings(
-  loaded: Record<string, unknown> | null,
-): MetadataToolSettings | null {
-  if (!loaded) return loaded;
+function isTruncateMethod(
+  value: string,
+): value is MetadataToolSettings["truncateMethod"] {
+  return (
+    value === VALID_TRUNCATE_METHOD_OPTIONS[0] ||
+    value === VALID_TRUNCATE_METHOD_OPTIONS[1] ||
+    value === VALID_TRUNCATE_METHOD_OPTIONS[2]
+  );
+}
 
-  const migrated = { ...loaded };
+function isUpdateMethod(
+  value: string,
+): value is MetadataToolSettings["updateMethod"] {
+  return (
+    value === VALID_UPDATE_METHOD_OPTIONS[0] ||
+    value === VALID_UPDATE_METHOD_OPTIONS[1]
+  );
+}
+
+export function migrateSettings(
+  loaded: unknown | null,
+): MetadataToolSettings | null {
+  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+    return null;
+  }
+
+  const raw = loaded as Record<string, unknown>;
+  const migrated = { ...raw };
 
   if (migrated.anthropicModel === "claude-sonnet-4-5-20250929") {
     migrated.anthropicModel = "claude-sonnet-4-6";
@@ -102,11 +121,11 @@ export function migrateSettings(
       migrated.contentTokenLimit,
       DEFAULT_SETTINGS.contentTokenLimit,
     ),
-    truncateMethod: VALID_TRUNCATE_METHODS.has(truncateMethodCandidate)
-      ? (truncateMethodCandidate as MetadataToolSettings["truncateMethod"])
+    truncateMethod: isTruncateMethod(truncateMethodCandidate)
+      ? truncateMethodCandidate
       : DEFAULT_SETTINGS.truncateMethod,
-    updateMethod: VALID_UPDATE_METHODS.has(updateMethodCandidate)
-      ? (updateMethodCandidate as MetadataToolSettings["updateMethod"])
+    updateMethod: isUpdateMethod(updateMethodCandidate)
+      ? updateMethodCandidate
       : DEFAULT_SETTINGS.updateMethod,
     tagsPrompt: readString(migrated.tagsPrompt, DEFAULT_SETTINGS.tagsPrompt),
     descriptionPrompt: readString(

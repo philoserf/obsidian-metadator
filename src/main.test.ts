@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { migrateSettings } from "./main";
-import { DEFAULT_SETTINGS } from "./settings";
+import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 
 describe("migrateSettings", () => {
   test("returns null for null input", () => {
@@ -63,7 +63,7 @@ describe("migrateSettings", () => {
   });
 
   test("preserves valid loaded settings", () => {
-    const result = migrateSettings({
+    const validLoaded: MetadataToolSettings = {
       anthropicApiKey: "sk-test",
       anthropicModel: "claude-haiku-4-5-20251001",
       tagsFieldName: "keywords",
@@ -78,23 +78,9 @@ describe("migrateSettings", () => {
       tagsPrompt: "t",
       descriptionPrompt: "d",
       titlePrompt: "h",
-    });
+    };
+    const result = migrateSettings(validLoaded);
 
-    expect(result).toEqual({
-      anthropicApiKey: "sk-test",
-      anthropicModel: "claude-haiku-4-5-20251001",
-      tagsFieldName: "keywords",
-      descriptionFieldName: "summary",
-      titleFieldName: "headline",
-      enableTitle: false,
-      debugLogging: true,
-      truncateContent: false,
-      contentTokenLimit: 42,
-      truncateMethod: "heading",
-      updateMethod: "always_regenerate",
-      tagsPrompt: "t",
-      descriptionPrompt: "d",
-      titlePrompt: "h",
-    });
+    expect(result).toEqual({ ...DEFAULT_SETTINGS, ...validLoaded });
   });
 });
