@@ -1,5 +1,13 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
+import {
+  MODEL_OPTION_LABELS,
+  TRUNCATE_METHOD_LABELS,
+  UPDATE_METHOD_LABELS,
+  VALID_MODEL_OPTIONS,
+  VALID_TRUNCATE_METHOD_OPTIONS,
+  VALID_UPDATE_METHOD_OPTIONS,
+} from "./settings";
 
 export class MetadataToolSettingTab extends PluginSettingTab {
   plugin: MetadataToolPlugin;
@@ -40,17 +48,17 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Model")
       .setDesc("Model to use for metadata generation")
-      .addDropdown((dropdown) =>
+      .addDropdown((dropdown) => {
+        for (const model of VALID_MODEL_OPTIONS) {
+          dropdown.addOption(model, MODEL_OPTION_LABELS[model]);
+        }
         dropdown
-          .addOption("claude-sonnet-4-6", "Claude Sonnet 4.6")
-          .addOption("claude-opus-4-6", "Claude Opus 4.6")
-          .addOption("claude-haiku-4-5-20251001", "Claude Haiku 4.5")
           .setValue(this.plugin.settings.anthropicModel)
           .onChange(async (value) => {
             this.plugin.settings.anthropicModel = value;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Debug Logging")
@@ -74,18 +82,19 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       .setDesc(
         "Always Regenerate: regenerate on every command; Preserve Existing: only generate empty fields",
       )
-      .addDropdown((dropdown) =>
+      .addDropdown((dropdown) => {
+        for (const method of VALID_UPDATE_METHOD_OPTIONS) {
+          dropdown.addOption(method, UPDATE_METHOD_LABELS[method]);
+        }
         dropdown
-          .addOption("always_regenerate", "Always Regenerate")
-          .addOption("preserve_existing", "Preserve Existing")
           .setValue(this.plugin.settings.updateMethod)
           .onChange(async (value) => {
             this.plugin.settings.updateMethod = value as
               | "always_regenerate"
               | "preserve_existing";
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Truncate Content")
@@ -122,11 +131,11 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     const truncateMethodSetting = new Setting(containerEl)
       .setName("Truncate Method")
       .setDesc("How to truncate long content")
-      .addDropdown((dropdown) =>
+      .addDropdown((dropdown) => {
+        for (const method of VALID_TRUNCATE_METHOD_OPTIONS) {
+          dropdown.addOption(method, TRUNCATE_METHOD_LABELS[method]);
+        }
         dropdown
-          .addOption("head_only", "Beginning Only")
-          .addOption("head_tail", "Beginning + End")
-          .addOption("heading", "Headings + Summaries")
           .setValue(this.plugin.settings.truncateMethod)
           .onChange(async (value) => {
             this.plugin.settings.truncateMethod = value as
@@ -134,8 +143,8 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               | "head_tail"
               | "heading";
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+      });
 
     contentTokenLimitSetting.setDisabled(!this.plugin.settings.truncateContent);
     truncateMethodSetting.setDisabled(!this.plugin.settings.truncateContent);

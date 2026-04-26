@@ -25,6 +25,49 @@ export interface MetadataToolSettings {
   titlePrompt: string;
 }
 
+export const VALID_MODEL_OPTIONS = [
+  "claude-sonnet-4-6",
+  "claude-opus-4-6",
+  "claude-haiku-4-5-20251001",
+] as const;
+
+export const MODEL_OPTION_LABELS: Record<
+  (typeof VALID_MODEL_OPTIONS)[number],
+  string
+> = {
+  "claude-sonnet-4-6": "Claude Sonnet 4.6",
+  "claude-opus-4-6": "Claude Opus 4.6",
+  "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+};
+
+export const VALID_TRUNCATE_METHOD_OPTIONS = [
+  "head_only",
+  "head_tail",
+  "heading",
+] as const;
+
+export const TRUNCATE_METHOD_LABELS: Record<
+  (typeof VALID_TRUNCATE_METHOD_OPTIONS)[number],
+  string
+> = {
+  head_only: "Beginning Only",
+  head_tail: "Beginning + End",
+  heading: "Headings + Summaries",
+};
+
+export const VALID_UPDATE_METHOD_OPTIONS = [
+  "always_regenerate",
+  "preserve_existing",
+] as const;
+
+export const UPDATE_METHOD_LABELS: Record<
+  (typeof VALID_UPDATE_METHOD_OPTIONS)[number],
+  string
+> = {
+  always_regenerate: "Always Regenerate",
+  preserve_existing: "Preserve Existing",
+};
+
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
   anthropicApiKey: "",
   anthropicModel: "claude-sonnet-4-6",
