@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { App, TFile } from "obsidian";
+import { updateFrontMatter } from "./adapters/frontmatter";
+import { getContent } from "./content/getContent";
+import { joinTokens, splitIntoTokens } from "./content/tokens";
 import {
-  getContent,
-  joinTokens,
-  splitIntoTokens,
   truncateHeading,
   truncateHeadOnly,
   truncateHeadTail,
-  updateFrontMatter,
-} from "./utils";
+} from "./content/truncate";
 
 function makeApp(initial: Record<string, unknown> = {}): {
   app: App;
