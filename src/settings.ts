@@ -1,3 +1,5 @@
+import type { TruncateMethod } from "./content/types";
+
 export interface MetadataToolSettings {
   anthropicApiKey: string;
   anthropicModel: string;
@@ -14,7 +16,7 @@ export interface MetadataToolSettings {
   // Content truncation
   truncateContent: boolean;
   contentTokenLimit: number;
-  truncateMethod: "head_only" | "head_tail" | "heading";
+  truncateMethod: TruncateMethod;
 
   // Update behavior
   updateMethod: "always_regenerate" | "preserve_existing";
