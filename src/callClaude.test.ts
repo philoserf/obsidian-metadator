@@ -28,7 +28,7 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const { callClaude } = await import("./utils");
+const { callClaude } = await import("./adapters/claude");
 
 const settings = {
   ...DEFAULT_SETTINGS,

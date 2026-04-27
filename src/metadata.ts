@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { type App, Notice, type TFile } from "obsidian";
+import { callClaude } from "./adapters/claude";
+import { updateFrontMatter } from "./adapters/frontmatter";
+import { getContent } from "./content/getContent";
 import type { MetadataToolSettings } from "./settings";
-import { callClaude, getContent, updateFrontMatter } from "./utils";
 
 function notifyApiError(error: unknown): void {
   if (error instanceof Anthropic.AuthenticationError) {
