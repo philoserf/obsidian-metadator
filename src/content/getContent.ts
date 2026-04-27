@@ -1,17 +1,17 @@
 import type { App, TFile } from "obsidian";
-import type { MetadataToolSettings } from "../settings";
 import { splitIntoTokens } from "./tokens";
 import {
   truncateHeading,
   truncateHeadOnly,
   truncateHeadTail,
 } from "./truncate";
+import type { TruncateMethod } from "./types";
 
 export async function getContent(
   app: App,
   file: TFile,
   limit: number = 1000,
-  method: MetadataToolSettings["truncateMethod"] = "head_only",
+  method: TruncateMethod = "head_only",
 ): Promise<string> {
   let contentStr = await app.vault.read(file);
 
