@@ -16,7 +16,8 @@ export async function callClaude(
   settings: MetadataToolSettings,
   options: CallClaudeOptions = {},
 ): Promise<string> {
-  // Safe in Obsidian's Electron renderer — no browser security concerns apply
+  // Allowing browser compatibility mode — safe within Obsidian's Electron-controlled environment under current use cases.
+  // Note: Ensure that all inputs/outputs to/from the Anthropic client are properly sanitized and validated, as `dangerouslyAllowBrowser` may reduce some security safeguards.
   const anthropic = new Anthropic({
     apiKey: settings.anthropicApiKey,
     dangerouslyAllowBrowser: true,
