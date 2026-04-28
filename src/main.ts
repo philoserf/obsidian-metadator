@@ -4,6 +4,7 @@ import { generateMetadata } from "./metadata";
 import {
   DEFAULT_SETTINGS,
   type MetadataToolSettings,
+  PROMPT_MAX_LENGTH,
   VALID_MODEL_OPTIONS,
   VALID_TRUNCATE_METHOD_OPTIONS,
   VALID_UPDATE_METHOD_OPTIONS,
@@ -11,8 +12,6 @@ import {
 import { MetadataToolSettingTab } from "./settingsTab";
 
 const VALID_MODELS = new Set<string>(VALID_MODEL_OPTIONS);
-
-export const PROMPT_MAX_LENGTH = 1000;
 
 function readString(
   value: unknown,

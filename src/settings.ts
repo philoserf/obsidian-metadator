@@ -1,5 +1,7 @@
 import type { TruncateMethod } from "./content/types";
 
+export const PROMPT_MAX_LENGTH = 1000;
+
 export interface MetadataToolSettings {
   anthropicApiKey: string;
   anthropicModel: string;

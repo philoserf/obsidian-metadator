@@ -347,7 +347,13 @@ async function addMetadataWithClaude(
 
   const metadata = parseMetadataResponse(response);
   if (!metadata) {
-    console.warn("[Metadator] Failed to parse model response:", response);
+    if (settings.debugLogging) {
+      console.warn("[Metadator] Failed to parse model response:", response);
+    } else {
+      console.warn(
+        `[Metadator] Failed to parse model response (${response.length} chars)`,
+      );
+    }
     throw new MetadataParseError();
   }
 
