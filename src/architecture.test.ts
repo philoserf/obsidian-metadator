@@ -10,4 +10,20 @@ describe("architecture boundaries", () => {
     expect(metadata).not.toMatch(/\bfrom\s+["']\.\/utils["']/);
     expect(existsSync(join(srcDir, "utils.ts"))).toBe(false);
   });
+
+  test("only the claude adapter imports the Anthropic SDK", () => {
+    const srcDir = join(import.meta.dir);
+    const sdkImporters = [
+      "metadata.ts",
+      "bulkGenerate.ts",
+      "bulkOrchestrator.ts",
+      "main.ts",
+      "settings.ts",
+      "settingsTab.ts",
+    ];
+    for (const file of sdkImporters) {
+      const source = readFileSync(join(srcDir, file), "utf8");
+      expect(source).not.toMatch(/from\s+["']@anthropic-ai\/sdk["']/);
+    }
+  });
 });

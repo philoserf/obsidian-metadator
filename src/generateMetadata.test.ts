@@ -21,6 +21,19 @@ const { generateMetadata, generateMetadataForFile } = await import(
   "./metadata"
 );
 
+function toolUseResponse(input: Record<string, unknown>) {
+  return {
+    content: [
+      {
+        type: "tool_use",
+        id: "tu_1",
+        name: "submit_metadata",
+        input,
+      },
+    ],
+  };
+}
+
 function makeApp(opts: {
   file?: { extension: string } | null;
   frontmatter?: Record<string, unknown>;
@@ -72,14 +85,13 @@ describe("generateMetadata integration", () => {
   });
 
   test("full flow: generates and writes tags, description, and title", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [
-        {
-          type: "text",
-          text: '{"tags": "ai,testing", "description": "A test article", "title": "Test Title"}',
-        },
-      ],
-    });
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "ai,testing",
+        description: "A test article",
+        title: "Test Title",
+      }),
+    );
 
     const { app, fm } = makeApp({});
     const settings = makeSettings();
@@ -117,14 +129,13 @@ describe("generateMetadata integration", () => {
   });
 
   test("preserve_existing skips populated fields", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [
-        {
-          type: "text",
-          text: '{"tags": "new-tag", "description": "new desc", "title": "New Title"}',
-        },
-      ],
-    });
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "new-tag",
+        description: "new desc",
+        title: "New Title",
+      }),
+    );
 
     const { app, fm } = makeApp({
       frontmatter: {
@@ -145,14 +156,13 @@ describe("generateMetadata integration", () => {
   });
 
   test("always_regenerate updates all fields", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [
-        {
-          type: "text",
-          text: '{"tags": "new-tag", "description": "new desc", "title": "New Title"}',
-        },
-      ],
-    });
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "new-tag",
+        description: "new desc",
+        title: "New Title",
+      }),
+    );
 
     const { app, fm } = makeApp({
       frontmatter: {
@@ -171,14 +181,9 @@ describe("generateMetadata integration", () => {
   });
 
   test("does not generate title when enableTitle is false", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [
-        {
-          type: "text",
-          text: '{"tags": "a,b", "description": "desc", "title": "Should Ignore"}',
-        },
-      ],
-    });
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a,b", description: "desc" }),
+    );
 
     const { app, fm } = makeApp({});
     const settings = makeSettings({ enableTitle: false });
@@ -191,14 +196,9 @@ describe("generateMetadata integration", () => {
   });
 
   test("passes abort signal to API call when provided", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [
-        {
-          type: "text",
-          text: '{"tags": "a,b", "description": "desc", "title": "T"}',
-        },
-      ],
-    });
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a,b", description: "desc", title: "T" }),
+    );
     const controller = new AbortController();
     const { app } = makeApp({});
 
@@ -225,12 +225,12 @@ describe("generateMetadata integration", () => {
     expect(fm.title).toBeUndefined();
   });
 
-  test("returns error result when response cannot be parsed as JSON", async () => {
+  test("returns error result with ClaudeApiError when model returns no tool_use block", async () => {
     mockCreate.mockResolvedValueOnce({
       content: [
         {
           type: "text",
-          text: "I refuse to follow the JSON format and reply in plain text.",
+          text: "I refuse to use the tool.",
         },
       ],
     });
@@ -246,8 +246,7 @@ describe("generateMetadata integration", () => {
 
     expect(result.kind).toBe("error");
     if (result.kind === "error") {
-      expect(result.error).toBeInstanceOf(Error);
-      expect((result.error as Error).name).toBe("MetadataParseError");
+      expect((result.error as Error).name).toBe("ClaudeApiError");
     }
     expect(fm.tags).toBeUndefined();
     expect(fm.description).toBeUndefined();

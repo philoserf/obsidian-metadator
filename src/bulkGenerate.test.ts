@@ -205,8 +205,10 @@ describe("runBulk", () => {
     mockCreate.mockResolvedValue({
       content: [
         {
-          type: "text",
-          text: '{"tags": "a,b", "description": "d", "title": "T"}',
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a,b", description: "d", title: "T" },
         },
       ],
     });
@@ -227,8 +229,10 @@ describe("runBulk", () => {
     mockCreate.mockResolvedValue({
       content: [
         {
-          type: "text",
-          text: '{"tags": "a", "description": "d", "title": "T"}',
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d", title: "T" },
         },
       ],
     });
@@ -247,11 +251,25 @@ describe("runBulk", () => {
   test("per-file error isolation — one failure does not abort batch", async () => {
     mockCreate
       .mockResolvedValueOnce({
-        content: [{ type: "text", text: '{"tags": "a", "description": "d"}' }],
+        content: [
+          {
+            type: "tool_use",
+            id: "tu_1",
+            name: "submit_metadata",
+            input: { tags: "a", description: "d" },
+          },
+        ],
       })
       .mockRejectedValueOnce(new Error("some API error"))
       .mockResolvedValueOnce({
-        content: [{ type: "text", text: '{"tags": "c", "description": "d"}' }],
+        content: [
+          {
+            type: "tool_use",
+            id: "tu_1",
+            name: "submit_metadata",
+            input: { tags: "c", description: "d" },
+          },
+        ],
       });
     const files = [file("n1.md"), file("n2.md"), file("n3.md")];
     const app = makeApp();
@@ -269,7 +287,14 @@ describe("runBulk", () => {
     };
     const rateLimit = new Anthropic.RateLimitError("429");
     mockCreate.mockRejectedValueOnce(rateLimit).mockResolvedValueOnce({
-      content: [{ type: "text", text: '{"tags": "a", "description": "d"}' }],
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d" },
+        },
+      ],
     });
     const files = [file("n1.md")];
     const app = makeApp();
@@ -391,7 +416,14 @@ describe("runBulk", () => {
 
   test("passes abort signal through bulk generation calls", async () => {
     mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: '{"tags": "a", "description": "d"}' }],
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d" },
+        },
+      ],
     });
     const files = [file("n1.md")];
     const app = makeApp();

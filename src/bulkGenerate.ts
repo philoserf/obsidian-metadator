@@ -1,5 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { App, TFile, TFolder } from "obsidian";
+import { ClaudeApiError } from "./adapters/claude";
 import {
   type FileResult,
   generateMetadataForFile,
@@ -58,8 +58,8 @@ export interface RunBulkOptions {
 
 function isRateLimitOrOverload(error: unknown): boolean {
   return (
-    error instanceof Anthropic.RateLimitError ||
-    error instanceof Anthropic.InternalServerError
+    error instanceof ClaudeApiError &&
+    (error.kind === "rate_limit" || error.kind === "overloaded")
   );
 }
 
