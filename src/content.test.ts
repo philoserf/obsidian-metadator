@@ -121,6 +121,17 @@ describe("splitIntoTokens", () => {
   test("matches non-Latin digits as part of words", () => {
     expect(splitIntoTokens("١٢٣")).toEqual(["١٢٣"]);
   });
+
+  test("does not emit standalone combining marks from emoji selectors", () => {
+    // U+2764 (heart) + U+FE0F (variation selector-16). Neither should
+    // produce a token — the heart is a Symbol, and a bare combining mark
+    // is not a valid word start.
+    expect(splitIntoTokens("❤️")).toEqual([]);
+  });
+
+  test("ignores leading combining marks; word starts at the next letter", () => {
+    expect(splitIntoTokens("́abc")).toEqual(["abc"]);
+  });
 });
 
 describe("joinTokens", () => {
