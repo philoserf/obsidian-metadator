@@ -37,6 +37,13 @@ export interface MetadataResponse {
   title?: string;
 }
 
+export class MetadataParseError extends Error {
+  constructor() {
+    super("Response did not match the expected JSON format");
+    this.name = "MetadataParseError";
+  }
+}
+
 export interface PromptParts {
   system: string;
   userMessage: string;
@@ -275,7 +282,14 @@ export async function generateMetadata(
   if (result.kind === "changed") {
     new Notice("Metadata updated successfully");
   } else if (result.kind === "error") {
-    notifyApiError(result.error);
+    if (result.error instanceof MetadataParseError) {
+      new Notice(
+        "Response did not match the expected JSON format — check your prompts in Settings → Metadator",
+        8000,
+      );
+    } else {
+      notifyApiError(result.error);
+    }
     console.error("generateMetadata error:", result.error);
   }
 }
@@ -331,7 +345,11 @@ async function addMetadataWithClaude(
     return false;
   }
 
-  const metadata: MetadataResponse = parseMetadataResponse(response) ?? {};
+  const metadata = parseMetadataResponse(response);
+  if (!metadata) {
+    console.warn("[Metadator] Failed to parse model response:", response);
+    throw new MetadataParseError();
+  }
 
   let hasChanges = false;
 

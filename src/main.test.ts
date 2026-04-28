@@ -83,4 +83,35 @@ describe("migrateSettings", () => {
 
     expect(result).toEqual({ ...DEFAULT_SETTINGS, ...validLoaded });
   });
+
+  test("falls back to default for empty or whitespace-only prompts", () => {
+    const result = migrateSettings({
+      tagsPrompt: "",
+      descriptionPrompt: "   ",
+      titlePrompt: "\t\n",
+    });
+    expect(result?.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
+    expect(result?.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
+    expect(result?.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
+  });
+
+  test("falls back to default for prompts exceeding max length", () => {
+    const huge = "x".repeat(1001);
+    const result = migrateSettings({
+      tagsPrompt: huge,
+      descriptionPrompt: huge,
+      titlePrompt: huge,
+    });
+    expect(result?.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
+    expect(result?.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
+    expect(result?.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
+  });
+
+  test("preserves prompts exactly at the max length boundary", () => {
+    const atLimit = "x".repeat(1000);
+    const result = migrateSettings({
+      tagsPrompt: atLimit,
+    });
+    expect(result?.tagsPrompt).toBe(atLimit);
+  });
 });

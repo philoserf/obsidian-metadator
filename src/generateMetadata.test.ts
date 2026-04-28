@@ -225,6 +225,34 @@ describe("generateMetadata integration", () => {
     expect(fm.title).toBeUndefined();
   });
 
+  test("returns error result when response cannot be parsed as JSON", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: "text",
+          text: "I refuse to follow the JSON format and reply in plain text.",
+        },
+      ],
+    });
+
+    const { app, fm } = makeApp({});
+    const file = makeFile();
+
+    const result = await generateMetadataForFile(
+      app,
+      file as never,
+      makeSettings(),
+    );
+
+    expect(result.kind).toBe("error");
+    if (result.kind === "error") {
+      expect(result.error).toBeInstanceOf(Error);
+      expect((result.error as Error).name).toBe("MetadataParseError");
+    }
+    expect(fm.tags).toBeUndefined();
+    expect(fm.description).toBeUndefined();
+  });
+
   test("maps abort rejection to skipped result", async () => {
     mockCreate.mockImplementationOnce(
       (_body: unknown, requestOpts: { signal?: AbortSignal }) =>

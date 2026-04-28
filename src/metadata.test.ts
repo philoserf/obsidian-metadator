@@ -268,4 +268,25 @@ describe("buildPrompt", () => {
     expect(system).toContain('"tags": "tag1,tag2,tag3"');
     expect(system).toContain('"description": "brief summary"');
   });
+
+  test("places JSON scaffolding after user prompts so user text cannot override format", () => {
+    const settings = {
+      ...baseSettings,
+      tagsPrompt: "USER_TAG_TOKEN",
+      descriptionPrompt: "USER_DESC_TOKEN",
+      titlePrompt: "USER_TITLE_TOKEN",
+      enableTitle: true,
+    };
+    const { system } = buildPrompt("content", settings);
+    const tagIdx = system.indexOf("USER_TAG_TOKEN");
+    const descIdx = system.indexOf("USER_DESC_TOKEN");
+    const titleIdx = system.indexOf("USER_TITLE_TOKEN");
+    const formatIdx = system.indexOf("Return only the following JSON format:");
+    expect(tagIdx).toBeGreaterThan(-1);
+    expect(descIdx).toBeGreaterThan(-1);
+    expect(titleIdx).toBeGreaterThan(-1);
+    expect(formatIdx).toBeGreaterThan(tagIdx);
+    expect(formatIdx).toBeGreaterThan(descIdx);
+    expect(formatIdx).toBeGreaterThan(titleIdx);
+  });
 });
