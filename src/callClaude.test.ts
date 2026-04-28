@@ -28,111 +28,236 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const { callClaude } = await import("./adapters/claude");
+const { callClaudeForMetadata, ClaudeApiError } = await import(
+  "./adapters/claude"
+);
 
 const settings = {
   ...DEFAULT_SETTINGS,
   anthropicApiKey: "sk-test-key",
 };
 
-describe("callClaude", () => {
-  test("returns text content from successful response", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: '{"tags": "a,b"}' }],
-    });
+function toolUseResponse(input: Record<string, unknown>) {
+  return {
+    content: [
+      {
+        type: "tool_use",
+        id: "tu_1",
+        name: "submit_metadata",
+        input,
+      },
+    ],
+  };
+}
 
-    const result = await callClaude("system prompt", "user message", settings);
-    expect(result).toBe('{"tags": "a,b"}');
-  });
-
-  test("throws when response has no text content", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [],
-    });
-
-    expect(callClaude("system", "user", settings)).rejects.toThrow(
-      "No text content in response",
+describe("callClaudeForMetadata", () => {
+  test("returns parsed tool input from successful response", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "a,b",
+        description: "summary",
+        title: "Test",
+      }),
     );
+
+    const result = await callClaudeForMetadata(
+      "system prompt",
+      "user message",
+      settings,
+    );
+    expect(result).toEqual({
+      tags: "a,b",
+      description: "summary",
+      title: "Test",
+    });
   });
 
-  test("throws on authentication error", async () => {
+  test("throws ClaudeApiError(api) when no tool_use block is returned", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "I refuse to use the tool." }],
+    });
+
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("api");
+  });
+
+  test("rejects tool input that has the wrong field types", async () => {
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ tags: 123 }));
+
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("api");
+  });
+
+  test("maps authentication error to kind:auth", async () => {
     mockCreate.mockRejectedValueOnce(new MockAuthenticationError("bad key"));
-
-    expect(callClaude("system", "user", settings)).rejects.toThrow();
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("auth");
   });
 
-  test("throws on rate limit error", async () => {
+  test("maps rate-limit error to kind:rate_limit", async () => {
     mockCreate.mockRejectedValueOnce(new MockRateLimitError("rate limited"));
-
-    expect(callClaude("system", "user", settings)).rejects.toThrow();
-  });
-
-  test("throws on internal server error", async () => {
-    mockCreate.mockRejectedValueOnce(new MockInternalServerError("overloaded"));
-
-    expect(callClaude("system", "user", settings)).rejects.toThrow();
-  });
-
-  test("throws on generic API error", async () => {
-    mockCreate.mockRejectedValueOnce(new MockAPIError("something else"));
-
-    expect(callClaude("system", "user", settings)).rejects.toThrow();
-  });
-
-  test("throws on unknown error", async () => {
-    mockCreate.mockRejectedValueOnce(new Error("network failure"));
-
-    expect(callClaude("system", "user", settings)).rejects.toThrow(
-      "network failure",
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe(
+      "rate_limit",
     );
   });
 
-  test("passes system message and user message to API", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "response" }],
-    });
+  test("maps internal-server error to kind:overloaded", async () => {
+    mockCreate.mockRejectedValueOnce(new MockInternalServerError("overloaded"));
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe(
+      "overloaded",
+    );
+  });
 
-    await callClaude("my system prompt", "my user message", settings);
+  test("maps generic API error to kind:api", async () => {
+    mockCreate.mockRejectedValueOnce(new MockAPIError("something else"));
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("api");
+  });
+
+  test("maps unknown error to kind:unknown", async () => {
+    mockCreate.mockRejectedValueOnce(new Error("network failure"));
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe(
+      "unknown",
+    );
+  });
+
+  test("re-throws AbortError without wrapping", async () => {
+    const abort = new Error("aborted");
+    abort.name = "AbortError";
+    mockCreate.mockRejectedValueOnce(abort);
+
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBe(abort);
+    expect(caught).not.toBeInstanceOf(ClaudeApiError);
+  });
+
+  test("forces the submit_metadata tool and includes a title field when enabled", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+    );
+
+    await callClaudeForMetadata("system", "user", settings);
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        system: "my system prompt",
-        messages: [{ role: "user", content: "my user message" }],
+        system: "system",
+        messages: [{ role: "user", content: "user" }],
         model: settings.anthropicModel,
         max_tokens: 2048,
+        tool_choice: { type: "tool", name: "submit_metadata" },
+        tools: expect.arrayContaining([
+          expect.objectContaining({
+            name: "submit_metadata",
+            input_schema: expect.objectContaining({
+              required: expect.arrayContaining([
+                "tags",
+                "description",
+                "title",
+              ]),
+            }),
+          }),
+        ]),
       }),
       expect.any(Object),
     );
+  });
+
+  test("omits title from required when enableTitle is false", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a", description: "d" }),
+    );
+
+    await callClaudeForMetadata("system", "user", {
+      ...settings,
+      enableTitle: false,
+    });
+
+    const call = mockCreate.mock.calls.at(-1);
+    const body = call?.[0] as {
+      tools: { input_schema: { required: string[] } }[];
+    };
+    expect(body.tools[0].input_schema.required).toEqual([
+      "tags",
+      "description",
+    ]);
   });
 
   test("sets an explicit request timeout", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "response" }],
-    });
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+    );
 
-    await callClaude("system", "user", settings);
+    await callClaudeForMetadata("system", "user", settings);
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({
-        timeout: 60_000,
-      }),
+      expect.objectContaining({ timeout: 60_000 }),
     );
   });
 
   test("passes abort signal when provided", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "response" }],
-    });
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+    );
     const controller = new AbortController();
 
-    await callClaude("system", "user", settings, { signal: controller.signal });
+    await callClaudeForMetadata("system", "user", settings, {
+      signal: controller.signal,
+    });
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({
-        signal: controller.signal,
-      }),
+      expect.objectContaining({ signal: controller.signal }),
     );
   });
 });

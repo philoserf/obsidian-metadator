@@ -2,111 +2,19 @@ import { describe, expect, test } from "bun:test";
 import {
   buildPrompt,
   isEmptyValue,
-  parseMetadataResponse,
   parseTags,
   resolveUpdateMethod,
   stripSurroundingQuotes,
 } from "./metadata";
 import { DEFAULT_SETTINGS } from "./settings";
 
-describe("parseMetadataResponse", () => {
-  test("parses clean JSON", () => {
-    const response = '{"tags": "a,b", "description": "test"}';
-    expect(parseMetadataResponse(response)).toEqual({
-      tags: "a,b",
-      description: "test",
-    });
-  });
-
-  test("parses JSON wrapped in code fences", () => {
-    const response = '```json\n{"tags": "a,b", "description": "test"}\n```';
-    expect(parseMetadataResponse(response)).toEqual({
-      tags: "a,b",
-      description: "test",
-    });
-  });
-
-  test("parses JSON with surrounding text", () => {
-    const response =
-      'Here is the metadata:\n{"tags": "a,b", "description": "test"}\nHope this helps!';
-    expect(parseMetadataResponse(response)).toEqual({
-      tags: "a,b",
-      description: "test",
-    });
-  });
-
-  test("returns null when no JSON found", () => {
-    expect(parseMetadataResponse("no json here")).toBeNull();
-  });
-
-  test("returns null on malformed JSON", () => {
-    expect(parseMetadataResponse("{tags: malformed}")).toBeNull();
-  });
-
-  test("preserves backticks inside values", () => {
-    const response = '{"tags": "code", "description": "Use `foo` for bar"}';
-    const result = parseMetadataResponse(response);
-    expect(result?.description).toBe("Use `foo` for bar");
-  });
-
-  test("parses JSON with all three fields", () => {
-    const response =
-      '{"tags": "a,b", "description": "desc", "title": "My Title"}';
-    const result = parseMetadataResponse(response);
-    expect(result).toEqual({
-      tags: "a,b",
-      description: "desc",
-      title: "My Title",
-    });
-  });
-
-  test("handles code fences without json specifier", () => {
-    const response = '```\n{"tags": "a", "description": "b"}\n```';
-    expect(parseMetadataResponse(response)).toEqual({
-      tags: "a",
-      description: "b",
-    });
-  });
-
-  test("preserves triple backticks inside JSON values", () => {
-    const response =
-      '{"tags": "code", "description": "Use ```code``` in markdown"}';
-    const result = parseMetadataResponse(response);
-    expect(result?.description).toBe("Use ```code``` in markdown");
-  });
-
-  test("handles multiple JSON objects in response (greedy regex bug)", () => {
-    const response =
-      'Here\'s an example: {"not": "this"} and here\'s the answer: {"tags": "a,b", "description": "correct"}';
-    expect(parseMetadataResponse(response)).toEqual({
-      tags: "a,b",
-      description: "correct",
-    });
-  });
-
-  test("handles prose with braces before valid JSON", () => {
-    const response =
-      'The format is {key: value}. Here is the result: {"tags": "x", "description": "y"}';
-    expect(parseMetadataResponse(response)).toEqual({
-      tags: "x",
-      description: "y",
-    });
-  });
-
-  test("returns null when field types are invalid", () => {
-    expect(parseMetadataResponse('{"tags": 42}')).toBeNull();
-    expect(parseMetadataResponse('{"description": null}')).toBeNull();
-    expect(parseMetadataResponse('{"title": ["array"]}')).toBeNull();
-  });
-});
-
 describe("parseTags", () => {
   test("splits comma-separated tags", () => {
-    expect(parseTags("one,two,three")).toEqual(["one", "two", "three"]);
+    expect(parseTags("a,b,c")).toEqual(["a", "b", "c"]);
   });
 
   test("trims whitespace from tags", () => {
-    expect(parseTags(" one , two , three ")).toEqual(["one", "two", "three"]);
+    expect(parseTags(" a , b , c ")).toEqual(["a", "b", "c"]);
   });
 
   test("handles single tag", () => {
@@ -118,7 +26,7 @@ describe("parseTags", () => {
   });
 
   test("filters empty entries from trailing comma", () => {
-    expect(parseTags("one,two,")).toEqual(["one", "two"]);
+    expect(parseTags("a,b,")).toEqual(["a", "b"]);
   });
 });
 
@@ -136,7 +44,7 @@ describe("stripSurroundingQuotes", () => {
   });
 
   test("does not strip mismatched quotes", () => {
-    expect(stripSurroundingQuotes("\"hello'")).toBe("\"hello'");
+    expect(stripSurroundingQuotes("'hello\"")).toBe("'hello\"");
   });
 
   test("handles empty quoted string", () => {
@@ -148,7 +56,7 @@ describe("stripSurroundingQuotes", () => {
   });
 
   test("does not strip interior quotes", () => {
-    expect(stripSurroundingQuotes('say "hi" please')).toBe('say "hi" please');
+    expect(stripSurroundingQuotes('he"llo')).toBe('he"llo');
   });
 });
 
@@ -245,7 +153,6 @@ describe("buildPrompt", () => {
     const settings = { ...baseSettings, enableTitle: false };
     const { system } = buildPrompt("my content", settings);
     expect(system).not.toContain("3. Title:");
-    expect(system).not.toContain('"title"');
   });
 
   test("includes title when enabled", () => {
@@ -253,7 +160,6 @@ describe("buildPrompt", () => {
     const { system } = buildPrompt("my content", settings);
     expect(system).toContain("3. Title:");
     expect(system).toContain(settings.titlePrompt);
-    expect(system).toContain('"title"');
   });
 
   test("wraps content in XML article tags", () => {
@@ -263,30 +169,8 @@ describe("buildPrompt", () => {
     expect(userMessage).toContain("</article>");
   });
 
-  test("includes JSON template in system", () => {
+  test("references the submit_metadata tool", () => {
     const { system } = buildPrompt("content", baseSettings);
-    expect(system).toContain('"tags": "tag1,tag2,tag3"');
-    expect(system).toContain('"description": "brief summary"');
-  });
-
-  test("places JSON scaffolding after user prompts so user text cannot override format", () => {
-    const settings = {
-      ...baseSettings,
-      tagsPrompt: "USER_TAG_TOKEN",
-      descriptionPrompt: "USER_DESC_TOKEN",
-      titlePrompt: "USER_TITLE_TOKEN",
-      enableTitle: true,
-    };
-    const { system } = buildPrompt("content", settings);
-    const tagIdx = system.indexOf("USER_TAG_TOKEN");
-    const descIdx = system.indexOf("USER_DESC_TOKEN");
-    const titleIdx = system.indexOf("USER_TITLE_TOKEN");
-    const formatIdx = system.indexOf("Return only the following JSON format:");
-    expect(tagIdx).toBeGreaterThan(-1);
-    expect(descIdx).toBeGreaterThan(-1);
-    expect(titleIdx).toBeGreaterThan(-1);
-    expect(formatIdx).toBeGreaterThan(tagIdx);
-    expect(formatIdx).toBeGreaterThan(descIdx);
-    expect(formatIdx).toBeGreaterThan(titleIdx);
+    expect(system).toContain("submit_metadata");
   });
 });
