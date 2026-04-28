@@ -1,5 +1,6 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
+import { PROMPT_MAX_LENGTH } from "./main";
 import {
   MODEL_OPTION_LABELS,
   TRUNCATE_METHOD_LABELS,
@@ -166,11 +167,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Tags Prompt")
-      .setDesc("Instructions for tag generation")
+      .setDesc(
+        `Instructions for tag generation (max ${PROMPT_MAX_LENGTH} chars)`,
+      )
       .addTextArea((text) => {
         text
           .setValue(this.plugin.settings.tagsPrompt)
           .onChange(async (value) => {
+            if (value.length > PROMPT_MAX_LENGTH) {
+              new Notice(
+                `Tags prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
+              );
+              text.setValue(this.plugin.settings.tagsPrompt);
+              return;
+            }
             this.plugin.settings.tagsPrompt = value;
             await this.plugin.saveSettings();
           });
@@ -194,11 +204,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Description Prompt")
-      .setDesc("Instructions for description generation")
+      .setDesc(
+        `Instructions for description generation (max ${PROMPT_MAX_LENGTH} chars)`,
+      )
       .addTextArea((text) => {
         text
           .setValue(this.plugin.settings.descriptionPrompt)
           .onChange(async (value) => {
+            if (value.length > PROMPT_MAX_LENGTH) {
+              new Notice(
+                `Description prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
+              );
+              text.setValue(this.plugin.settings.descriptionPrompt);
+              return;
+            }
             this.plugin.settings.descriptionPrompt = value;
             await this.plugin.saveSettings();
           });
@@ -236,11 +255,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
 
     const titlePromptSetting = new Setting(containerEl)
       .setName("Title Prompt")
-      .setDesc("Instructions for title generation")
+      .setDesc(
+        `Instructions for title generation (max ${PROMPT_MAX_LENGTH} chars)`,
+      )
       .addTextArea((text) => {
         text
           .setValue(this.plugin.settings.titlePrompt)
           .onChange(async (value) => {
+            if (value.length > PROMPT_MAX_LENGTH) {
+              new Notice(
+                `Title prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
+              );
+              text.setValue(this.plugin.settings.titlePrompt);
+              return;
+            }
             this.plugin.settings.titlePrompt = value;
             await this.plugin.saveSettings();
           });

@@ -12,13 +12,19 @@ import { MetadataToolSettingTab } from "./settingsTab";
 
 const VALID_MODELS = new Set<string>(VALID_MODEL_OPTIONS);
 
+export const PROMPT_MAX_LENGTH = 1000;
+
 function readString(
   value: unknown,
   fallback: string,
-  { nonEmpty = false }: { nonEmpty?: boolean } = {},
+  {
+    nonEmpty = false,
+    maxLength,
+  }: { nonEmpty?: boolean; maxLength?: number } = {},
 ): string {
   if (typeof value !== "string") return fallback;
   if (nonEmpty && value.trim() === "") return fallback;
+  if (maxLength !== undefined && value.length > maxLength) return fallback;
   return value;
 }
 
@@ -127,12 +133,23 @@ export function migrateSettings(
     updateMethod: isUpdateMethod(updateMethodCandidate)
       ? updateMethodCandidate
       : DEFAULT_SETTINGS.updateMethod,
-    tagsPrompt: readString(migrated.tagsPrompt, DEFAULT_SETTINGS.tagsPrompt),
+    tagsPrompt: readString(migrated.tagsPrompt, DEFAULT_SETTINGS.tagsPrompt, {
+      nonEmpty: true,
+      maxLength: PROMPT_MAX_LENGTH,
+    }),
     descriptionPrompt: readString(
       migrated.descriptionPrompt,
       DEFAULT_SETTINGS.descriptionPrompt,
+      { nonEmpty: true, maxLength: PROMPT_MAX_LENGTH },
     ),
-    titlePrompt: readString(migrated.titlePrompt, DEFAULT_SETTINGS.titlePrompt),
+    titlePrompt: readString(
+      migrated.titlePrompt,
+      DEFAULT_SETTINGS.titlePrompt,
+      {
+        nonEmpty: true,
+        maxLength: PROMPT_MAX_LENGTH,
+      },
+    ),
   };
 
   return normalized;
