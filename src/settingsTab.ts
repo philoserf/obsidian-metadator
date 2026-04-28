@@ -1,8 +1,8 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
-import { PROMPT_MAX_LENGTH } from "./main";
 import {
   MODEL_OPTION_LABELS,
+  PROMPT_MAX_LENGTH,
   TRUNCATE_METHOD_LABELS,
   UPDATE_METHOD_LABELS,
   VALID_MODEL_OPTIONS,

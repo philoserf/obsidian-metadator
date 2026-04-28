@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { migrateSettings } from "./main";
-import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  type MetadataToolSettings,
+  PROMPT_MAX_LENGTH,
+} from "./settings";
 
 describe("migrateSettings", () => {
   test("returns null for null input", () => {
@@ -96,11 +100,11 @@ describe("migrateSettings", () => {
   });
 
   test("falls back to default for prompts exceeding max length", () => {
-    const huge = "x".repeat(1001);
+    const tooLong = "x".repeat(PROMPT_MAX_LENGTH + 1);
     const result = migrateSettings({
-      tagsPrompt: huge,
-      descriptionPrompt: huge,
-      titlePrompt: huge,
+      tagsPrompt: tooLong,
+      descriptionPrompt: tooLong,
+      titlePrompt: tooLong,
     });
     expect(result?.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
     expect(result?.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
@@ -108,7 +112,7 @@ describe("migrateSettings", () => {
   });
 
   test("preserves prompts exactly at the max length boundary", () => {
-    const atLimit = "x".repeat(1000);
+    const atLimit = "x".repeat(PROMPT_MAX_LENGTH);
     const result = migrateSettings({
       tagsPrompt: atLimit,
     });
