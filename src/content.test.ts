@@ -61,6 +61,66 @@ describe("splitIntoTokens", () => {
       "！",
     ]);
   });
+
+  test("preserves Cyrillic words", () => {
+    expect(splitIntoTokens("Привет мир")).toEqual(["Привет", "мир"]);
+  });
+
+  test("preserves Latin accented characters within a word", () => {
+    expect(splitIntoTokens("café résumé")).toEqual(["café", "résumé"]);
+  });
+
+  test("preserves Greek words", () => {
+    expect(splitIntoTokens("γειά σου")).toEqual(["γειά", "σου"]);
+  });
+
+  test("preserves Hebrew words", () => {
+    expect(splitIntoTokens("שלום עולם")).toEqual(["שלום", "עולם"]);
+  });
+
+  test("preserves Arabic words", () => {
+    expect(splitIntoTokens("مرحبا بالعالم")).toEqual(["مرحبا", "بالعالم"]);
+  });
+
+  test("preserves Devanagari words including combining marks", () => {
+    expect(splitIntoTokens("नमस्ते दुनिया")).toEqual(["नमस्ते", "दुनिया"]);
+  });
+
+  test("preserves Thai words", () => {
+    expect(splitIntoTokens("สวัสดี")).toEqual(["สวัสดี"]);
+  });
+
+  test("splits Hiragana per character", () => {
+    expect(splitIntoTokens("こんにちは")).toEqual([
+      "こ",
+      "ん",
+      "に",
+      "ち",
+      "は",
+    ]);
+  });
+
+  test("splits Katakana per character", () => {
+    expect(splitIntoTokens("カタカナ")).toEqual(["カ", "タ", "カ", "ナ"]);
+  });
+
+  test("splits Hangul syllables per character", () => {
+    expect(splitIntoTokens("안녕하세요")).toEqual([
+      "안",
+      "녕",
+      "하",
+      "세",
+      "요",
+    ]);
+  });
+
+  test("keeps letter-and-digit words as a single token", () => {
+    expect(splitIntoTokens("abc123 word")).toEqual(["abc123", "word"]);
+  });
+
+  test("matches non-Latin digits as part of words", () => {
+    expect(splitIntoTokens("١٢٣")).toEqual(["١٢٣"]);
+  });
 });
 
 describe("joinTokens", () => {
@@ -90,6 +150,23 @@ describe("joinTokens", () => {
 
   test("handles single token", () => {
     expect(joinTokens(["hello"])).toBe("hello");
+  });
+
+  test("joins Hiragana characters without spaces", () => {
+    expect(joinTokens(["こ", "ん", "に", "ち", "は"])).toBe("こんにちは");
+  });
+
+  test("joins Hangul syllables without spaces", () => {
+    expect(joinTokens(["안", "녕"])).toBe("안녕");
+  });
+
+  test("joins Cyrillic words with spaces", () => {
+    expect(joinTokens(["Привет", "мир"])).toBe("Привет мир");
+  });
+
+  test("round-trips mixed Latin and Cyrillic", () => {
+    const original = "Hello, мир!";
+    expect(joinTokens(splitIntoTokens(original))).toBe(original);
   });
 });
 
