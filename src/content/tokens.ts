@@ -1,11 +1,15 @@
+// CJK ideographs, hiragana/katakana, and hangul syllables are tokenized
+// per-character to approximate how LLM tokenizers count them; everything
+// else (Latin, Cyrillic, Greek, Hebrew, Arabic, Devanagari, Thai, ...)
+// is tokenized as whole words via the Unicode letter/mark/number classes,
+// with CJK-family ranges subtracted so the greedy word match stops at
+// script boundaries.
+const TOKEN_REGEX =
+  /[一-龥]|[぀-ヿ]|[가-힯]|[[\p{Letter}\p{Mark}\p{Number}]--[一-龥぀-ヿ가-힯]]+|[.,!?;，。！？；#]|\n/gv;
+const NON_SPACING_TOKEN = /^[一-龥぀-ヿ가-힯.,!?;，。！？；#]$/;
+
 export function splitIntoTokens(str: string): string[] {
-  // CJK ideographs → one token each (they carry meaning per character)
-  // Latin words/numbers → one token per word (whitespace-delimited)
-  // Punctuation (ASCII + CJK) → individual tokens (preserves structure)
-  // Newlines → tokens (headings and paragraphs depend on line breaks)
-  const regex = /[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g;
-  const tokens = str.match(regex);
-  return tokens || [];
+  return str.match(TOKEN_REGEX) ?? [];
 }
 
 export function joinTokens(tokens: string[]): string {
@@ -14,7 +18,7 @@ export function joinTokens(tokens: string[]): string {
     const token = tokens[i];
     if (token === "\n") {
       result += token;
-    } else if (/[\u4e00-\u9fa5]|[.,!?;，。！？；#]/.test(token)) {
+    } else if (NON_SPACING_TOKEN.test(token)) {
       result += token;
     } else {
       const prevToken = i > 0 ? tokens[i - 1] : undefined;
