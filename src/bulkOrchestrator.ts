@@ -1,10 +1,8 @@
 import { type App, Notice, type TFolder } from "obsidian";
+import { BulkConfirmModal } from "./bulkConfirmModal";
 import { classifyCandidates, collectCandidates, runBulk } from "./bulkGenerate";
-import {
-  BulkConfirmModal,
-  BulkProgressModal,
-  BulkSummaryModal,
-} from "./bulkModals";
+import { BulkProgressModal } from "./bulkProgressModal";
+import { BulkSummaryModal } from "./bulkSummaryModal";
 import type { MetadataToolSettings } from "./settings";
 
 export interface RunBulkForFolderOptions {
