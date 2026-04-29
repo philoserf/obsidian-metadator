@@ -1,4 +1,4 @@
-import { Plugin, TFolder } from "obsidian";
+import { Notice, Plugin, TFolder } from "obsidian";
 import { runBulkForFolder } from "./bulkOrchestrator";
 import { generateMetadata } from "./metadata";
 import {
@@ -77,40 +77,61 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
     ],
   ]);
 
-function applyMigrations(
-  raw: Record<string, unknown>,
-): Record<string, unknown> | null {
-  const fromVersion =
-    typeof raw.schemaVersion === "number" &&
+function readSchemaVersion(raw: Record<string, unknown>): number {
+  return typeof raw.schemaVersion === "number" &&
     Number.isInteger(raw.schemaVersion) &&
     raw.schemaVersion >= 0
-      ? raw.schemaVersion
-      : 0;
+    ? raw.schemaVersion
+    : 0;
+}
+
+export function applyMigrations(
+  raw: Record<string, unknown>,
+  fromVersion: number,
+  migrations: ReadonlyMap<
+    number,
+    (s: Record<string, unknown>) => void
+  > = MIGRATIONS,
+  targetVersion: number = CURRENT_SCHEMA_VERSION,
+): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...raw };
+  for (let v = fromVersion + 1; v <= targetVersion; v++) {
+    const fn = migrations.get(v);
+    if (!fn) {
+      // A bumped CURRENT_SCHEMA_VERSION without a matching MIGRATIONS entry
+      // would silently stamp the new version onto un-transformed data. Fail
+      // loudly instead so the bug is caught at plugin-load time.
+      throw new Error(
+        `[Metadator] missing migration for schema version ${v}; bump CURRENT_SCHEMA_VERSION only after adding MIGRATIONS[${v}].`,
+      );
+    }
+    fn(migrated);
+  }
+  migrated.schemaVersion = targetVersion;
+  return migrated;
+}
+
+export type MigrationResult =
+  | { kind: "ok"; settings: MetadataToolSettings }
+  | { kind: "missing" }
+  | { kind: "future"; loadedSchemaVersion: number };
+
+export function migrateSettings(loaded: unknown | null): MigrationResult {
+  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+    return { kind: "missing" };
+  }
+
+  const raw = loaded as Record<string, unknown>;
+  const fromVersion = readSchemaVersion(raw);
 
   if (fromVersion > CURRENT_SCHEMA_VERSION) {
     console.warn(
       `[Metadator] data.json schemaVersion=${fromVersion} is newer than this plugin (${CURRENT_SCHEMA_VERSION}). Falling back to defaults to avoid corrupting your data.`,
     );
-    return null;
+    return { kind: "future", loadedSchemaVersion: fromVersion };
   }
 
-  const migrated: Record<string, unknown> = { ...raw };
-  for (let v = fromVersion + 1; v <= CURRENT_SCHEMA_VERSION; v++) {
-    MIGRATIONS.get(v)?.(migrated);
-  }
-  migrated.schemaVersion = CURRENT_SCHEMA_VERSION;
-  return migrated;
-}
-
-export function migrateSettings(
-  loaded: unknown | null,
-): MetadataToolSettings | null {
-  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
-    return null;
-  }
-
-  const migrated = applyMigrations(loaded as Record<string, unknown>);
-  if (migrated === null) return null;
+  const migrated = applyMigrations(raw, fromVersion);
 
   const anthropicModel = readString(
     migrated.anthropicModel,
@@ -194,12 +215,16 @@ export function migrateSettings(
     ),
   };
 
-  return normalized;
+  return { kind: "ok", settings: normalized };
 }
 
 export default class MetadataToolPlugin extends Plugin {
   settings: MetadataToolSettings = DEFAULT_SETTINGS;
   private runController: AbortController = new AbortController();
+  // Set when data.json was written by a newer plugin version. While set,
+  // saveSettings() refuses to write so we don't clobber forward-version
+  // data with our defaults. Cleared by a successful (in-version) load.
+  private futureSchemaBlocked = false;
 
   async onload(): Promise<void> {
     this.runController = new AbortController();
@@ -246,11 +271,31 @@ export default class MetadataToolPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    const loadedSettings = migrateSettings(await this.loadData());
-    this.settings = { ...(loadedSettings ?? DEFAULT_SETTINGS) };
+    const result = migrateSettings(await this.loadData());
+    if (result.kind === "ok") {
+      this.settings = { ...result.settings };
+      this.futureSchemaBlocked = false;
+    } else if (result.kind === "future") {
+      this.settings = { ...DEFAULT_SETTINGS };
+      this.futureSchemaBlocked = true;
+      new Notice(
+        `Metadator settings were written by a newer plugin version (schema v${result.loadedSchemaVersion}). Settings won't be saved until you upgrade the plugin to avoid corrupting your data.`,
+        12000,
+      );
+    } else {
+      this.settings = { ...DEFAULT_SETTINGS };
+      this.futureSchemaBlocked = false;
+    }
   }
 
   async saveSettings(): Promise<void> {
+    if (this.futureSchemaBlocked) {
+      new Notice(
+        "Refusing to save: settings file is from a newer plugin version. Upgrade the plugin or delete data.json to proceed.",
+        8000,
+      );
+      return;
+    }
     await this.saveData(this.settings);
   }
 }

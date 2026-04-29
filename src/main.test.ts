@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { migrateSettings } from "./main";
+import { applyMigrations, migrateSettings } from "./main";
 import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
@@ -7,47 +7,59 @@ import {
   PROMPT_MAX_LENGTH,
 } from "./settings";
 
+function ok(loaded: unknown | null): MetadataToolSettings {
+  const result = migrateSettings(loaded);
+  if (result.kind !== "ok") {
+    throw new Error(`expected kind=ok, got kind=${result.kind}`);
+  }
+  return result.settings;
+}
+
 describe("migrateSettings", () => {
-  test("returns null for null input", () => {
-    expect(migrateSettings(null)).toBeNull();
+  test("returns kind:missing for null input", () => {
+    expect(migrateSettings(null)).toEqual({ kind: "missing" });
+  });
+
+  test("returns kind:missing for non-object input", () => {
+    expect(migrateSettings("not an object")).toEqual({ kind: "missing" });
+    expect(migrateSettings(42)).toEqual({ kind: "missing" });
+    expect(migrateSettings([1, 2, 3])).toEqual({ kind: "missing" });
   });
 
   test("migrates old sonnet model to claude-sonnet-4-6", () => {
-    const result = migrateSettings({
-      anthropicModel: "claude-sonnet-4-5-20250929",
-    });
-    expect(result?.anthropicModel).toBe("claude-sonnet-4-6");
+    expect(
+      ok({ anthropicModel: "claude-sonnet-4-5-20250929" }).anthropicModel,
+    ).toBe("claude-sonnet-4-6");
   });
 
   test("migrates old opus model to claude-opus-4-6", () => {
-    const result = migrateSettings({
-      anthropicModel: "claude-opus-4-5-20251101",
-    });
-    expect(result?.anthropicModel).toBe("claude-opus-4-6");
+    expect(
+      ok({ anthropicModel: "claude-opus-4-5-20251101" }).anthropicModel,
+    ).toBe("claude-opus-4-6");
   });
 
   test("does not change current values", () => {
-    const result = migrateSettings({
+    const settings = ok({
       updateMethod: "always_regenerate",
       anthropicModel: "claude-sonnet-4-6",
     });
-    expect(result?.updateMethod).toBe("always_regenerate");
-    expect(result?.anthropicModel).toBe("claude-sonnet-4-6");
+    expect(settings.updateMethod).toBe("always_regenerate");
+    expect(settings.anthropicModel).toBe("claude-sonnet-4-6");
   });
 
   test("preserves unrelated settings", () => {
-    const result = migrateSettings({
+    const settings = ok({
       anthropicApiKey: "sk-test",
       tagsFieldName: "tags",
       contentTokenLimit: 500,
     });
-    expect(result?.anthropicApiKey).toBe("sk-test");
-    expect(result?.tagsFieldName).toBe("tags");
-    expect(result?.contentTokenLimit).toBe(500);
+    expect(settings.anthropicApiKey).toBe("sk-test");
+    expect(settings.tagsFieldName).toBe("tags");
+    expect(settings.contentTokenLimit).toBe(500);
   });
 
   test("normalizes invalid trust-boundary settings to defaults", () => {
-    const result = migrateSettings({
+    const settings = ok({
       anthropicApiKey: 123,
       anthropicModel: "not-a-real-model",
       tagsFieldName: false,
@@ -64,7 +76,7 @@ describe("migrateSettings", () => {
       titlePrompt: null,
     });
 
-    expect(result).toEqual(DEFAULT_SETTINGS);
+    expect(settings).toEqual(DEFAULT_SETTINGS);
   });
 
   test("preserves valid loaded settings", () => {
@@ -86,79 +98,72 @@ describe("migrateSettings", () => {
       descriptionPrompt: "d",
       titlePrompt: "h",
     };
-    const result = migrateSettings(validLoaded);
 
-    expect(result).toEqual({ ...DEFAULT_SETTINGS, ...validLoaded });
+    expect(ok(validLoaded)).toEqual({ ...DEFAULT_SETTINGS, ...validLoaded });
   });
 
   test("falls back to default for empty or whitespace-only prompts", () => {
-    const result = migrateSettings({
+    const settings = ok({
       tagsPrompt: "",
       descriptionPrompt: "   ",
       titlePrompt: "\t\n",
     });
-    expect(result?.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
-    expect(result?.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
-    expect(result?.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
+    expect(settings.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
+    expect(settings.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
+    expect(settings.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
   });
 
   test("falls back to default for prompts exceeding max length", () => {
     const tooLong = "x".repeat(PROMPT_MAX_LENGTH + 1);
-    const result = migrateSettings({
+    const settings = ok({
       tagsPrompt: tooLong,
       descriptionPrompt: tooLong,
       titlePrompt: tooLong,
     });
-    expect(result?.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
-    expect(result?.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
-    expect(result?.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
+    expect(settings.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
+    expect(settings.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
+    expect(settings.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
   });
 
   test("preserves prompts exactly at the max length boundary", () => {
     const atLimit = "x".repeat(PROMPT_MAX_LENGTH);
-    const result = migrateSettings({
-      tagsPrompt: atLimit,
-    });
-    expect(result?.tagsPrompt).toBe(atLimit);
+    expect(ok({ tagsPrompt: atLimit }).tagsPrompt).toBe(atLimit);
   });
 
   test("maxBulkFiles: preserves a valid positive integer", () => {
-    const result = migrateSettings({ maxBulkFiles: 1000 });
-    expect(result?.maxBulkFiles).toBe(1000);
+    expect(ok({ maxBulkFiles: 1000 }).maxBulkFiles).toBe(1000);
   });
 
   test("maxBulkFiles: falls back to default for non-positive or non-integer values", () => {
-    expect(migrateSettings({ maxBulkFiles: 0 })?.maxBulkFiles).toBe(
+    expect(ok({ maxBulkFiles: 0 }).maxBulkFiles).toBe(
       DEFAULT_SETTINGS.maxBulkFiles,
     );
-    expect(migrateSettings({ maxBulkFiles: -5 })?.maxBulkFiles).toBe(
+    expect(ok({ maxBulkFiles: -5 }).maxBulkFiles).toBe(
       DEFAULT_SETTINGS.maxBulkFiles,
     );
-    expect(migrateSettings({ maxBulkFiles: 3.5 })?.maxBulkFiles).toBe(
+    expect(ok({ maxBulkFiles: 3.5 }).maxBulkFiles).toBe(
       DEFAULT_SETTINGS.maxBulkFiles,
     );
-    expect(migrateSettings({ maxBulkFiles: "100" })?.maxBulkFiles).toBe(
+    expect(ok({ maxBulkFiles: "100" }).maxBulkFiles).toBe(
       DEFAULT_SETTINGS.maxBulkFiles,
     );
   });
 
   test("maxBulkFiles: defaults when key is missing entirely", () => {
-    const result = migrateSettings({});
-    expect(result?.maxBulkFiles).toBe(DEFAULT_SETTINGS.maxBulkFiles);
+    expect(ok({}).maxBulkFiles).toBe(DEFAULT_SETTINGS.maxBulkFiles);
   });
 
   test("stamps the current schemaVersion on migrated output", () => {
-    const result = migrateSettings({});
-    expect(result?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(ok({}).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("stamps the current schemaVersion even when input declares an older version", () => {
-    const result = migrateSettings({
+    const settings = ok({
       schemaVersion: 0,
       anthropicModel: "claude-sonnet-4-5-20250929",
     });
-    expect(result?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(result?.anthropicModel).toBe("claude-sonnet-4-6");
+    expect(settings.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(settings.anthropicModel).toBe("claude-sonnet-4-6");
   });
 
   test("does not run migrations when input is already at current version", () => {
@@ -166,24 +171,26 @@ describe("migrateSettings", () => {
     // migration ran, it would be rewritten. Since the input already declares
     // schemaVersion=current, the migration is skipped — and then the
     // trust-boundary check rejects the unknown model and falls back to default.
-    const result = migrateSettings({
+    const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       anthropicModel: "claude-sonnet-4-5-20250929",
     });
-    expect(result?.anthropicModel).toBe(DEFAULT_SETTINGS.anthropicModel);
+    expect(settings.anthropicModel).toBe(DEFAULT_SETTINGS.anthropicModel);
   });
 
-  test("returns null and warns when schemaVersion is newer than this plugin", () => {
+  test("returns kind:future and warns when schemaVersion is newer than this plugin", () => {
     const captured: unknown[][] = [];
     const original = console.warn;
     console.warn = (...args: unknown[]) => {
       captured.push(args);
     };
     try {
-      const result = migrateSettings({
-        schemaVersion: CURRENT_SCHEMA_VERSION + 99,
+      const future = CURRENT_SCHEMA_VERSION + 99;
+      const result = migrateSettings({ schemaVersion: future });
+      expect(result).toEqual({
+        kind: "future",
+        loadedSchemaVersion: future,
       });
-      expect(result).toBeNull();
       expect(captured).toHaveLength(1);
       const message = String(captured[0][0] ?? "");
       expect(message).toContain("schemaVersion=");
@@ -195,33 +202,96 @@ describe("migrateSettings", () => {
 
   test("treats invalid schemaVersion (non-integer / negative) as 0 and migrates", () => {
     expect(
-      migrateSettings({
+      ok({
         schemaVersion: 1.5,
         anthropicModel: "claude-sonnet-4-5-20250929",
-      })?.anthropicModel,
+      }).anthropicModel,
     ).toBe("claude-sonnet-4-6");
     expect(
-      migrateSettings({
+      ok({
         schemaVersion: -1,
         anthropicModel: "claude-opus-4-5-20251101",
-      })?.anthropicModel,
+      }).anthropicModel,
     ).toBe("claude-opus-4-6");
     expect(
-      migrateSettings({
+      ok({
         schemaVersion: "1",
         anthropicModel: "claude-sonnet-4-5-20250929",
-      })?.anthropicModel,
+      }).anthropicModel,
     ).toBe("claude-sonnet-4-6");
   });
 
   test("drops orphan keys not in MetadataToolSettings", () => {
-    const result = migrateSettings({
+    const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       removedFieldFromOldVersion: "legacy",
       anotherOrphan: 42,
     });
-    expect(result).not.toBeNull();
-    expect(result).not.toHaveProperty("removedFieldFromOldVersion");
-    expect(result).not.toHaveProperty("anotherOrphan");
+    expect(settings).not.toHaveProperty("removedFieldFromOldVersion");
+    expect(settings).not.toHaveProperty("anotherOrphan");
+  });
+});
+
+describe("applyMigrations", () => {
+  test("throws when a migration entry is missing for a target version", () => {
+    // Simulates the bug: someone bumped CURRENT_SCHEMA_VERSION to 3 but
+    // forgot to add MIGRATIONS[3]. We want a loud failure, not a silent
+    // stamping of v3 onto un-transformed data.
+    const partialMigrations = new Map<
+      number,
+      (s: Record<string, unknown>) => void
+    >([
+      [
+        2,
+        (s) => {
+          s.touchedByV2 = true;
+        },
+      ],
+    ]);
+    expect(() => applyMigrations({}, 1, partialMigrations, 3)).toThrow(
+      /missing migration for schema version 3/,
+    );
+  });
+
+  test("runs every migration in order from fromVersion+1 up to targetVersion", () => {
+    const order: number[] = [];
+    const migrations = new Map<number, (s: Record<string, unknown>) => void>([
+      [
+        1,
+        () => {
+          order.push(1);
+        },
+      ],
+      [
+        2,
+        () => {
+          order.push(2);
+        },
+      ],
+      [
+        3,
+        () => {
+          order.push(3);
+        },
+      ],
+    ]);
+    const result = applyMigrations({}, 0, migrations, 3);
+    expect(order).toEqual([1, 2, 3]);
+    expect(result.schemaVersion).toBe(3);
+  });
+
+  test("skips migrations already applied (fromVersion = target)", () => {
+    const ran: number[] = [];
+    const migrations = new Map<number, (s: Record<string, unknown>) => void>([
+      [
+        1,
+        () => {
+          ran.push(1);
+        },
+      ],
+    ]);
+    const result = applyMigrations({}, 1, migrations, 1);
+    expect(ran).toEqual([]);
+    expect(result.schemaVersion).toBe(1);
   });
 });
