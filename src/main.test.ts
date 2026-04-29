@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { migrateSettings } from "./main";
 import {
+  CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
@@ -68,6 +69,7 @@ describe("migrateSettings", () => {
 
   test("preserves valid loaded settings", () => {
     const validLoaded: MetadataToolSettings = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       anthropicApiKey: "sk-test",
       anthropicModel: "claude-haiku-4-5-20251001",
       tagsFieldName: "keywords",
@@ -143,5 +145,83 @@ describe("migrateSettings", () => {
   test("maxBulkFiles: defaults when key is missing entirely", () => {
     const result = migrateSettings({});
     expect(result?.maxBulkFiles).toBe(DEFAULT_SETTINGS.maxBulkFiles);
+  });
+
+  test("stamps the current schemaVersion on migrated output", () => {
+    const result = migrateSettings({});
+    expect(result?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  test("stamps the current schemaVersion even when input declares an older version", () => {
+    const result = migrateSettings({
+      schemaVersion: 0,
+      anthropicModel: "claude-sonnet-4-5-20250929",
+    });
+    expect(result?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(result?.anthropicModel).toBe("claude-sonnet-4-6");
+  });
+
+  test("does not run migrations when input is already at current version", () => {
+    // claude-sonnet-4-5-20250929 is the *old* identifier; if the v0→v1
+    // migration ran, it would be rewritten. Since the input already declares
+    // schemaVersion=current, the migration is skipped — and then the
+    // trust-boundary check rejects the unknown model and falls back to default.
+    const result = migrateSettings({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      anthropicModel: "claude-sonnet-4-5-20250929",
+    });
+    expect(result?.anthropicModel).toBe(DEFAULT_SETTINGS.anthropicModel);
+  });
+
+  test("returns null and warns when schemaVersion is newer than this plugin", () => {
+    const captured: unknown[][] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      captured.push(args);
+    };
+    try {
+      const result = migrateSettings({
+        schemaVersion: CURRENT_SCHEMA_VERSION + 99,
+      });
+      expect(result).toBeNull();
+      expect(captured).toHaveLength(1);
+      const message = String(captured[0][0] ?? "");
+      expect(message).toContain("schemaVersion=");
+      expect(message).toContain("Falling back to defaults");
+    } finally {
+      console.warn = original;
+    }
+  });
+
+  test("treats invalid schemaVersion (non-integer / negative) as 0 and migrates", () => {
+    expect(
+      migrateSettings({
+        schemaVersion: 1.5,
+        anthropicModel: "claude-sonnet-4-5-20250929",
+      })?.anthropicModel,
+    ).toBe("claude-sonnet-4-6");
+    expect(
+      migrateSettings({
+        schemaVersion: -1,
+        anthropicModel: "claude-opus-4-5-20251101",
+      })?.anthropicModel,
+    ).toBe("claude-opus-4-6");
+    expect(
+      migrateSettings({
+        schemaVersion: "1",
+        anthropicModel: "claude-sonnet-4-5-20250929",
+      })?.anthropicModel,
+    ).toBe("claude-sonnet-4-6");
+  });
+
+  test("drops orphan keys not in MetadataToolSettings", () => {
+    const result = migrateSettings({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      removedFieldFromOldVersion: "legacy",
+      anotherOrphan: 42,
+    });
+    expect(result).not.toBeNull();
+    expect(result).not.toHaveProperty("removedFieldFromOldVersion");
+    expect(result).not.toHaveProperty("anotherOrphan");
   });
 });

@@ -2,6 +2,7 @@ import { Plugin, TFolder } from "obsidian";
 import { runBulkForFolder } from "./bulkOrchestrator";
 import { generateMetadata } from "./metadata";
 import {
+  CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
@@ -56,6 +57,51 @@ function isUpdateMethod(
   );
 }
 
+// Schema migrations, keyed by the version they produce. To add migration N,
+// add an entry [N, fn] and bump CURRENT_SCHEMA_VERSION in settings.ts. Each
+// migration mutates the raw bag in place; trust-boundary normalization runs
+// afterward in migrateSettings.
+const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
+  new Map([
+    [
+      1,
+      (s) => {
+        // 0 → 1: rename retired model identifiers.
+        if (s.anthropicModel === "claude-sonnet-4-5-20250929") {
+          s.anthropicModel = "claude-sonnet-4-6";
+        }
+        if (s.anthropicModel === "claude-opus-4-5-20251101") {
+          s.anthropicModel = "claude-opus-4-6";
+        }
+      },
+    ],
+  ]);
+
+function applyMigrations(
+  raw: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const fromVersion =
+    typeof raw.schemaVersion === "number" &&
+    Number.isInteger(raw.schemaVersion) &&
+    raw.schemaVersion >= 0
+      ? raw.schemaVersion
+      : 0;
+
+  if (fromVersion > CURRENT_SCHEMA_VERSION) {
+    console.warn(
+      `[Metadator] data.json schemaVersion=${fromVersion} is newer than this plugin (${CURRENT_SCHEMA_VERSION}). Falling back to defaults to avoid corrupting your data.`,
+    );
+    return null;
+  }
+
+  const migrated: Record<string, unknown> = { ...raw };
+  for (let v = fromVersion + 1; v <= CURRENT_SCHEMA_VERSION; v++) {
+    MIGRATIONS.get(v)?.(migrated);
+  }
+  migrated.schemaVersion = CURRENT_SCHEMA_VERSION;
+  return migrated;
+}
+
 export function migrateSettings(
   loaded: unknown | null,
 ): MetadataToolSettings | null {
@@ -63,16 +109,8 @@ export function migrateSettings(
     return null;
   }
 
-  const raw = loaded as Record<string, unknown>;
-  const migrated = { ...raw };
-
-  if (migrated.anthropicModel === "claude-sonnet-4-5-20250929") {
-    migrated.anthropicModel = "claude-sonnet-4-6";
-  }
-
-  if (migrated.anthropicModel === "claude-opus-4-5-20251101") {
-    migrated.anthropicModel = "claude-opus-4-6";
-  }
+  const migrated = applyMigrations(loaded as Record<string, unknown>);
+  if (migrated === null) return null;
 
   const anthropicModel = readString(
     migrated.anthropicModel,
@@ -88,6 +126,7 @@ export function migrateSettings(
   );
 
   const normalized: MetadataToolSettings = {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     anthropicApiKey: readString(
       migrated.anthropicApiKey,
       DEFAULT_SETTINGS.anthropicApiKey,
