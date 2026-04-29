@@ -88,7 +88,9 @@ describe("callClaudeForMetadata", () => {
   });
 
   test("rejects tool input that has the wrong field types", async () => {
-    mockCreate.mockResolvedValueOnce(toolUseResponse({ tags: 123 }));
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: 123, description: "d", title: "t" }),
+    );
 
     let caught: unknown;
     try {
@@ -98,6 +100,59 @@ describe("callClaudeForMetadata", () => {
     }
     expect(caught).toBeInstanceOf(ClaudeApiError);
     expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("api");
+  });
+
+  test("rejects tool input that omits a required field", async () => {
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ tags: "a,b" }));
+
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("api");
+    expect((caught as Error).message).toMatch(/description/);
+  });
+
+  test("rejects tool input that omits title when enableTitle is true", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a", description: "d" }),
+    );
+
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("api");
+    expect((caught as Error).message).toMatch(/title/);
+  });
+
+  test("throws when model calls a different tool", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_2",
+          name: "some_other_tool",
+          input: { foo: "bar" },
+        },
+      ],
+    });
+
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).kind).toBe("api");
+    expect((caught as Error).message).toMatch(/some_other_tool/);
   });
 
   test("maps authentication error to kind:auth", async () => {

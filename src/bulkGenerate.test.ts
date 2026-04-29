@@ -256,7 +256,7 @@ describe("runBulk", () => {
             type: "tool_use",
             id: "tu_1",
             name: "submit_metadata",
-            input: { tags: "a", description: "d" },
+            input: { tags: "a", description: "d", title: "T" },
           },
         ],
       })
@@ -267,7 +267,7 @@ describe("runBulk", () => {
             type: "tool_use",
             id: "tu_1",
             name: "submit_metadata",
-            input: { tags: "c", description: "d" },
+            input: { tags: "c", description: "d", title: "T" },
           },
         ],
       });
@@ -292,7 +292,7 @@ describe("runBulk", () => {
           type: "tool_use",
           id: "tu_1",
           name: "submit_metadata",
-          input: { tags: "a", description: "d" },
+          input: { tags: "a", description: "d", title: "T" },
         },
       ],
     });
@@ -421,7 +421,7 @@ describe("runBulk", () => {
           type: "tool_use",
           id: "tu_1",
           name: "submit_metadata",
-          input: { tags: "a", description: "d" },
+          input: { tags: "a", description: "d", title: "T" },
         },
       ],
     });
