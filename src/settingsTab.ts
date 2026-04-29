@@ -98,6 +98,26 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("Max Bulk Files")
+      .setDesc(
+        "Hard limit on files-that-will-change in a single bulk run. Above this, the confirm dialog requires explicit override.",
+      )
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.maxBulkFiles.toString())
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            if (Number.isNaN(parsed) || parsed < 1) {
+              new Notice("Max bulk files must be a positive integer");
+              text.setValue(this.plugin.settings.maxBulkFiles.toString());
+              return;
+            }
+            this.plugin.settings.maxBulkFiles = parsed;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Truncate Content")
       .setDesc("Limit content sent to API to reduce costs")
       .addToggle((toggle) =>

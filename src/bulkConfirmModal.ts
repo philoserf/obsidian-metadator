@@ -52,6 +52,26 @@ export class BulkConfirmModal extends Modal {
       warn.style.fontWeight = "bold";
     }
 
+    const exceedsCap = willChange > settings.maxBulkFiles;
+    let overrideEl: HTMLInputElement | undefined;
+    if (exceedsCap) {
+      const cap = contentEl.createEl("p", {
+        text: `⛔ Exceeds the configured limit of ${settings.maxBulkFiles} files. Raise "Max Bulk Files" in Settings → Metadator, or check the box below to override for this run only.`,
+      });
+      cap.style.color = "var(--text-error)";
+      cap.style.fontWeight = "bold";
+
+      const overrideRow = contentEl.createDiv();
+      overrideEl = overrideRow.createEl("input", {
+        attr: { type: "checkbox", id: "metadator-override-cap" },
+      }) as HTMLInputElement;
+      const label = overrideRow.createEl("label", {
+        text: ` I understand and want to proceed with ${willChange} files`,
+        attr: { for: "metadator-override-cap" },
+      });
+      label.style.marginLeft = "0.4em";
+    }
+
     const buttons = contentEl.createDiv({ cls: "modal-button-container" });
     const cancelBtn = buttons.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => {
@@ -62,6 +82,12 @@ export class BulkConfirmModal extends Modal {
       text: `Generate (${willChange})`,
       cls: "mod-cta",
     });
+    if (exceedsCap && overrideEl) {
+      confirmBtn.disabled = true;
+      overrideEl.addEventListener("change", () => {
+        confirmBtn.disabled = !overrideEl?.checked;
+      });
+    }
     confirmBtn.addEventListener("click", () => {
       this.resolve(true);
       this.close();
