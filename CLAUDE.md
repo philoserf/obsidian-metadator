@@ -73,6 +73,7 @@ Tests are colocated with source files in `src/`:
 - **Anthropic client** is initialized with `dangerouslyAllowBrowser: true` since it runs inside Obsidian's Electron renderer
 - **Tags, description, and title** all respect `updateMethod` — preserve_existing keeps populated fields, always_regenerate updates all
 - **API calls** use a system message for instructions and wrap article content in `<article>` XML tags in the user message
+- **Bulk retry policy**: rate-limit and overload errors retry on the schedule `[2s, 8s, 30s]` (`DEFAULT_RETRY_DELAYS_MS`). Each delay is jittered to `[0.5x, 1.5x]` to avoid synchronized retry storms across parallel clients. If the SDK error carries a `Retry-After` header, that value is honored, capped at 2x the scheduled base delay so a misbehaving header can't stall a long bulk run. The SDK also performs its own internal retries — the outer policy applies on top of that.
 
 ## Build System
 

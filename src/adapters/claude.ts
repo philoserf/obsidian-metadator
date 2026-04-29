@@ -16,11 +16,27 @@ export type ClaudeErrorKind =
 
 export class ClaudeApiError extends Error {
   readonly kind: ClaudeErrorKind;
-  constructor(kind: ClaudeErrorKind, message: string) {
+  readonly retryAfterMs?: number;
+  constructor(kind: ClaudeErrorKind, message: string, retryAfterMs?: number) {
     super(message);
     this.kind = kind;
+    this.retryAfterMs = retryAfterMs;
     this.name = "ClaudeApiError";
   }
+}
+
+export function parseRetryAfterMs(
+  headers: { get?: (name: string) => string | null } | undefined,
+): number | undefined {
+  const raw = headers?.get?.("retry-after");
+  if (!raw) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+  // Retry-After may also be an HTTP-date; fall back to the computed delay
+  // rather than parsing dates here.
+  return undefined;
 }
 
 export interface MetadataFields {
@@ -71,10 +87,18 @@ function classifyError(error: unknown): ClaudeApiError {
     return new ClaudeApiError("auth", error.message);
   }
   if (error instanceof Anthropic.RateLimitError) {
-    return new ClaudeApiError("rate_limit", error.message);
+    return new ClaudeApiError(
+      "rate_limit",
+      error.message,
+      parseRetryAfterMs(error.headers),
+    );
   }
   if (error instanceof Anthropic.InternalServerError) {
-    return new ClaudeApiError("overloaded", error.message);
+    return new ClaudeApiError(
+      "overloaded",
+      error.message,
+      parseRetryAfterMs(error.headers),
+    );
   }
   if (error instanceof Anthropic.APIError) {
     return new ClaudeApiError("api", error.message);

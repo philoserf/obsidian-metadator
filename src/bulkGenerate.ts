@@ -54,6 +54,7 @@ export interface RunBulkOptions {
   shouldAbort?: () => boolean;
   retryDelaysMs?: readonly number[];
   signal?: AbortSignal;
+  random?: () => number;
 }
 
 function isRateLimitOrOverload(error: unknown): boolean {
@@ -61,6 +62,30 @@ function isRateLimitOrOverload(error: unknown): boolean {
     error instanceof ClaudeApiError &&
     (error.kind === "rate_limit" || error.kind === "overloaded")
   );
+}
+
+// Cap server-provided Retry-After at this multiple of the scheduled base
+// delay so a misbehaving header can't stall a long bulk run indefinitely.
+const RETRY_AFTER_CAP_MULTIPLIER = 2;
+
+export function computeDelayMs(
+  baseDelayMs: number,
+  error: unknown,
+  random: () => number = Math.random,
+): number {
+  if (
+    error instanceof ClaudeApiError &&
+    error.retryAfterMs !== undefined &&
+    Number.isFinite(error.retryAfterMs)
+  ) {
+    return Math.min(
+      error.retryAfterMs,
+      baseDelayMs * RETRY_AFTER_CAP_MULTIPLIER,
+    );
+  }
+  // Full jitter in [0.5x, 1.5x] of base — avoids synchronized retry storms
+  // across parallel clients hitting a shared-tenant overload.
+  return Math.round(baseDelayMs * (0.5 + random()));
 }
 
 const ABORT_POLL_MS = 100;
@@ -88,6 +113,7 @@ async function runFileWithRetry(
   retryDelaysMs: readonly number[],
   shouldAbort?: () => boolean,
   signal?: AbortSignal,
+  random: () => number = Math.random,
 ): Promise<FileResult> {
   const shouldStop = () =>
     (shouldAbort?.() ?? false) || (signal?.aborted ?? false);
@@ -102,7 +128,8 @@ async function runFileWithRetry(
     });
     if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
     if (attempt === retryDelaysMs.length) return r;
-    const aborted = await sleepAbortable(retryDelaysMs[attempt], shouldStop);
+    const delayMs = computeDelayMs(retryDelaysMs[attempt], r.error, random);
+    const aborted = await sleepAbortable(delayMs, shouldStop);
     if (aborted) {
       return {
         kind: "skipped",
@@ -119,7 +146,13 @@ export async function runBulk(
   app: App,
   files: TFile[],
   settings: MetadataToolSettings,
-  { onProgress, shouldAbort, retryDelaysMs, signal }: RunBulkOptions = {},
+  {
+    onProgress,
+    shouldAbort,
+    retryDelaysMs,
+    signal,
+    random,
+  }: RunBulkOptions = {},
 ): Promise<FileResult[]> {
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const results: FileResult[] = [];
@@ -136,6 +169,7 @@ export async function runBulk(
       delays,
       shouldAbort,
       signal,
+      random,
     );
     results.push(result);
     if (result.kind === "error") errors++;

@@ -7,9 +7,27 @@ class MockAuthenticationError extends Error {
 }
 class MockRateLimitError extends Error {
   name = "RateLimitError";
+  headers?: { get(name: string): string | null };
+  constructor(message?: string, headers?: Record<string, string>) {
+    super(message);
+    if (headers) {
+      this.headers = {
+        get: (name: string) => headers[name.toLowerCase()] ?? null,
+      };
+    }
+  }
 }
 class MockInternalServerError extends Error {
   name = "InternalServerError";
+  headers?: { get(name: string): string | null };
+  constructor(message?: string, headers?: Record<string, string>) {
+    super(message);
+    if (headers) {
+      this.headers = {
+        get: (name: string) => headers[name.toLowerCase()] ?? null,
+      };
+    }
+  }
 }
 class MockAPIError extends Error {
   name = "APIError";
@@ -28,9 +46,8 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const { callClaudeForMetadata, ClaudeApiError } = await import(
-  "./adapters/claude"
-);
+const { callClaudeForMetadata, ClaudeApiError, parseRetryAfterMs } =
+  await import("./adapters/claude");
 
 const settings = {
   ...DEFAULT_SETTINGS,
@@ -181,6 +198,51 @@ describe("callClaudeForMetadata", () => {
     );
   });
 
+  test("threads Retry-After header through ClaudeApiError on rate-limit", async () => {
+    mockCreate.mockRejectedValueOnce(
+      new MockRateLimitError("rate limited", { "retry-after": "3" }),
+    );
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).retryAfterMs).toBe(
+      3000,
+    );
+  });
+
+  test("threads Retry-After header through ClaudeApiError on overloaded", async () => {
+    mockCreate.mockRejectedValueOnce(
+      new MockInternalServerError("overloaded", { "retry-after": "10" }),
+    );
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as InstanceType<typeof ClaudeApiError>).retryAfterMs).toBe(
+      10_000,
+    );
+  });
+
+  test("leaves retryAfterMs undefined when header is absent", async () => {
+    mockCreate.mockRejectedValueOnce(new MockRateLimitError("rate limited"));
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (e) {
+      caught = e;
+    }
+    expect(
+      (caught as InstanceType<typeof ClaudeApiError>).retryAfterMs,
+    ).toBeUndefined();
+  });
+
   test("maps internal-server error to kind:overloaded", async () => {
     mockCreate.mockRejectedValueOnce(new MockInternalServerError("overloaded"));
     let caught: unknown;
@@ -313,6 +375,44 @@ describe("callClaudeForMetadata", () => {
     expect(mockCreate).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+});
+
+describe("parseRetryAfterMs", () => {
+  function makeHeaders(values: Record<string, string>) {
+    return {
+      get: (name: string) => values[name.toLowerCase()] ?? null,
+    };
+  }
+
+  test("parses integer seconds", () => {
+    expect(parseRetryAfterMs(makeHeaders({ "retry-after": "5" }))).toBe(5000);
+  });
+
+  test("parses fractional seconds", () => {
+    expect(parseRetryAfterMs(makeHeaders({ "retry-after": "0.5" }))).toBe(500);
+  });
+
+  test("returns undefined when header is absent", () => {
+    expect(parseRetryAfterMs(makeHeaders({}))).toBeUndefined();
+  });
+
+  test("returns undefined when headers is undefined", () => {
+    expect(parseRetryAfterMs(undefined)).toBeUndefined();
+  });
+
+  test("returns undefined for HTTP-date form (not parsed)", () => {
+    expect(
+      parseRetryAfterMs(
+        makeHeaders({ "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT" }),
+      ),
+    ).toBeUndefined();
+  });
+
+  test("returns undefined for negative values", () => {
+    expect(parseRetryAfterMs(makeHeaders({ "retry-after": "-1" }))).toBe(
+      undefined,
     );
   });
 });
