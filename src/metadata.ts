@@ -242,6 +242,9 @@ export async function generateMetadata(
         result.error instanceof Error
           ? result.error.message
           : String(result.error),
+      errorName: result.error instanceof Error ? result.error.name : undefined,
+      errorStack:
+        result.error instanceof Error ? result.error.stack : undefined,
     });
   }
 }
@@ -354,6 +357,8 @@ async function addMetadataWithClaude(
         requestId,
         field: u.fieldName,
         errorMessage: error instanceof Error ? error.message : String(error),
+        errorName: error instanceof Error ? error.name : undefined,
+        errorStack: error instanceof Error ? error.stack : undefined,
       });
       return false;
     }
