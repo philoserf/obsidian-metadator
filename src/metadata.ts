@@ -78,7 +78,7 @@ export function parseTags(tagsString: string): string[] {
     .filter((tag) => tag !== "");
 }
 
-export function stripSurroundingQuotes(str: string): string {
+function stripSurroundingQuotes(str: string): string {
   const trimmed = str.trim();
   if (
     (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
@@ -89,7 +89,7 @@ export function stripSurroundingQuotes(str: string): string {
   return trimmed;
 }
 
-export function isEmptyValue(value: unknown): boolean {
+function isEmptyValue(value: unknown): boolean {
   if (!value) return true;
   if (typeof value === "string") return value.trim() === "";
   if (Array.isArray(value)) {
@@ -101,15 +101,13 @@ export function isEmptyValue(value: unknown): boolean {
 export type WritePolicy = "update_all" | "only_empty";
 export type PresentationMode = "interactive" | "bulk";
 
-export function writePolicyFromSettings(
-  settings: MetadataToolSettings,
-): WritePolicy {
+function writePolicyFromSettings(settings: MetadataToolSettings): WritePolicy {
   return settings.updateMethod === "always_regenerate"
     ? "update_all"
     : "only_empty";
 }
 
-export function resolveUpdateMethod(
+function resolveUpdateMethod(
   policy: WritePolicy,
   currentValue: unknown,
 ): "update" | "keep" {
