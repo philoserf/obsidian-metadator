@@ -61,8 +61,8 @@ Tests are colocated with source files in `src/`:
 1. User runs "Generate metadata for current note" command
 2. `generateMetadata()` checks which fields need population based on `updateMethod`
 3. Content is extracted and optionally truncated via `getContent()`
-4. `callClaude()` sends the prompt to the Anthropic API
-5. Response JSON is extracted with regex and parsed
+4. `callClaudeForMetadata()` sends the prompt to the Anthropic API with a forced `submit_metadata` tool call
+5. The model's `tool_use` block input is validated against the schema and returned as `MetadataFields`
 6. `updateFrontMatter()` writes each field via `processFrontMatter()`
 
 ### Key Patterns
