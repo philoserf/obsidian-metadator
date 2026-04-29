@@ -25,5 +25,33 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "@anthropic-ai/sdk": "Import @anthropic-ai/sdk only from src/adapters/claude.ts. Other modules should depend on the adapter's typed wrapper (callClaudeForMetadata, ClaudeApiError) so SDK types do not leak into application or domain code."
+            }
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/adapters/claude.ts", "**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    }
+  ]
 }
