@@ -2,7 +2,13 @@ import type { TruncateMethod } from "./content/types";
 
 export const PROMPT_MAX_LENGTH = 1000;
 
+// Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
+// in main.ts. Each migration's key is the schema version it produces.
+export const CURRENT_SCHEMA_VERSION = 1;
+
 export interface MetadataToolSettings {
+  schemaVersion: number;
+
   anthropicApiKey: string;
   anthropicModel: string;
 
@@ -77,6 +83,8 @@ export const UPDATE_METHOD_LABELS: Record<
 };
 
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
+  schemaVersion: CURRENT_SCHEMA_VERSION,
+
   anthropicApiKey: "",
   anthropicModel: "claude-sonnet-4-6",
 
