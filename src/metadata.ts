@@ -6,6 +6,7 @@ import {
 } from "./adapters/claude";
 import { updateFrontMatter } from "./adapters/frontmatter";
 import { getContent } from "./content/getContent";
+import { logDebug, logError, newRequestId } from "./logger";
 import type { MetadataToolSettings } from "./settings";
 
 function notifyApiError(error: unknown): void {
@@ -232,7 +233,16 @@ export async function generateMetadata(
     new Notice("Metadata updated successfully");
   } else if (result.kind === "error") {
     notifyApiError(result.error);
-    console.error("generateMetadata error:", result.error);
+    logError({
+      event: "generation_failed",
+      file: file.path,
+      errorKind:
+        result.error instanceof ClaudeApiError ? result.error.kind : "unknown",
+      errorMessage:
+        result.error instanceof Error
+          ? result.error.message
+          : String(result.error),
+    });
   }
 }
 
@@ -246,6 +256,7 @@ async function addMetadataWithClaude(
   signal?: AbortSignal,
 ): Promise<boolean> {
   const isBulk = presentation === "bulk";
+  const requestId = newRequestId();
 
   const contentStr = settings.truncateContent
     ? await getContent(
@@ -258,27 +269,49 @@ async function addMetadataWithClaude(
 
   const { system, userMessage } = buildPrompt(contentStr, settings);
 
-  if (settings.debugLogging && !isBulk) {
-    console.log("[Metadator] System:", system);
-    console.log("[Metadator] User message:", userMessage);
+  if (settings.debugLogging) {
+    logDebug({
+      event: "claude_request_start",
+      file: file.path,
+      model: settings.anthropicModel,
+      requestId,
+      promptLength: system.length,
+      contentLength: userMessage.length,
+    });
   }
 
   const notice = isBulk ? undefined : new Notice("Generating metadata...", 0);
+  const startedAt = Date.now();
   let metadata: MetadataFields;
   try {
     metadata = await callClaudeForMetadata(system, userMessage, settings, {
       signal,
     });
+  } catch (error) {
+    if (settings.debugLogging) {
+      logDebug({
+        event: "claude_request_failed",
+        file: file.path,
+        model: settings.anthropicModel,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        errorKind: error instanceof ClaudeApiError ? error.kind : "unknown",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+    throw error;
   } finally {
     notice?.hide();
   }
 
   if (settings.debugLogging) {
-    if (isBulk) {
-      console.log(`[Metadator] [bulk] ${file.path} — fields received`);
-    } else {
-      console.log("[Metadator] Fields:", metadata);
-    }
+    logDebug({
+      event: "claude_request_completed",
+      file: file.path,
+      model: settings.anthropicModel,
+      requestId,
+      durationMs: Date.now() - startedAt,
+    });
   }
 
   if (signal?.aborted) {
@@ -315,7 +348,13 @@ async function addMetadataWithClaude(
           `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-      console.error(`updateFrontMatter error (${u.fieldName}):`, error);
+      logError({
+        event: "frontmatter_write_failed",
+        file: file.path,
+        requestId,
+        field: u.fieldName,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }
