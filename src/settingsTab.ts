@@ -10,6 +10,13 @@ import {
   VALID_UPDATE_METHOD_OPTIONS,
 } from "./settings";
 
+export function parseStrictPositiveInt(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return n > 0 ? n : null;
+}
+
 export class MetadataToolSettingTab extends PluginSettingTab {
   plugin: MetadataToolPlugin;
 
@@ -106,8 +113,8 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.maxBulkFiles.toString())
           .onChange(async (value) => {
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isNaN(parsed) || parsed < 1) {
+            const parsed = parseStrictPositiveInt(value);
+            if (parsed === null) {
               new Notice("Max bulk files must be a positive integer");
               text.setValue(this.plugin.settings.maxBulkFiles.toString());
               return;
@@ -138,8 +145,8 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.contentTokenLimit.toString())
           .onChange(async (value) => {
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isNaN(parsed) || parsed < 1) {
+            const parsed = parseStrictPositiveInt(value);
+            if (parsed === null) {
               new Notice("Content token limit must be a positive integer");
               text.setValue(this.plugin.settings.contentTokenLimit.toString());
               return;
