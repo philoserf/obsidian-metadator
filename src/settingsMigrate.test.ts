@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { applyMigrations, migrateSettings } from "./main";
 import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
 } from "./settings";
+import { applyMigrations, migrateSettings } from "./settingsMigrate";
 
 function ok(loaded: unknown | null): MetadataToolSettings {
   const result = migrateSettings(loaded);
