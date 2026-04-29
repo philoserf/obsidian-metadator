@@ -1,4 +1,5 @@
-import { Modal, type TFile } from "obsidian";
+import { Modal } from "obsidian";
+import type { BulkProgress } from "./bulkGenerate";
 
 export class BulkProgressModal extends Modal {
   private aborted = false;
@@ -28,12 +29,7 @@ export class BulkProgressModal extends Modal {
     this.onAbort = handler;
   }
 
-  setProgress(p: {
-    current: number;
-    total: number;
-    file: TFile;
-    errors: number;
-  }): void {
+  setProgress(p: BulkProgress): void {
     if (!this.statusEl) return;
     this.statusEl.textContent = `${p.current} / ${p.total} · ${p.file.path} · errors: ${p.errors}`;
   }
