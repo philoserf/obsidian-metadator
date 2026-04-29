@@ -98,11 +98,22 @@ export function isEmptyValue(value: unknown): boolean {
   return false;
 }
 
+export type WritePolicy = "update_all" | "only_empty";
+export type PresentationMode = "interactive" | "bulk";
+
+export function writePolicyFromSettings(
+  settings: MetadataToolSettings,
+): WritePolicy {
+  return settings.updateMethod === "always_regenerate"
+    ? "update_all"
+    : "only_empty";
+}
+
 export function resolveUpdateMethod(
-  force: boolean,
+  policy: WritePolicy,
   currentValue: unknown,
 ): "update" | "keep" {
-  if (force) return "update";
+  if (policy === "update_all") return "update";
   return isEmptyValue(currentValue) ? "update" : "keep";
 }
 
@@ -124,7 +135,7 @@ export type FileResult =
   | { kind: "error"; file: TFile; reason: string; error: unknown };
 
 export interface GenerateOptions {
-  isBulk?: boolean;
+  presentation?: PresentationMode;
   signal?: AbortSignal;
 }
 
@@ -163,14 +174,13 @@ export async function generateMetadataForFile(
   }
 
   try {
-    const updateAll = settings.updateMethod === "always_regenerate";
     const hasChanges = await addMetadataWithClaude(
       app,
       file,
       settings,
       frontMatter,
-      updateAll,
-      opts.isBulk ?? false,
+      writePolicyFromSettings(settings),
+      opts.presentation ?? "interactive",
       opts.signal,
     );
     return hasChanges
@@ -229,10 +239,12 @@ async function addMetadataWithClaude(
   file: TFile,
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
-  force: boolean = false,
-  isBulk: boolean = false,
+  policy: WritePolicy,
+  presentation: PresentationMode,
   signal?: AbortSignal,
 ): Promise<boolean> {
+  const isBulk = presentation === "bulk";
+
   const contentStr = settings.truncateContent
     ? await getContent(
         app,
@@ -334,7 +346,7 @@ async function addMetadataWithClaude(
     if (signal?.aborted) {
       return hasChanges;
     }
-    const resolved = resolveUpdateMethod(force, frontMatter[u.fieldName]);
+    const resolved = resolveUpdateMethod(policy, frontMatter[u.fieldName]);
     if (await writeField(u, resolved)) {
       hasChanges = true;
     }

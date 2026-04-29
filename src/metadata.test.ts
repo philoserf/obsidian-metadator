@@ -61,36 +61,36 @@ describe("stripSurroundingQuotes", () => {
 });
 
 describe("resolveUpdateMethod", () => {
-  test("returns update when force is true", () => {
-    expect(resolveUpdateMethod(true, "existing")).toBe("update");
+  test("returns update when policy is update_all", () => {
+    expect(resolveUpdateMethod("update_all", "existing")).toBe("update");
   });
 
   test("returns update when currentValue is undefined", () => {
-    expect(resolveUpdateMethod(false, undefined)).toBe("update");
+    expect(resolveUpdateMethod("only_empty", undefined)).toBe("update");
   });
 
   test("returns update when currentValue is null", () => {
-    expect(resolveUpdateMethod(false, null)).toBe("update");
+    expect(resolveUpdateMethod("only_empty", null)).toBe("update");
   });
 
   test("returns update when currentValue is empty string", () => {
-    expect(resolveUpdateMethod(false, "")).toBe("update");
+    expect(resolveUpdateMethod("only_empty", "")).toBe("update");
   });
 
   test("returns update when currentValue is whitespace-only", () => {
-    expect(resolveUpdateMethod(false, "   ")).toBe("update");
+    expect(resolveUpdateMethod("only_empty", "   ")).toBe("update");
   });
 
   test("returns keep when currentValue exists", () => {
-    expect(resolveUpdateMethod(false, "existing value")).toBe("keep");
+    expect(resolveUpdateMethod("only_empty", "existing value")).toBe("keep");
   });
 
   test("returns keep for non-string truthy value", () => {
-    expect(resolveUpdateMethod(false, ["tag1", "tag2"])).toBe("keep");
+    expect(resolveUpdateMethod("only_empty", ["tag1", "tag2"])).toBe("keep");
   });
 
-  test("force overrides existing value", () => {
-    expect(resolveUpdateMethod(true, "existing value")).toBe("update");
+  test("update_all overrides existing value", () => {
+    expect(resolveUpdateMethod("update_all", "existing value")).toBe("update");
   });
 });
 
