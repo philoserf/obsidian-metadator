@@ -139,6 +139,10 @@ export interface GenerateOptions {
   signal?: AbortSignal;
 }
 
+export interface InteractiveGenerateOptions {
+  signal?: AbortSignal;
+}
+
 function isAbortError(error: unknown): boolean {
   return (
     (error instanceof Error && error.name === "AbortError") ||
@@ -202,7 +206,7 @@ export async function generateMetadataForFile(
 export async function generateMetadata(
   app: App,
   settings: MetadataToolSettings,
-  opts: GenerateOptions = {},
+  opts: InteractiveGenerateOptions = {},
 ): Promise<void> {
   const file = app.workspace.getActiveFile();
   if (!file) {
