@@ -26,9 +26,11 @@ mock.module("@anthropic-ai/sdk", () => {
 const {
   collectCandidates,
   classifyCandidates,
+  computeDelayMs,
   runBulk,
   DEFAULT_RETRY_DELAYS_MS,
 } = await import("./bulkGenerate");
+const { ClaudeApiError } = await import("./adapters/claude");
 
 // Zero delays in tests to keep the suite fast; production uses DEFAULT_RETRY_DELAYS_MS.
 const FAST_RETRIES = [0, 0, 0];
@@ -451,5 +453,47 @@ describe("runBulk", () => {
 
     expect(results).toHaveLength(0);
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("computeDelayMs", () => {
+  test("applies low-end jitter (random=0 → 0.5x base)", () => {
+    expect(computeDelayMs(1000, undefined, () => 0)).toBe(500);
+  });
+
+  test("applies high-end jitter (random≈1 → ~1.5x base)", () => {
+    expect(computeDelayMs(1000, undefined, () => 0.999)).toBe(1499);
+  });
+
+  test("applies mid-range jitter (random=0.5 → 1.0x base)", () => {
+    expect(computeDelayMs(1000, undefined, () => 0.5)).toBe(1000);
+  });
+
+  test("returns 0 when base delay is 0 (zero-delay tests stay deterministic)", () => {
+    expect(computeDelayMs(0, undefined, () => 0.7)).toBe(0);
+  });
+
+  test("ignores non-ClaudeApiError values when computing jitter", () => {
+    expect(computeDelayMs(1000, new Error("plain"), () => 0)).toBe(500);
+  });
+
+  test("honors retryAfterMs from a ClaudeApiError when provided", () => {
+    const err = new ClaudeApiError("rate_limit", "rate limited", 800);
+    expect(computeDelayMs(1000, err, () => 0)).toBe(800);
+  });
+
+  test("caps retryAfterMs at 2x base to avoid stalling the bulk loop", () => {
+    const err = new ClaudeApiError("rate_limit", "rate limited", 60_000);
+    expect(computeDelayMs(1000, err, () => 0)).toBe(2000);
+  });
+
+  test("honors retryAfterMs of 0 (server says retry immediately)", () => {
+    const err = new ClaudeApiError("rate_limit", "rate limited", 0);
+    expect(computeDelayMs(1000, err, () => 0.999)).toBe(0);
+  });
+
+  test("falls back to jitter when retryAfterMs is undefined on a ClaudeApiError", () => {
+    const err = new ClaudeApiError("rate_limit", "rate limited");
+    expect(computeDelayMs(1000, err, () => 0)).toBe(500);
   });
 });
