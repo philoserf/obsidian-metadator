@@ -1,6 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+
+function listProductionTsFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...listProductionTsFiles(full));
+      continue;
+    }
+    if (!entry.name.endsWith(".ts")) continue;
+    if (entry.name.endsWith(".test.ts")) continue;
+    if (entry.name.endsWith(".d.ts")) continue;
+    if (entry.name === "test-preload.ts") continue;
+    out.push(full);
+  }
+  return out;
+}
 
 describe("architecture boundaries", () => {
   test("metadata does not depend on a utils dumping-ground module", () => {
@@ -13,17 +30,14 @@ describe("architecture boundaries", () => {
 
   test("only the claude adapter imports the Anthropic SDK", () => {
     const srcDir = join(import.meta.dir);
-    const sdkImporters = [
-      "metadata.ts",
-      "bulkGenerate.ts",
-      "bulkOrchestrator.ts",
-      "main.ts",
-      "settings.ts",
-      "settingsTab.ts",
-    ];
-    for (const file of sdkImporters) {
-      const source = readFileSync(join(srcDir, file), "utf8");
-      expect(source).not.toMatch(/from\s+["']@anthropic-ai\/sdk["']/);
-    }
+    const adapter = join(srcDir, "adapters", "claude.ts");
+    const sdkImportRegex = /from\s+["']@anthropic-ai\/sdk["']/;
+
+    const offenders = listProductionTsFiles(srcDir)
+      .filter((file) => file !== adapter)
+      .filter((file) => sdkImportRegex.test(readFileSync(file, "utf8")))
+      .map((file) => relative(srcDir, file));
+
+    expect(offenders).toEqual([]);
   });
 });

@@ -24,8 +24,8 @@ export class ClaudeApiError extends Error {
 }
 
 export interface MetadataFields {
-  tags?: string;
-  description?: string;
+  tags: string;
+  description: string;
   title?: string;
 }
 
@@ -92,31 +92,39 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function validateMetadataInput(input: unknown): MetadataFields {
+function validateMetadataInput(
+  input: unknown,
+  includeTitle: boolean,
+): MetadataFields {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new ClaudeApiError("api", "Tool input was not an object");
   }
   const obj = input as Record<string, unknown>;
-  const out: MetadataFields = {};
-  if (obj.tags !== undefined) {
-    if (typeof obj.tags !== "string") {
+  if (typeof obj.tags !== "string") {
+    throw new ClaudeApiError(
+      "api",
+      "Tool input field 'tags' is missing or not a string",
+    );
+  }
+  if (typeof obj.description !== "string") {
+    throw new ClaudeApiError(
+      "api",
+      "Tool input field 'description' is missing or not a string",
+    );
+  }
+  const out: MetadataFields = {
+    tags: obj.tags,
+    description: obj.description,
+  };
+  if (includeTitle) {
+    if (typeof obj.title !== "string") {
       throw new ClaudeApiError(
         "api",
-        "Tool input field 'tags' is not a string",
+        "Tool input field 'title' is missing or not a string",
       );
     }
-    out.tags = obj.tags;
-  }
-  if (obj.description !== undefined) {
-    if (typeof obj.description !== "string") {
-      throw new ClaudeApiError(
-        "api",
-        "Tool input field 'description' is not a string",
-      );
-    }
-    out.description = obj.description;
-  }
-  if (obj.title !== undefined) {
+    out.title = obj.title;
+  } else if (obj.title !== undefined) {
     if (typeof obj.title !== "string") {
       throw new ClaudeApiError(
         "api",
@@ -166,9 +174,22 @@ export async function callClaudeForMetadata(
   if (!Array.isArray(message.content)) {
     throw new ClaudeApiError("api", "Response had no content blocks");
   }
-  const toolUse = message.content.find((block) => block.type === "tool_use");
+  const toolUses = message.content.filter((block) => block.type === "tool_use");
+  const toolUse = toolUses.find(
+    (block) => block.type === "tool_use" && block.name === TOOL_NAME,
+  );
   if (!toolUse || toolUse.type !== "tool_use") {
+    if (toolUses.length > 0) {
+      const names = toolUses
+        .map((block) => (block.type === "tool_use" ? block.name : ""))
+        .filter((n) => n !== "")
+        .join(", ");
+      throw new ClaudeApiError(
+        "api",
+        `Model called unexpected tool(s): ${names}`,
+      );
+    }
     throw new ClaudeApiError("api", "Model did not call the metadata tool");
   }
-  return validateMetadataInput(toolUse.input);
+  return validateMetadataInput(toolUse.input, settings.enableTitle);
 }
