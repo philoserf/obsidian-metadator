@@ -180,6 +180,21 @@ describe("generateMetadata integration", () => {
     expect(fm.title).toBe("New Title");
   });
 
+  test("strips surrounding quotes from generated title before writing", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "a,b",
+        description: "desc",
+        title: '"Quoted Title"',
+      }),
+    );
+
+    const { app, fm } = makeApp({});
+    await generateMetadata(app, makeSettings());
+
+    expect(fm.title).toBe("Quoted Title");
+  });
+
   test("does not generate title when enableTitle is false", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({ tags: "a,b", description: "desc" }),
