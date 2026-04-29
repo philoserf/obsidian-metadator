@@ -5,6 +5,7 @@ import {
   parseTags,
   resolveUpdateMethod,
   stripSurroundingQuotes,
+  writePolicyFromSettings,
 } from "./metadata";
 import { DEFAULT_SETTINGS } from "./settings";
 
@@ -57,6 +58,26 @@ describe("stripSurroundingQuotes", () => {
 
   test("does not strip interior quotes", () => {
     expect(stripSurroundingQuotes('he"llo')).toBe('he"llo');
+  });
+});
+
+describe("writePolicyFromSettings", () => {
+  test("maps always_regenerate to update_all", () => {
+    expect(
+      writePolicyFromSettings({
+        ...DEFAULT_SETTINGS,
+        updateMethod: "always_regenerate",
+      }),
+    ).toBe("update_all");
+  });
+
+  test("maps preserve_existing to only_empty", () => {
+    expect(
+      writePolicyFromSettings({
+        ...DEFAULT_SETTINGS,
+        updateMethod: "preserve_existing",
+      }),
+    ).toBe("only_empty");
   });
 });
 
