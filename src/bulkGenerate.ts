@@ -1,5 +1,6 @@
 import type { App, TFile, TFolder } from "obsidian";
 import { ClaudeApiError } from "./adapters/claude";
+import { logDebug } from "./logger";
 import {
   type FileResult,
   generateMetadataForFile,
@@ -129,6 +130,15 @@ async function runFileWithRetry(
     if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
     if (attempt === retryDelaysMs.length) return r;
     const delayMs = computeDelayMs(retryDelaysMs[attempt], r.error, random);
+    if (settings.debugLogging) {
+      logDebug({
+        event: "claude_retry_scheduled",
+        file: file.path,
+        attempt: attempt + 1,
+        durationMs: delayMs,
+        errorKind: r.error instanceof ClaudeApiError ? r.error.kind : "unknown",
+      });
+    }
     const aborted = await sleepAbortable(delayMs, shouldStop);
     if (aborted) {
       return {
