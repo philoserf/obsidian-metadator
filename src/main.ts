@@ -126,6 +126,10 @@ export function migrateSettings(
       migrated.contentTokenLimit,
       DEFAULT_SETTINGS.contentTokenLimit,
     ),
+    maxBulkFiles: readPositiveInt(
+      migrated.maxBulkFiles,
+      DEFAULT_SETTINGS.maxBulkFiles,
+    ),
     truncateMethod: isTruncateMethod(truncateMethodCandidate)
       ? truncateMethodCandidate
       : DEFAULT_SETTINGS.truncateMethod,

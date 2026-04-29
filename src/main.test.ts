@@ -79,6 +79,7 @@ describe("migrateSettings", () => {
       contentTokenLimit: 42,
       truncateMethod: "heading",
       updateMethod: "always_regenerate",
+      maxBulkFiles: 250,
       tagsPrompt: "t",
       descriptionPrompt: "d",
       titlePrompt: "h",
@@ -117,5 +118,30 @@ describe("migrateSettings", () => {
       tagsPrompt: atLimit,
     });
     expect(result?.tagsPrompt).toBe(atLimit);
+  });
+
+  test("maxBulkFiles: preserves a valid positive integer", () => {
+    const result = migrateSettings({ maxBulkFiles: 1000 });
+    expect(result?.maxBulkFiles).toBe(1000);
+  });
+
+  test("maxBulkFiles: falls back to default for non-positive or non-integer values", () => {
+    expect(migrateSettings({ maxBulkFiles: 0 })?.maxBulkFiles).toBe(
+      DEFAULT_SETTINGS.maxBulkFiles,
+    );
+    expect(migrateSettings({ maxBulkFiles: -5 })?.maxBulkFiles).toBe(
+      DEFAULT_SETTINGS.maxBulkFiles,
+    );
+    expect(migrateSettings({ maxBulkFiles: 3.5 })?.maxBulkFiles).toBe(
+      DEFAULT_SETTINGS.maxBulkFiles,
+    );
+    expect(migrateSettings({ maxBulkFiles: "100" })?.maxBulkFiles).toBe(
+      DEFAULT_SETTINGS.maxBulkFiles,
+    );
+  });
+
+  test("maxBulkFiles: defaults when key is missing entirely", () => {
+    const result = migrateSettings({});
+    expect(result?.maxBulkFiles).toBe(DEFAULT_SETTINGS.maxBulkFiles);
   });
 });

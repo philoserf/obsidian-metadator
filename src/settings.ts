@@ -23,6 +23,10 @@ export interface MetadataToolSettings {
   // Update behavior
   updateMethod: "always_regenerate" | "preserve_existing";
 
+  // Bulk-run safeguard: warn and require explicit override above this many
+  // files-that-will-change. Tracks API-call count, not total candidates.
+  maxBulkFiles: number;
+
   // Prompts
   tagsPrompt: string;
   descriptionPrompt: string;
@@ -88,6 +92,8 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   truncateMethod: "head_only",
 
   updateMethod: "preserve_existing",
+
+  maxBulkFiles: 500,
 
   tagsPrompt:
     "Select 3-5 relevant tags in lowercase with hyphens instead of spaces (e.g., 'knowledge-management', 'note-taking')",
