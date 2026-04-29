@@ -97,7 +97,7 @@ async function runFileWithRetry(
       return { kind: "skipped", file, reason: "cancelled before attempt" };
     }
     const r = await generateMetadataForFile(app, file, settings, {
-      isBulk: true,
+      presentation: "bulk",
       signal,
     });
     if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
