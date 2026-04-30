@@ -1,18 +1,18 @@
 # Metadator Walkthrough
 
-*2026-04-16T12:45:39Z by Showboat 0.6.1*
-<!-- showboat-id: c91d8199-64ba-44cb-a99e-842b8217f311 -->
+*2026-04-30T12:34:16Z by Showboat 0.6.1*
+<!-- showboat-id: 18259526-9f3b-4235-976f-05f0ef44541e -->
 
 ## 1. Overview
 
-Metadator is an Obsidian plugin that generates metadata — tags, a
-description, and optionally a title — for the current note by sending
-its content to the Anthropic Claude API and writing the model's JSON
-response into the note's YAML frontmatter.
+Metadator is an Obsidian plugin that generates metadata — tags, a description,
+and optionally a title — for the active note (or every `.md` descendant of a
+folder) by sending its content to the Anthropic Claude API and writing the
+model's structured tool-use response into the note's YAML frontmatter.
 
-It is a small project: one command, one API call, one frontmatter write.
-The codebase is TypeScript, built with Bun, bundled as CommonJS for
-Obsidian's Electron renderer, and distributed as a single `main.js`.
+The codebase is TypeScript, built with Bun, bundled as CommonJS for Obsidian's
+Electron renderer, and distributed as a single `main.js`. Runtime
+dependencies: only `@anthropic-ai/sdk`.
 
 ```bash
 cat manifest.json
@@ -22,7 +22,7 @@ cat manifest.json
 {
   "id": "metadator",
   "name": "Metadator",
-  "version": "2.0.2",
+  "version": "2.2.0",
   "minAppVersion": "1.4.0",
   "description": "Automatically generate metadata for your notes using AI",
   "author": "Mark Ayers",
@@ -31,151 +31,206 @@ cat manifest.json
 }
 ```
 
-The `id` is how Obsidian addresses the plugin in its plugin registry.
-`minAppVersion` gates the plugin on Obsidian's API surface. `isDesktopOnly`
-is false: the plugin runs on mobile as well as desktop.
+The `id` is how Obsidian addresses the plugin in its registry. `minAppVersion`
+gates the plugin on Obsidian's API surface. `isDesktopOnly` is false: the
+plugin runs on mobile as well as desktop.
 
 ## 2. Project Layout
 
-The source lives under `src/` with tests colocated. Build tooling
-(`build.ts`, `version-bump.ts`) is at the root. `main.js` is committed
-because Obsidian plugin distribution ships the built artifact, not
-the source.
+The source lives under `src/` with tests colocated next to the modules they
+cover. Build tooling (`build.ts`, `version-bump.ts`, `deploy.ts`) is at the
+root. `main.js` is committed because Obsidian plugin distribution ships the
+built artifact, not the source.
 
 ```bash
-ls src/*.ts | sort
+find src -maxdepth 2 -type f -name '*.ts' | sort
 ```
 
 ```output
+src/adapters/claude.ts
+src/adapters/frontmatter.test.ts
+src/adapters/frontmatter.ts
+src/bulkConfirmModal.ts
+src/bulkGenerate.test.ts
+src/bulkGenerate.ts
+src/bulkOrchestrator.ts
+src/bulkProgressModal.ts
+src/bulkSummaryModal.ts
 src/callClaude.test.ts
+src/content.test.ts
+src/content/getContent.ts
+src/content/tokens.ts
+src/content/truncate.ts
+src/content/types.ts
 src/generateMetadata.test.ts
-src/main.test.ts
+src/logger.test.ts
+src/logger.ts
 src/main.ts
 src/metadata.test.ts
 src/metadata.ts
 src/settings.ts
+src/settingsMigrate.test.ts
+src/settingsMigrate.ts
 src/settingsTab.test.ts
 src/settingsTab.ts
 src/test-preload.ts
-src/utils.test.ts
-src/utils.ts
 ```
 
-Production modules, by role:
+The layout follows the architectural seam between business logic and
+external concerns:
 
-- `main.ts` — plugin lifecycle and the slash-command registration
-- `metadata.ts` — orchestration: reads content, calls Claude, writes fields
-- `settings.ts` — the settings interface and default values
-- `settingsTab.ts` — the UI that renders in Obsidian's settings panel
-- `utils.ts` — the Anthropic client call, tokenization, truncation, and
-  frontmatter writes
+- **Top-level `src/`** — application code (entry, settings, single-note flow,
+  bulk flow, logging).
+- **`src/adapters/`** — anti-corruption layer over external SDKs. Only
+  `claude.ts` may import `@anthropic-ai/sdk` (a Biome `noRestrictedImports`
+  rule enforces it). `frontmatter.ts` wraps Obsidian's
+  `app.fileManager.processFrontMatter`.
+- **`src/content/`** — pure content extraction: tokenization, truncation
+  strategies, and the `getContent` driver.
 
-The `*.test.ts` files are colocated with the code they exercise and
-run with Bun's native test runner.
+## 3. Plugin entry — `src/main.ts`
 
-## 3. Build and Configuration
-
-`build.ts` is a small Bun bundler script. It externalizes the
-`obsidian` and `electron` imports (the host provides them), emits
-CommonJS, and optionally watches `src/`.
+`MetadataToolPlugin` registers two user-visible affordances and owns the
+plugin lifecycle: a single command for the active note, and a folder-menu
+item for recursive runs. Both call paths share an `AbortController` so
+unloading the plugin cancels in-flight work.
 
 ```bash
-sed -n '6,23p' build.ts
+sed -n '1,55p' src/main.ts
 ```
 
 ```output
-async function build() {
-  const result = await Bun.build({
-    entrypoints: ["src/main.ts"],
-    outdir: ".",
-    format: "cjs",
-    external: ["obsidian", "electron"],
-    minify: !isWatch,
-  });
+import { Notice, Plugin, TFolder } from "obsidian";
+import { runBulkForFolder } from "./bulkOrchestrator";
+import { generateMetadata } from "./metadata";
+import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import { migrateSettings } from "./settingsMigrate";
+import { MetadataToolSettingTab } from "./settingsTab";
 
-  if (!result.success) {
-    console.error("Build failed");
-    for (const message of result.logs) console.error(message);
-    if (!isWatch) process.exit(1);
-    return;
-  }
-
-  console.log("Build succeeded");
-}
-```
-
-## 4. Plugin Entry (`main.ts`)
-
-Obsidian loads a plugin by importing its default export (a class
-extending `Plugin`) and calling `onload()`. This plugin's `onload`
-does three things: load persisted settings, register the
-`generate-metadata` command, and install the settings tab.
-
-```bash
-sed -n '22,39p' src/main.ts
-```
-
-```output
 export default class MetadataToolPlugin extends Plugin {
   settings: MetadataToolSettings = DEFAULT_SETTINGS;
+  private runController: AbortController = new AbortController();
+  // Set when data.json was written by a newer plugin version. While set,
+  // saveSettings() refuses to write so we don't clobber forward-version
+  // data with our defaults. Cleared by a successful (in-version) load.
+  private futureSchemaBlocked = false;
 
   async onload(): Promise<void> {
+    this.runController = new AbortController();
     await this.loadSettings();
 
     this.addCommand({
       id: "generate-metadata",
       name: "Generate metadata for current note",
       callback: async () => {
-        await generateMetadata(this.app, this.settings);
+        await generateMetadata(this.app, this.settings, {
+          signal: this.runController.signal,
+        });
       },
     });
+
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, fileOrFolder) => {
+        if (!(fileOrFolder instanceof TFolder)) return;
+        menu.addItem((item) =>
+          item
+            .setTitle("Generate metadata (recursive)")
+            .setIcon("tags")
+            .onClick(async () => {
+              await runBulkForFolder(
+                this.app,
+                fileOrFolder,
+                {
+                  ...this.settings,
+                },
+                {
+                  signal: this.runController.signal,
+                },
+              );
+            }),
+        );
+      }),
+    );
 
     this.addSettingTab(new MetadataToolSettingTab(this.app, this));
   }
 
-  onunload(): void {}
 ```
 
-Settings are persisted via Obsidian's `loadData`/`saveData`. A
-`migrateSettings` pass rewrites legacy values before they merge over
-the defaults. After the pre-2.0 cleanup, only the sonnet/opus model
-renames remain.
+The lifecycle is:
+
+- `onload` resets the `runController`, loads (and possibly migrates) settings,
+  registers the command and the folder file-menu, and mounts the settings tab.
+- `onunload` aborts the controller — this propagates into the SDK call and
+  any in-progress bulk run, which both honor the signal.
+- `loadSettings` delegates to `migrateSettings` and then dispatches on the
+  discriminated `MigrationResult`. A `future` result trips
+  `futureSchemaBlocked`, which `saveSettings` checks before writing to avoid
+  clobbering data written by a newer plugin version.
 
 ```bash
-sed -n '6,20p' src/main.ts
+sed -n '56,89p' src/main.ts
 ```
 
 ```output
-export function migrateSettings(
-  loaded: Record<string, unknown> | null,
-): Record<string, unknown> | null {
-  if (!loaded) return loaded;
-
-  if (loaded.anthropicModel === "claude-sonnet-4-5-20250929") {
-    loaded.anthropicModel = "claude-sonnet-4-6";
+  onunload(): void {
+    this.runController.abort("plugin_unloaded");
   }
 
-  if (loaded.anthropicModel === "claude-opus-4-5-20251101") {
-    loaded.anthropicModel = "claude-opus-4-6";
+  async loadSettings(): Promise<void> {
+    const result = migrateSettings(await this.loadData());
+    if (result.kind === "ok") {
+      this.settings = { ...result.settings };
+      this.futureSchemaBlocked = false;
+    } else if (result.kind === "future") {
+      this.settings = { ...DEFAULT_SETTINGS };
+      this.futureSchemaBlocked = true;
+      new Notice(
+        `Metadator settings were written by a newer plugin version (schema v${result.loadedSchemaVersion}). Settings won't be saved until you upgrade the plugin to avoid corrupting your data.`,
+        12000,
+      );
+    } else {
+      this.settings = { ...DEFAULT_SETTINGS };
+      this.futureSchemaBlocked = false;
+    }
   }
 
-  return loaded;
+  async saveSettings(): Promise<void> {
+    if (this.futureSchemaBlocked) {
+      new Notice(
+        "Refusing to save: settings file is from a newer plugin version. Upgrade the plugin or delete data.json to proceed.",
+        8000,
+      );
+      return;
+    }
+    await this.saveData(this.settings);
+  }
 }
 ```
 
-## 5. Settings Data Model (`settings.ts`)
+## 4. Settings — `src/settings.ts`
 
-The settings interface is the full public surface the user sees.
-Field names, the model, truncation behavior, and update policy are
-all captured here. `DEFAULT_SETTINGS` is what fresh installs get and
-what `loadSettings` falls back to for any missing keys.
+Settings are a plain interface with strongly-typed enums for the model,
+truncate method, and update method. `schemaVersion` is stamped on every
+saved file; bumping `CURRENT_SCHEMA_VERSION` requires adding a matching
+migration in the next module.
 
 ```bash
-sed -n '1,26p' src/settings.ts
+sed -n '1,40p' src/settings.ts
 ```
 
 ```output
+import type { TruncateMethod } from "./content/types";
+
+export const PROMPT_MAX_LENGTH = 1000;
+
+// Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
+// in main.ts. Each migration's key is the schema version it produces.
+export const CURRENT_SCHEMA_VERSION = 1;
+
 export interface MetadataToolSettings {
+  schemaVersion: number;
+
   anthropicApiKey: string;
   anthropicModel: string;
 
@@ -191,10 +246,14 @@ export interface MetadataToolSettings {
   // Content truncation
   truncateContent: boolean;
   contentTokenLimit: number;
-  truncateMethod: "head_only" | "head_tail" | "heading";
+  truncateMethod: TruncateMethod;
 
   // Update behavior
   updateMethod: "always_regenerate" | "preserve_existing";
+
+  // Bulk-run safeguard: warn and require explicit override above this many
+  // files-that-will-change. Tracks API-call count, not total candidates.
+  maxBulkFiles: number;
 
   // Prompts
   tagsPrompt: string;
@@ -203,367 +262,359 @@ export interface MetadataToolSettings {
 }
 ```
 
-Two settings drive the meaningful branching downstream:
+## 5. Settings migration — `src/settingsMigrate.ts`
 
-- `updateMethod` — `"always_regenerate"` updates every field on every
-  run; `"preserve_existing"` only fills empty fields
-- `truncateMethod` — `head_only`, `head_tail`, or `heading`;
-  determines how the note content is cut down to `contentTokenLimit`
-  before being sent to the API
-
-## 6. Command Handler (`generateMetadata`)
-
-The slash-command callback delegates straight to `generateMetadata`
-in `metadata.ts`. This is the function that decides whether an API
-call is warranted at all.
+Versioned migrations live in an ordered `MIGRATIONS` map keyed by the version
+they produce. `applyMigrations` walks from the loaded version up to
+`CURRENT_SCHEMA_VERSION`, throwing if any intermediate version is missing —
+this catches the "bumped the constant without writing the migration" bug at
+plugin-load time. After migrations run, every field is re-validated at the
+trust boundary so a malformed `data.json` falls back to defaults instead of
+poisoning later runs.
 
 ```bash
-sed -n '163,198p' src/metadata.ts
+sed -n '56,108p' src/settingsMigrate.ts
 ```
 
 ```output
-export async function generateMetadata(
-  app: App,
-  settings: MetadataToolSettings,
-): Promise<void> {
-  const file = app.workspace.getActiveFile();
-  if (!file) {
-    new Notice("Please open a file first");
-    return;
+// Schema migrations, keyed by the version they produce. To add migration N,
+// add an entry [N, fn] and bump CURRENT_SCHEMA_VERSION in settings.ts. Each
+// migration mutates the raw bag in place; trust-boundary normalization runs
+// afterward in migrateSettings.
+const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
+  new Map([
+    [
+      1,
+      (s) => {
+        // 0 → 1: rename retired model identifiers.
+        if (s.anthropicModel === "claude-sonnet-4-5-20250929") {
+          s.anthropicModel = "claude-sonnet-4-6";
+        }
+        if (s.anthropicModel === "claude-opus-4-5-20251101") {
+          s.anthropicModel = "claude-opus-4-6";
+        }
+      },
+    ],
+  ]);
+
+function readSchemaVersion(raw: Record<string, unknown>): number {
+  return typeof raw.schemaVersion === "number" &&
+    Number.isInteger(raw.schemaVersion) &&
+    raw.schemaVersion >= 0
+    ? raw.schemaVersion
+    : 0;
+}
+
+export function applyMigrations(
+  raw: Record<string, unknown>,
+  fromVersion: number,
+  migrations: ReadonlyMap<
+    number,
+    (s: Record<string, unknown>) => void
+  > = MIGRATIONS,
+  targetVersion: number = CURRENT_SCHEMA_VERSION,
+): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...raw };
+  for (let v = fromVersion + 1; v <= targetVersion; v++) {
+    const fn = migrations.get(v);
+    if (!fn) {
+      // A bumped CURRENT_SCHEMA_VERSION without a matching MIGRATIONS entry
+      // would silently stamp the new version onto un-transformed data. Fail
+      // loudly instead so the bug is caught at plugin-load time.
+      throw new Error(
+        `[Metadator] missing migration for schema version ${v}; bump CURRENT_SCHEMA_VERSION only after adding MIGRATIONS[${v}].`,
+      );
+    }
+    fn(migrated);
+  }
+  migrated.schemaVersion = targetVersion;
+  return migrated;
+}
+```
+
+The discriminated `MigrationResult` is what lets `main.ts` distinguish a
+fresh install (`missing`) from a forward-version `data.json` (`future`) and
+refuse to overwrite the latter.
+
+```bash
+sed -n '110,135p' src/settingsMigrate.ts
+```
+
+```output
+export type MigrationResult =
+  | { kind: "ok"; settings: MetadataToolSettings }
+  | { kind: "missing" }
+  | { kind: "future"; loadedSchemaVersion: number };
+
+export function migrateSettings(loaded: unknown | null): MigrationResult {
+  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+    return { kind: "missing" };
   }
 
+  const raw = loaded as Record<string, unknown>;
+  const fromVersion = readSchemaVersion(raw);
+
+  if (fromVersion > CURRENT_SCHEMA_VERSION) {
+    console.warn(
+      `[Metadator] data.json schemaVersion=${fromVersion} is newer than this plugin (${CURRENT_SCHEMA_VERSION}). Falling back to defaults to avoid corrupting your data.`,
+    );
+    return { kind: "future", loadedSchemaVersion: fromVersion };
+  }
+
+  const migrated = applyMigrations(raw, fromVersion);
+
+  const anthropicModel = readString(
+    migrated.anthropicModel,
+    DEFAULT_SETTINGS.anthropicModel,
+  );
+```
+
+## 6. Single-note flow — `src/metadata.ts`
+
+The user-facing command path. `generateMetadata` validates the active file
+and API key, then delegates to the worker `generateMetadataForFile`, which
+returns a discriminated `FileResult` (`changed | skipped | error`). The
+worker is also called by the bulk runner — sharing one body keeps the
+single-note and bulk paths behavior-equivalent.
+
+```bash
+sed -n '154,203p' src/metadata.ts
+```
+
+```output
+export async function generateMetadataForFile(
+  app: App,
+  file: TFile,
+  settings: MetadataToolSettings,
+  opts: GenerateOptions = {},
+): Promise<FileResult> {
   if (file.extension !== "md") {
-    new Notice("Current file is not a markdown file");
-    return;
+    return { kind: "skipped", file, reason: "not a markdown file" };
   }
 
   if (!settings.anthropicApiKey) {
-    new Notice(
-      "Please configure your Anthropic API key in Settings → Metadator",
-      8000,
-    );
-    return;
+    return { kind: "skipped", file, reason: "missing API key" };
   }
 
   const fm = app.metadataCache.getFileCache(file);
   const frontMatter = fm?.frontmatter || {};
 
-  const updateAll = settings.updateMethod === "always_regenerate";
+  if (!shouldGenerate(frontMatter, settings)) {
+    return { kind: "skipped", file, reason: "all fields already populated" };
+  }
 
-  // Check if we need to call Claude for metadata
-  const needsMetadata =
-    isEmptyValue(frontMatter[settings.tagsFieldName]) ||
-    isEmptyValue(frontMatter[settings.descriptionFieldName]) ||
-    (settings.enableTitle &&
-      isEmptyValue(frontMatter[settings.titleFieldName])) ||
-    updateAll;
+  if (opts.signal?.aborted) {
+    return { kind: "skipped", file, reason: "cancelled before request" };
+  }
 
-```
-
-The guards short-circuit on an unopened file, a non-markdown file, or
-a missing API key. `needsMetadata` is the decision gate: if any
-configured frontmatter field is empty — or if `updateMethod` is
-`always_regenerate` — the function proceeds to call Claude. Otherwise
-the command is a no-op.
-
-When it does proceed, errors from the downstream call route through
-a single catch that delegates to `notifyApiError`.
-
-```bash
-sed -n '199,216p' src/metadata.ts
-```
-
-```output
-  if (needsMetadata) {
-    try {
-      const hasChanges = await addMetadataWithClaude(
-        app,
-        file,
-        settings,
-        frontMatter,
-        updateAll,
-      );
-      if (hasChanges) {
-        new Notice("Metadata updated successfully");
-      }
-    } catch (error) {
-      notifyApiError(error);
-      console.error("generateMetadata error:", error);
+  try {
+    const hasChanges = await addMetadataWithClaude(
+      app,
+      file,
+      settings,
+      frontMatter,
+      writePolicyFromSettings(settings),
+      opts.presentation ?? "interactive",
+      opts.signal,
+    );
+    return hasChanges
+      ? { kind: "changed", file }
+      : { kind: "skipped", file, reason: "no changes" };
+  } catch (error) {
+    if (opts.signal?.aborted || isAbortError(error)) {
+      return { kind: "skipped", file, reason: "cancelled" };
     }
+    return {
+      kind: "error",
+      file,
+      reason: error instanceof Error ? error.message : String(error),
+      error,
+    };
   }
 }
 ```
 
-## 7. Prompt Construction (`buildPrompt`)
-
-The prompt is assembled in two pieces: a system message that tells
-Claude what to produce, and a user message that wraps the article
-text in `<article>` XML tags so the model can distinguish instructions
-from content.
+`addMetadataWithClaude` is the orchestration heart: extract content, build
+the prompt, mint a `requestId` for log correlation, call the adapter, and
+write each field through the frontmatter adapter. The `presentation`
+parameter (`interactive | bulk`) controls notice display so bulk runs don't
+flood the screen with one notice per file.
 
 ```bash
-sed -n '43,76p' src/metadata.ts
+sed -n '252,322p' src/metadata.ts
 ```
 
 ```output
+async function addMetadataWithClaude(
+  app: App,
+  file: TFile,
+  settings: MetadataToolSettings,
+  frontMatter: Record<string, unknown>,
+  policy: WritePolicy,
+  presentation: PresentationMode,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const isBulk = presentation === "bulk";
+  const requestId = newRequestId();
+
+  const contentStr = settings.truncateContent
+    ? await getContent(
+        app,
+        file,
+        settings.contentTokenLimit,
+        settings.truncateMethod,
+      )
+    : await getContent(app, file, -1, "head_only");
+
+  const { system, userMessage } = buildPrompt(contentStr, settings);
+
+  if (settings.debugLogging) {
+    logDebug({
+      event: "claude_request_start",
+      file: file.path,
+      model: settings.anthropicModel,
+      requestId,
+      promptLength: system.length,
+      contentLength: userMessage.length,
+    });
+  }
+
+  const notice = isBulk ? undefined : new Notice("Generating metadata...", 0);
+  const startedAt = Date.now();
+  let metadata: MetadataFields;
+  try {
+    metadata = await callClaudeForMetadata(system, userMessage, settings, {
+      signal,
+    });
+  } catch (error) {
+    if (settings.debugLogging) {
+      logDebug({
+        event: "claude_request_failed",
+        file: file.path,
+        model: settings.anthropicModel,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        errorKind: error instanceof ClaudeApiError ? error.kind : "unknown",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+    throw error;
+  } finally {
+    notice?.hide();
+  }
+
+  if (settings.debugLogging) {
+    logDebug({
+      event: "claude_request_completed",
+      file: file.path,
+      model: settings.anthropicModel,
+      requestId,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  if (signal?.aborted) {
+    return false;
+  }
+```
+
+The prompt itself: the system message states the field requirements; the
+user message wraps the (possibly truncated) note content in `<article>`
+delimiters. The model is forced to call the `submit_metadata` tool, so the
+response is structured input rather than free-form JSON to parse.
+
+```bash
+sed -n '49,80p' src/metadata.ts
+```
+
+```output
+export interface PromptParts {
+  system: string;
+  userMessage: string;
+}
+
 export function buildPrompt(
   contentStr: string,
   settings: MetadataToolSettings,
 ): PromptParts {
   const systemParts = [
-    "Generate metadata for the provided article. Requirements:",
+    "Generate metadata for the provided article and submit it via the submit_metadata tool. Field requirements:",
     "",
     `1. Tags: ${settings.tagsPrompt}`,
     "",
     `2. Description: ${settings.descriptionPrompt}`,
   ];
 
-  const jsonFields: string[] = [
-    '"tags": "tag1,tag2,tag3"',
-    '"description": "brief summary"',
-  ];
-
   if (settings.enableTitle) {
     systemParts.push("", `3. Title: ${settings.titlePrompt}`);
-    jsonFields.push('"title": "article title"');
   }
-
-  systemParts.push(
-    "",
-    "Return only the following JSON format:",
-    `{`,
-    `    ${jsonFields.join(",\n    ")}`,
-    `}`,
-  );
 
   const userMessage = `<article>\n${contentStr}\n</article>`;
 
   return { system: systemParts.join("\n"), userMessage };
 }
-```
 
-The title section and its JSON field are omitted entirely when
-`enableTitle` is false — the model is never asked for a field the
-user doesn't want written. This is reflected in the integration test
-"does not generate title when enableTitle is false".
-
-## 8. The API Call (`callClaude`)
-
-`callClaude` is the thin boundary between this plugin and the
-Anthropic SDK. It instantiates the client with
-`dangerouslyAllowBrowser: true` (Obsidian runs in an Electron
-renderer, not a real browser — the SDK's CORS guard does not apply)
-and issues a single `messages.create`.
-
-```bash
-sed -n '1,33p' src/utils.ts
-```
-
-```output
-import Anthropic from "@anthropic-ai/sdk";
-import type { App, TFile } from "obsidian";
-import type { MetadataToolSettings } from "./settings";
-
-// Output budget for the model's JSON response (tags + description + title).
-// Distinct from settings.contentTokenLimit, which bounds the input note content.
-const MAX_RESPONSE_TOKENS = 2048;
-
-export async function callClaude(
-  system: string,
-  userMessage: string,
-  settings: MetadataToolSettings,
-): Promise<string> {
-  // Safe in Obsidian's Electron renderer — no browser security concerns apply
-  const anthropic = new Anthropic({
-    apiKey: settings.anthropicApiKey,
-    dangerouslyAllowBrowser: true,
-  });
-
-  const message = await anthropic.messages.create({
-    model: settings.anthropicModel,
-    max_tokens: MAX_RESPONSE_TOKENS,
-    system,
-    messages: [{ role: "user", content: userMessage }],
-  });
-
-  if (message.content.length > 0 && message.content[0].type === "text") {
-    return message.content[0].text;
-  }
-
-  throw new Error("No text content in response");
-}
-
-```
-
-Note the separation of concerns: `callClaude` throws. It does not show
-notices, does not catch SDK errors, does not translate them to UI. All
-of that lives in the orchestration layer (`metadata.ts`), which keeps
-`utils.ts` free of Obsidian UI dependencies and lets the tests exercise
-`callClaude` with plain mocked errors.
-
-`MAX_RESPONSE_TOKENS` is a named constant so readers do not confuse it
-with `settings.contentTokenLimit` — one bounds the model's JSON output,
-the other bounds the note content sent in.
-
-## 9. Error Routing (`notifyApiError`)
-
-When `callClaude` throws, the error bubbles up to `generateMetadata`'s
-catch, which hands it to `notifyApiError`. This function is the single
-place where Anthropic error classes are mapped to user-facing notices.
-
-```bash
-sed -n '6,30p' src/metadata.ts
-```
-
-```output
-function notifyApiError(error: unknown): void {
-  if (error instanceof Anthropic.AuthenticationError) {
-    new Notice(
-      "Authentication failed. Please check your API key in Settings → Metadator",
-      8000,
-    );
-  } else if (error instanceof Anthropic.RateLimitError) {
-    new Notice(
-      "Rate limit exceeded. Please wait a moment and try again.",
-      8000,
-    );
-  } else if (error instanceof Anthropic.InternalServerError) {
-    new Notice(
-      "API is currently overloaded. Please try again in a moment.",
-      8000,
-    );
-  } else if (error instanceof Anthropic.APIError) {
-    new Notice(`API error: ${error.message}`, 8000);
-  } else {
-    new Notice(
-      `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
-      8000,
-    );
-  }
+export function parseTags(tagsString: string): string[] {
+  return tagsString
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => tag !== "");
 }
 ```
 
-## 10. Response Parsing (`parseMetadataResponse`)
+## 7. Content extraction — `src/content/`
 
-Claude's response is a JSON object embedded somewhere in a string. In
-practice the response is often clean JSON, but sometimes it is wrapped
-in code fences or surrounded by prose. The parser handles all three
-cases.
+### 7.1 Tokenization — `tokens.ts`
+
+The tokenizer approximates how an LLM tokenizer counts characters so the
+truncation budget lines up. CJK ideographs and hiragana/katakana/hangul are
+one token per character; everything else (Latin, Cyrillic, Greek, Hebrew,
+Arabic, Devanagari, Thai…) is one token per word. The regex uses v-flag
+set-subtraction to make the word match stop at script boundaries — with a
+u-flag fallback for older mobile WebViews that don't support v-mode.
 
 ```bash
-sed -n '88,126p' src/metadata.ts
+sed -n '14,32p' src/content/tokens.ts
 ```
 
 ```output
-export function parseMetadataResponse(
-  response: string,
-): MetadataResponse | null {
-  const result = tryParseFromText(response);
-  if (result) return result;
+const CJK_FAMILY_RANGES = "一-龥぀-ヿ가-힯";
 
-  // Fall back to extracting from code fences
-  const fenceMatch = response.match(/```(?:json)?\n?([\s\S]*?)```/);
-  if (fenceMatch) {
-    return tryParseFromText(fenceMatch[1]);
+function buildTokenRegex(): RegExp {
+  try {
+    return new RegExp(
+      `[一-龥]|[぀-ヿ]|[가-힯]|[[\\p{Letter}\\p{Number}]--[${CJK_FAMILY_RANGES}]][[\\p{Letter}\\p{Mark}\\p{Number}]--[${CJK_FAMILY_RANGES}]]*|[.,!?;，。！？；#]|\\n`,
+      "gv",
+    );
+  } catch {
+    return /[一-龥]|[぀-ヿ]|[가-힯]|[\p{Letter}\p{Number}][\p{Letter}\p{Mark}\p{Number}]*|[.,!?;，。！？；#]|\n/gu;
   }
-
-  return null;
 }
 
-function tryParseFromText(text: string): MetadataResponse | null {
-  // Collect all valid candidates, prefer the last one (LLMs put the answer last)
-  let best: MetadataResponse | null = null;
-  for (const m of text.matchAll(/{[\s\S]*?}/g)) {
-    try {
-      const parsed: unknown = JSON.parse(m[0]);
-      if (isValidMetadataResponse(parsed)) best = parsed;
-    } catch {
-      // not valid JSON, try next match
-    }
-  }
-  if (best) return best;
-  // Fall back to greedy match in case the valid JSON contains nested braces
-  const greedy = text.match(/{[\s\S]*}/);
-  if (greedy) {
-    try {
-      const parsed: unknown = JSON.parse(greedy[0]);
-      if (isValidMetadataResponse(parsed)) return parsed;
-    } catch {
-      // not valid JSON
-    }
-  }
-  return null;
-}
-```
-
-The non-greedy regex `/{[\s\S]*?}/g` collects every brace-pair
-candidate in the text, each is tried with `JSON.parse`, and the last
-valid one wins. This matters because Claude sometimes writes an
-example JSON early in the response before the real answer — the test
-suite has a specific case for that bug.
-
-If no candidate parses, a greedy `/{[\s\S]*}/` fallback catches
-responses where the real JSON contains nested braces (a value that is
-itself JSON-shaped). The `isValidMetadataResponse` type guard
-enforces the expected field types before accepting a parse.
-
-## 11. Content Extraction and Truncation (`utils.ts`)
-
-Before the API call, the note is read and optionally truncated to
-fit within `contentTokenLimit` "tokens" — a custom per-character
-tokenization that treats CJK ideographs, Latin words, ASCII and CJK
-punctuation, and newlines each as one token. This is not the model's
-actual tokenizer; it is a cheap approximation chosen to bound cost.
-
-```bash
-sed -n '33,59p' src/utils.ts
-```
-
-```output
+const TOKEN_REGEX = buildTokenRegex();
+const NON_SPACING_TOKEN = /^[一-龥぀-ヿ가-힯.,!?;，。！？；#]$/;
 
 export function splitIntoTokens(str: string): string[] {
-  // CJK ideographs → one token each (they carry meaning per character)
-  // Latin words/numbers → one token per word (whitespace-delimited)
-  // Punctuation (ASCII + CJK) → individual tokens (preserves structure)
-  // Newlines → tokens (headings and paragraphs depend on line breaks)
-  const regex = /[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g;
-  const tokens = str.match(regex);
-  return tokens || [];
-}
-
-export function joinTokens(tokens: string[]): string {
-  let result = "";
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token === "\n") {
-      result += token;
-    } else if (/[\u4e00-\u9fa5]|[.,!?;，。！？；#]/.test(token)) {
-      result += token;
-    } else {
-      const prevToken = i > 0 ? tokens[i - 1] : undefined;
-      const needsSpace = i > 0 && prevToken !== "\n";
-      result += (needsSpace ? " " : "") + token;
-    }
-  }
-  return result.trim();
+  return str.match(TOKEN_REGEX) ?? [];
 }
 ```
 
-`joinTokens` is the inverse, reconstructing text with correct spacing
-— no space before punctuation, no space between CJK characters, and
-no space after a newline.
+### 7.2 Truncation strategies — `truncate.ts`
 
-Three truncation strategies are available. `head_only` keeps the
-first N tokens. `head_tail` keeps the first 80% of the budget and
-the last 20%, joined with an ellipsis line. `heading` extracts the
-outline (every `#`-prefixed line plus the first paragraph under
-each) and fills the remaining budget with the document body.
+Three strategies share the same signature: `(tokens, limit) -> string`,
+except `truncateHeading` which also needs the original content for line
+parsing. `head_only` keeps the first N tokens; `head_tail` keeps 80% from
+the start and the rest from the end with a `...` divider; `heading`
+synthesizes an outline from `#`-prefixed lines plus a body of remaining
+budget.
 
 ```bash
-sed -n '61,79p' src/utils.ts
+sed -n '1,21p' src/content/truncate.ts
 ```
 
 ```output
+import { joinTokens, splitIntoTokens } from "./tokens";
+
 export function truncateHeadOnly(tokens: string[], limit: number): string {
   const truncated = tokens.slice(0, limit);
   const suffix = truncated.length < tokens.length ? "..." : "";
@@ -585,13 +636,8 @@ export function truncateHeadTail(tokens: string[], limit: number): string {
 }
 ```
 
-The `heading` strategy is more involved. It walks the note line by
-line, keeping headings and the first paragraph under each, then
-truncates to fit the budget and labels the two sections (`Outline:`
-and `Body:`) so the model can tell them apart.
-
 ```bash
-sed -n '81,128p' src/utils.ts
+sed -n '23,70p' src/content/truncate.ts
 ```
 
 ```output
@@ -645,8 +691,14 @@ export function truncateHeading(
 }
 ```
 
+### 7.3 Driver — `getContent.ts`
+
+`getContent` reads the file, tokenizes, and dispatches to the chosen
+strategy. A negative `limit` short-circuits to the raw content (used by the
+`truncateContent: false` path).
+
 ```bash
-sed -n '130,159p' src/utils.ts
+sed -n '10,40p' src/content/getContent.ts
 ```
 
 ```output
@@ -654,7 +706,7 @@ export async function getContent(
   app: App,
   file: TFile,
   limit: number = 1000,
-  method: "head_only" | "head_tail" | "heading" = "head_only",
+  method: TruncateMethod = "head_only",
 ): Promise<string> {
   let contentStr = await app.vault.read(file);
 
@@ -682,55 +734,144 @@ export async function getContent(
 }
 ```
 
-`getContent` orchestrates the three strategies. A non-positive
-`limit` returns the full note untouched (used when
-`settings.truncateContent` is false). Otherwise the strategy runs
-only if the content actually exceeds the budget.
+## 8. Adapters — `src/adapters/`
 
-## 12. Frontmatter Writes (`updateFrontMatter`)
+### 8.1 Anthropic SDK — `claude.ts`
 
-All writes go through Obsidian's official
-`app.fileManager.processFrontMatter` hook, which the platform serializes
-and integrates with the metadata cache. Three methods are supported:
-
-- `keep` — write only if the field is currently absent
-- `update` — overwrite the field with the new value
-- `append` — for array fields: normalize current value to an array,
-  concatenate, and deduplicate
-
-The function is overloaded so the type system rejects misuse: `"append"`
-requires a `string[]`, `"update"` accepts `string | boolean` only, and
-`"keep"` tolerates the full shape since it writes only when the field is
-absent. Every call returns a boolean indicating whether the frontmatter
-was actually mutated — so the caller knows a no-op append (all tags
-already present) from a real one.
+The only module allowed to import `@anthropic-ai/sdk`. It builds a tool
+schema from settings (title field is conditional), forces the model to call
+`submit_metadata`, validates the returned input, and translates SDK errors
+into a typed `ClaudeApiError` taxonomy (`auth | rate_limit | overloaded |
+api | unknown`) so callers can branch without re-importing the SDK. The
+adapter also threads `signal` through to the SDK and applies an explicit
+60s timeout so a hung connection cannot block the command indefinitely.
 
 ```bash
-sed -n '161,214p' src/utils.ts
+sed -n '1,40p' src/adapters/claude.ts
 ```
 
 ```output
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string[],
-  method: "append",
-): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean,
-  method: "update",
-): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean | string[],
-  method: "keep",
-): Promise<boolean>;
+import Anthropic from "@anthropic-ai/sdk";
+import type { MetadataToolSettings } from "../settings";
+
+// Output budget for the model's tool-use response (tags + description + title).
+// Distinct from settings.contentTokenLimit, which bounds the input note content.
+const MAX_RESPONSE_TOKENS = 2048;
+const REQUEST_TIMEOUT_MS = 60_000;
+const TOOL_NAME = "submit_metadata";
+
+export type ClaudeErrorKind =
+  | "auth"
+  | "rate_limit"
+  | "overloaded"
+  | "api"
+  | "unknown";
+
+export class ClaudeApiError extends Error {
+  readonly kind: ClaudeErrorKind;
+  readonly retryAfterMs?: number;
+  constructor(kind: ClaudeErrorKind, message: string, retryAfterMs?: number) {
+    super(message);
+    this.kind = kind;
+    this.retryAfterMs = retryAfterMs;
+    this.name = "ClaudeApiError";
+  }
+}
+
+export function parseRetryAfterMs(
+  headers: { get?: (name: string) => string | null } | undefined,
+): number | undefined {
+  const raw = headers?.get?.("retry-after");
+  if (!raw) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+  // Retry-After may also be an HTTP-date; fall back to the computed delay
+  // rather than parsing dates here.
+  return undefined;
+}
+```
+
+```bash
+sed -n '163,219p' src/adapters/claude.ts
+```
+
+```output
+export async function callClaudeForMetadata(
+  system: string,
+  userMessage: string,
+  settings: MetadataToolSettings,
+  options: CallClaudeOptions = {},
+): Promise<MetadataFields> {
+  // Allowing browser compatibility mode — safe within Obsidian's Electron-controlled environment under current use cases.
+  const anthropic = new Anthropic({
+    apiKey: settings.anthropicApiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const tool = buildToolSchema(settings.enableTitle);
+
+  let message: Awaited<ReturnType<typeof anthropic.messages.create>>;
+  try {
+    message = await anthropic.messages.create(
+      {
+        model: settings.anthropicModel,
+        max_tokens: MAX_RESPONSE_TOKENS,
+        system,
+        messages: [{ role: "user", content: userMessage }],
+        tools: [tool],
+        tool_choice: { type: "tool", name: TOOL_NAME },
+      },
+      {
+        timeout: REQUEST_TIMEOUT_MS,
+        signal: options.signal,
+      },
+    );
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw classifyError(error);
+  }
+
+  if (!Array.isArray(message.content)) {
+    throw new ClaudeApiError("api", "Response had no content blocks");
+  }
+  const toolUses = message.content.filter((block) => block.type === "tool_use");
+  const toolUse = toolUses.find(
+    (block) => block.type === "tool_use" && block.name === TOOL_NAME,
+  );
+  if (!toolUse || toolUse.type !== "tool_use") {
+    if (toolUses.length > 0) {
+      const names = toolUses
+        .map((block) => (block.type === "tool_use" ? block.name : ""))
+        .filter((n) => n !== "")
+        .join(", ");
+      throw new ClaudeApiError(
+        "api",
+        `Model called unexpected tool(s): ${names}`,
+      );
+    }
+    throw new ClaudeApiError("api", "Model did not call the metadata tool");
+  }
+  return validateMetadataInput(toolUse.input, settings.enableTitle);
+}
+```
+
+### 8.2 Frontmatter — `frontmatter.ts`
+
+The frontmatter adapter wraps `app.fileManager.processFrontMatter` — the
+only way to write frontmatter that survives Obsidian's reactive caching.
+Three overloaded write modes encode the policy in the type system:
+`append` (deduplicated set-merge for tags), `update` (assign for scalars),
+and `keep` (write only if the field is missing). The adapter returns
+whether the frontmatter actually changed so the success notice fires only
+on real mutations.
+
+```bash
+sed -n '24,57p' src/adapters/frontmatter.ts
+```
+
+```output
 export async function updateFrontMatter(
   app: App,
   file: TFile,
@@ -766,138 +907,276 @@ export async function updateFrontMatter(
 }
 ```
 
-## 13. Update Orchestration (`addMetadataWithClaude`)
+## 9. Bulk run
 
-This is the glue that ties everything together: pull content, build
-prompt, call Claude, parse, and write. The "Generating metadata…"
-spinner is shown for the duration of the API call via a `try/finally`
-so it always clears, including on thrown errors.
+### 9.1 Orchestration — `bulkOrchestrator.ts`
+
+`runBulkForFolder` is the UI lifecycle: collect candidates, classify them
+into willChange/willSkip without calling the API, show a confirm modal
+(which hard-caps `willChange` against `settings.maxBulkFiles` with an
+explicit override checkbox), then drive the engine with a progress modal
+and produce a summary.
 
 ```bash
-sed -n '218,258p' src/metadata.ts
+sed -n '13,79p' src/bulkOrchestrator.ts
 ```
 
 ```output
-async function addMetadataWithClaude(
+export async function runBulkForFolder(
   app: App,
-  file: TFile,
+  folder: TFolder,
   settings: MetadataToolSettings,
-  frontMatter: Record<string, unknown>,
-  force: boolean = false,
-): Promise<boolean> {
-  const contentStr = settings.truncateContent
-    ? await getContent(
-        app,
-        file,
-        settings.contentTokenLimit,
-        settings.truncateMethod,
-      )
-    : await getContent(app, file, -1, "head_only");
-
-  const { system, userMessage } = buildPrompt(contentStr, settings);
-
-  if (settings.debugLogging) {
-    console.log("[Metadator] System:", system);
-    console.log("[Metadator] User message:", userMessage);
+  opts: RunBulkForFolderOptions = {},
+): Promise<void> {
+  if (!settings.anthropicApiKey) {
+    new Notice(
+      "Please configure your Anthropic API key in Settings → Metadator",
+      8000,
+    );
+    return;
   }
 
-  const notice = new Notice("Generating metadata...", 0);
-  let response: string;
-  try {
-    response = await callClaude(system, userMessage, settings);
-  } finally {
-    notice.hide();
+  const files = collectCandidates(folder);
+  if (files.length === 0) {
+    new Notice("No markdown files found in folder");
+    return;
   }
 
-  if (settings.debugLogging) {
-    console.log("[Metadator] Response:", response);
+  const { willChange, willSkip } = classifyCandidates(app, files, settings);
+  if (willChange.length === 0) {
+    new Notice(
+      `All ${files.length} notes already have metadata; nothing to do`,
+    );
+    return;
   }
 
-  if (!response) {
-    return false;
-  }
+  const confirmed = await new BulkConfirmModal(app, {
+    folderPath: folder.path,
+    total: files.length,
+    willChange: willChange.length,
+    willSkip: willSkip.length,
+    settings,
+  }).openAndAwait();
+  if (!confirmed) return;
 
-  const metadata: MetadataResponse = parseMetadataResponse(response) ?? {};
-
-```
-
-The three fields (tags, description, title) each build a
-`FieldUpdate` entry, then a single loop applies them. The per-field
-`updateMethod` differs: tags are merged with `append`, while
-description and title overwrite with `update`. Either way,
-`resolveUpdateMethod` decides whether to act on this field at all —
-if `force` is true (i.e. `updateMethod === "always_regenerate"`)
-every field runs; otherwise only empty fields do.
-
-```bash
-sed -n '278,315p' src/metadata.ts
-```
-
-```output
-          u.value,
-          "append",
-        );
-      }
-      return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
-    } catch (error) {
-      new Notice(
-        `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
+  const progress = new BulkProgressModal(app);
+  const runController = new AbortController();
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      runController.abort(opts.signal.reason);
+    } else {
+      opts.signal.addEventListener(
+        "abort",
+        () => runController.abort(opts.signal?.reason),
+        { once: true },
       );
-      console.error(`updateFrontMatter error (${u.fieldName}):`, error);
-      return false;
     }
   }
+  progress.setAbortHandler(() => runController.abort("cancelled_by_user"));
+  progress.open();
 
-  const updates: FieldUpdate[] = [];
+  const results = await runBulk(app, willChange, settings, {
+    onProgress: (p) => progress.setProgress(p),
+    shouldAbort: () => (opts.shouldAbort?.() ?? false) || progress.isAborted(),
+    signal: runController.signal,
+  });
 
-  if (metadata.tags) {
-    updates.push({
-      fieldName: settings.tagsFieldName,
-      value: parseTags(metadata.tags),
-      updateMethod: "append",
-    });
+  const aborted =
+    progress.isAborted() ||
+    (opts.shouldAbort?.() ?? false) ||
+    runController.signal.aborted;
+  progress.finish();
+
+  new BulkSummaryModal(app, results, aborted, willChange.length).open();
+}
+```
+
+### 9.2 Engine — `bulkGenerate.ts`
+
+`collectCandidates` walks the folder tree, `classifyCandidates` runs
+`shouldGenerate` for each file (no API calls — uses cached frontmatter),
+and `runBulk` drives one file at a time through `runFileWithRetry`. The
+retry policy retries on `rate_limit | overloaded` only, on the schedule
+`[2s, 8s, 30s]` jittered to `[0.5x, 1.5x]`. If the SDK error carries a
+`Retry-After` header, that value wins, capped at 2x the scheduled base
+delay so a misbehaving header can't stall a long run.
+
+```bash
+sed -n '11,44p' src/bulkGenerate.ts
+```
+
+```output
+export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [
+  2_000, 8_000, 30_000,
+];
+
+export function collectCandidates(folder: TFolder): TFile[] {
+  const out: TFile[] = [];
+  for (const child of folder.children) {
+    if ("children" in child) {
+      out.push(...collectCandidates(child as TFolder));
+    } else {
+      const file = child as TFile;
+      if (file.extension === "md") out.push(file);
+    }
   }
-  if (metadata.description) {
-    updates.push({
-      fieldName: settings.descriptionFieldName,
-      value: metadata.description,
-      updateMethod: "update",
-    });
+  return out;
+}
+
+export function classifyCandidates(
+  app: App,
+  files: TFile[],
+  settings: MetadataToolSettings,
+): { willChange: TFile[]; willSkip: TFile[] } {
+  const willChange: TFile[] = [];
+  const willSkip: TFile[] = [];
+  for (const file of files) {
+    const frontMatter = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    if (shouldGenerate(frontMatter, settings)) {
+      willChange.push(file);
+    } else {
+      willSkip.push(file);
+    }
   }
-  if (settings.enableTitle && metadata.title) {
-    updates.push({
-      fieldName: settings.titleFieldName,
-      value: stripSurroundingQuotes(metadata.title),
-      updateMethod: "update",
-    });
+  return { willChange, willSkip };
+}
+```
+
+```bash
+sed -n '70,90p' src/bulkGenerate.ts
+```
+
+```output
+const RETRY_AFTER_CAP_MULTIPLIER = 2;
+
+export function computeDelayMs(
+  baseDelayMs: number,
+  error: unknown,
+  random: () => number = Math.random,
+): number {
+  if (
+    error instanceof ClaudeApiError &&
+    error.retryAfterMs !== undefined &&
+    Number.isFinite(error.retryAfterMs)
+  ) {
+    return Math.min(
+      error.retryAfterMs,
+      baseDelayMs * RETRY_AFTER_CAP_MULTIPLIER,
+    );
   }
+  // Full jitter in [0.5x, 1.5x] of base — avoids synchronized retry storms
+  // across parallel clients hitting a shared-tenant overload.
+  return Math.round(baseDelayMs * (0.5 + random()));
+}
+```
+
+The Cancel-during-backoff path: rather than `setTimeout(ms)`, the sleep
+polls a `shouldAbort` callback every 100ms, so a Cancel that lands during
+a 30s backoff is responsive to the user.
+
+```bash
+sed -n '92,108p' src/bulkGenerate.ts
+```
+
+```output
+const ABORT_POLL_MS = 100;
+
+async function sleepAbortable(
+  ms: number,
+  shouldAbort?: () => boolean,
+): Promise<boolean> {
+  if (ms <= 0) return shouldAbort?.() ?? false;
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (shouldAbort?.()) return true;
+    const remaining = deadline - Date.now();
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(ABORT_POLL_MS, remaining)),
+    );
+  }
+  return shouldAbort?.() ?? false;
+}
+```
+
+## 10. Structured logging — `src/logger.ts`
+
+When `debugLogging` is on, the request path emits structured records
+(`event` + context drawn from `LogFields`) instead of free-form prose.
+Vocabulary: `claude_request_start`, `claude_request_completed`,
+`claude_request_failed` (per call), `claude_retry_scheduled` (bulk retry
+loop), `frontmatter_write_failed`, `generation_failed`. Each record carries
+a short hex `requestId` minted per `addMetadataWithClaude` invocation, so a
+bulk retry produces a fresh requestId for each attempt while the file path
+is the cross-attempt joiner.
+
+`newRequestId` feature-detects the Web Crypto API: it prefers
+`crypto.randomUUID`, falls back to `crypto.getRandomValues`, and finally to
+`Math.random` so a missing API can never throw on the request path.
+
+```bash
+sed -n '8,33p' src/logger.ts
+```
+
+```output
+export interface LogFields {
+  event: string;
+  file?: string;
+  model?: string;
+  requestId?: string;
+  attempt?: number;
+  durationMs?: number;
+  errorKind?: string;
+  errorMessage?: string;
+  errorName?: string;
+  errorStack?: string;
+  field?: string;
+  promptLength?: number;
+  contentLength?: number;
+}
+
+const PREFIX = "[Metadator]";
+
+export function logDebug(fields: LogFields): void {
+  console.log(PREFIX, fields);
+}
+
+export function logError(fields: LogFields & { errorMessage: string }): void {
+  console.error(PREFIX, fields);
+}
 
 ```
 
-`writeField` is a local helper inside `addMetadataWithClaude` that
-captures `app`, `file`, and `notifyApiError`-style error reporting
-in one place. Failures to write a specific field show a notice and
-return false; the outer function continues with the remaining
-fields.
+```bash
+sed -n '44,62p' src/logger.ts
+```
 
-## 14. Settings UI (`settingsTab.ts`)
+```output
+export function newRequestId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID().slice(0, 8);
+  }
+  if (cryptoApi?.getRandomValues) {
+    const bytes = new Uint8Array(4);
+    cryptoApi.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+      "",
+    );
+  }
+  let fallback = "";
+  for (let i = 0; i < 8; i++) {
+    fallback += Math.floor(Math.random() * 16).toString(16);
+  }
+  return fallback;
+}
+```
 
-The UI is a straightforward Obsidian `PluginSettingTab` — one
-`new Setting(containerEl)` per field. The API key input is masked
-by setting `text.inputEl.type = "password"`. Dependent settings (the
-truncation inputs, the title-field inputs) are disabled when their
-parent toggle is off.
+## 11. Tests
 
-This file is intentionally thin: it reads and writes
-`this.plugin.settings` directly and calls `saveSettings` on every
-`onChange`. There is no debouncing.
-
-## 15. Test Layout
-
-Tests are colocated under `src/` and run with Bun's native test
-runner. A preload file stubs the subset of Obsidian's API the tests
-touch (the `Notice` class and the base classes) so that importing
-`obsidian` does not blow up outside of the real host.
+Tests are colocated with their modules and run via Bun's native runner.
+`src/test-preload.ts` mocks the Obsidian module surface — `Plugin`,
+`Notice`, `Modal`, `TFolder`, `TFile`, etc. — so domain code can import
+from `obsidian` without a real Electron environment.
 
 ```bash
 cat src/test-preload.ts
@@ -913,66 +1192,58 @@ mock.module("obsidian", () => ({
   },
   PluginSettingTab: class PluginSettingTab {},
   Setting: class Setting {},
+  Modal: class Modal {
+    app: unknown;
+    contentEl = {
+      empty() {},
+      createEl() {
+        return {};
+      },
+      createDiv() {
+        return {};
+      },
+    };
+    constructor(app: unknown) {
+      this.app = app;
+    }
+    open() {}
+    close() {}
+    onOpen() {}
+    onClose() {}
+  },
+  TFolder: class TFolder {},
+  TFile: class TFile {},
 }));
 ```
 
 ```bash
-grep -c '^  test(\|^    test(\|^  it(' src/*.test.ts
+grep -c '^  it(\|^  test(' src/*.test.ts src/adapters/*.test.ts | sort
 ```
 
 ```output
-src/callClaude.test.ts:8
-src/generateMetadata.test.ts:7
-src/main.test.ts:5
-src/metadata.test.ts:47
+src/adapters/frontmatter.test.ts:13
+src/bulkGenerate.test.ts:30
+src/callClaude.test.ts:25
+src/content.test.ts:54
+src/generateMetadata.test.ts:12
+src/logger.test.ts:4
+src/metadata.test.ts:11
+src/settingsMigrate.test.ts:23
 src/settingsTab.test.ts:7
-src/utils.test.ts:49
 ```
 
-The suites split into pure-function unit tests (parsing,
-tokenization, truncation, update-method resolution), callClaude
-error handling, and `generateMetadata` integration tests that mock
-the Anthropic SDK module and drive the full command flow end to end.
+A snapshot of the test surface as of this walkthrough — pure-helper
+contracts, end-to-end flows through a fake `App`, the SDK adapter's error
+taxonomy and Retry-After parsing, and the bulk engine's collect/classify/
+runBulk plus `computeDelayMs` jitter.
 
-## 16. Concerns
+## 12. Build and release
 
-A few items worth noting, in decreasing order of priority.
+`build.ts` uses Bun's native bundler (CommonJS, externals: `obsidian`,
+`electron`). Production builds are minified; dev builds are not.
+`main.js` is committed because Obsidian distributes the built artifact.
 
-**UI test coverage for `settingsTab.display()` is absent.** The
-`settingsTab.test.ts` file re-implements the validation logic as
-plain functions rather than exercising the actual UI code. The
-whole 244-line `display()` method runs untested. This is a common
-pattern for Obsidian plugins — the host provides no easy DOM
-harness — but it is still a real gap.
+The release flow: bump `package.json` → `bun run version` syncs
+`manifest.json` and `versions.json` → `bun run build` → PR → merge → tag
+on the merged commit → GitHub Actions creates the release.
 
-**The "token" counter is not the model's tokenizer.** `splitIntoTokens`
-is a cheap per-character approximation. It will undercount for
-languages the regex doesn't cover (e.g. Cyrillic, Thai, Hebrew), and
-it diverges from the actual Claude tokenizer by a wide margin. Users
-who rely on `contentTokenLimit` to control cost should treat it as a
-rough bound, not a precise ceiling.
-
-**Response parsing falls back twice.** The non-greedy candidate
-scan, the greedy whole-string match, and the code-fence extraction
-all layer defensively. Each layer is documented and tested, but the
-complexity reflects that LLM output shape is not under the plugin's
-control. If the prompt enforced a stricter protocol (e.g., "your
-entire response must be a JSON object and nothing else"), the parser
-could collapse.
-
-**No retry logic for transient failures.** A rate-limit or
-`InternalServerError` surfaces a notice and the command is done.
-For a user-initiated command this is fine — the user can simply run
-it again — but batch callers (none exist today) would benefit from
-exponential backoff.
-
-**`contentTokenLimit` default of 1000 is conservative.** Modern
-Claude models accept 200K+ input tokens. The default is set low to
-protect API cost, but the per-character heuristic above already
-overestimates. A user who enables `truncateContent` on large notes
-will get a much smaller slice than the budget implies.
-
-**`main.js` committed to the repo is required by Obsidian's
-plugin distribution convention** — worth flagging to readers
-surprised by build artifacts in git. Release builds are produced by
-the `release.yml` workflow on tag push.
