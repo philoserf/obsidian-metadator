@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.2.0
+
+### Added
+
+- Hard cap on bulk-run files-that-will-change with an explicit override checkbox in the confirm modal, so a misconfigured `updateMethod` cannot silently rewrite hundreds of notes (#114).
+- Structured debug logging with per-file correlation IDs. When `debugLogging` is on, the request path emits JSON records (`event` + context) instead of prose, and a fresh `requestId` is minted per `addMetadataWithClaude` invocation so retry attempts and write-failure logs correlate to the API call that produced them (#120).
+- Versioned settings-schema framework: every saved data file now carries `schemaVersion`, and migrations live in an ordered `MIGRATIONS` map keyed by the version they produce. Loading a future-version data file no longer clobbers it — the plugin loads defaults, surfaces a Notice, and refuses to save until the user resolves the mismatch (#121).
+
+### Fixed
+
+- Bulk retry delays are now jittered to `[0.5x, 1.5x]` of the base schedule and honor the SDK's `Retry-After` header (capped at 2x the scheduled base) so synchronized retry storms across parallel clients are avoided and a misbehaving header can't stall a long bulk run (#122).
+- Token regex now matches non-Latin, non-CJK scripts (Cyrillic, Arabic, Devanagari, etc.) instead of dropping them from the count, fixing truncation budgets for those notes (#119).
+- Prompt-side validation runs before the API call, and tool-use input parse failures surface as a clear error instead of a silent skip (#123).
+- Loaded settings are validated at the trust boundary; malformed values fall back to defaults instead of poisoning later runs (#115).
+- In-flight metadata generation aborts when the plugin unloads, with cancellation semantics refined so a Cancel that lands between progress and the API call skips cleanly (#113).
+- Explicit timeout and request options on every Claude API call so a hung connection cannot block the command indefinitely (#110).
+
+### Internal
+
+- `@anthropic-ai/sdk` boundary is now enforced by a Biome `noRestrictedImports` rule — only `src/adapters/claude.ts` may import the SDK; other modules consume the typed wrapper (`callClaudeForMetadata`, `ClaudeApiError`) (#141).
+- Refactors: structured tool-use response and adapter error taxonomy (#112, #118), `addMetadataWithClaude` boolean-flag parameters replaced with an options object (#117), `bulkModals.ts` split into per-modal files (#124), `utils.ts` split into focused modules (#111), `migrateSettings` extracted into `src/settingsMigrate.ts` (#139), settings options deduplicated and validation types tightened, per-helper test duplication trimmed in `metadata.test.ts` (#140).
+- Risks of `dangerouslyAllowBrowser` documented in the Anthropic client adapter.
+- Dependency bumps: `@anthropic-ai/sdk` 0.90.0 → 0.91.1, `@biomejs/biome` 2.4.12 → 2.4.13, `@types/bun` 1.3.12 → 1.3.13, `typescript` 6.0.2 → 6.0.3.
+
 ## 2.1.0
 
 ### Added
