@@ -1,8 +1,8 @@
 import { $ } from "bun";
 
-const dest = process.env.OBSIDIAN_METADATOR_DEST;
+const dest = process.env.OBSIDIAN_DEPLOY_DEST;
 if (!dest) {
-  console.error("OBSIDIAN_METADATOR_DEST not set — see .env.local");
+  console.error("OBSIDIAN_DEPLOY_DEST not set — see .env.local");
   process.exit(1);
 }
 

@@ -21,13 +21,13 @@ bun run version          # Sync package.json version to manifest.json + versions
 bun test                 # Run tests
 bun test src/metadata.test.ts            # Run a single test file
 bun test --test-name-pattern "parses"    # Filter tests by name
-bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_METADATOR_DEST
+bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_DEPLOY_DEST
 ```
 
-The `deploy` script reads `OBSIDIAN_METADATOR_DEST` from `.env.local` (gitignored). Set it to the target plugin directory, e.g.:
+The `deploy` script reads `OBSIDIAN_DEPLOY_DEST` from `.env.local` (gitignored). Set it to the target plugin directory, e.g.:
 
 ```text
-OBSIDIAN_METADATOR_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
+OBSIDIAN_DEPLOY_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
 ```
 
 ## Architecture

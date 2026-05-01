@@ -12,7 +12,8 @@
       "*.json",
       "scripts/**/*.ts",
       "version-bump.ts",
-      "build.ts"
+      "build.ts",
+      "deploy.ts"
     ],
     "ignoreUnknown": true
   },

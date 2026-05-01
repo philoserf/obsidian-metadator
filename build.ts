@@ -1,5 +1,4 @@
 import { watch } from "node:fs";
-import { resolve } from "node:path";
 
 const isWatch = process.argv.includes("--watch");
 
@@ -10,6 +9,7 @@ async function build() {
     format: "cjs",
     external: ["obsidian", "electron"],
     minify: !isWatch,
+    sourcemap: isWatch ? "linked" : "none",
   });
 
   if (!result.success) {
@@ -19,19 +19,23 @@ async function build() {
     return;
   }
 
-  console.log("Build succeeded");
+  console.log(
+    `Built main.js (${(result.outputs[0].size / 1024).toFixed(1)} KB)`,
+  );
 }
 
 await build();
 
 if (isWatch) {
   console.log("Watching src/ for changes...");
-  let debounce: ReturnType<typeof setTimeout> | null = null;
-  watch(resolve("src"), { recursive: true }, (_event, filename) => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  watch("src", { recursive: true }, (_event, filename) => {
     if (!filename?.endsWith(".ts")) return;
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(async () => {
-      console.log(`Rebuilding (${filename} changed)...`);
+    if (filename.includes(".test.")) return;
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(async () => {
+      console.log(`\nRebuilding (${filename} changed)...`);
       await build();
     }, 100);
   });
