@@ -50,3 +50,8 @@ This plugin requires an Anthropic API key and transmits note content to a third-
 - **Note content is sent to Anthropic.** Every run transmits the active note's body (possibly truncated) to Anthropic's API. Do not run this plugin on notes whose contents you would not paste into a web form.
 - **API key storage.** The Anthropic API key is stored in Obsidian's plugin data file (`data.json`) as plaintext. This is an Obsidian platform constraint — there is no encrypted storage API. Anyone with file system access to your vault can read the key.
 - **Recommendations:** Rotate the key periodically and set a usage cap on it in the Anthropic console. On shared devices, be aware that the key is accessible on disk.
+
+## Alternatives
+
+- [Auto Classifier](https://github.com/HyeonseoNam/auto-classifier) — AI-powered tag and frontmatter generation with multiple provider support.
+- [Tag Wrangler](https://github.com/pjeby/tag-wrangler) — manual tag management and renaming (no AI).
