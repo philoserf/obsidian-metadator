@@ -1,9 +1,0 @@
-_extends: .github
-
-repository:
-  name: obsidian-metadator
-  description: "Automatically generate metadata for your Obsidian notes using Claude AI from Anthropic. It analyzes a note and generates tags, descriptions, and titles, customizable to your workflow."
-  homepage: https://philoserf.github.io/obsidian-metadator/
-  topics:
-    - metadata
-    - obsidian-plugin
