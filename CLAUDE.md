@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Metadator is an Obsidian plugin that generates metadata (tags, description, title) for notes using the Anthropic Claude API. The user runs a command, the plugin sends note content to Claude with a forced `submit_metadata` tool call, validates the tool's structured input, and writes the results into the note's YAML frontmatter. A "Generate metadata (recursive)" folder action runs the same flow over a folder with confirm / progress / summary modals and a configurable hard cap on files-that-will-change.
 
+The current next step for this repo is tracked in the workspace backlog at `../NEXT.md` (the `obsidian-metadator` row). Read it when starting work; update it when that step ships.
+
 ## Development Commands
 
 ```bash
