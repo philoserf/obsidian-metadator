@@ -6,6 +6,10 @@
 
 - Default and selectable Claude models updated to the current generation: `claude-sonnet-5`, `claude-opus-5`, and the undated `claude-haiku-4-5` alias, replacing the pinned Sonnet 4.6 / Opus 4.6 / dated Haiku 4.5 IDs. A new settings-schema migration (v1 → v2) rewrites existing users' stored model selection automatically.
 
+### Internal
+
+- Dependency bumps: `@anthropic-ai/sdk` 0.111.0 → 0.115.0, `@biomejs/biome` 2.5.4 → 2.5.7, `@types/node` 26.1.1 → 26.1.2. Also fixes `bun.lock` having drifted out of sync with `package.json`'s `^0.115.0` range for `@anthropic-ai/sdk` (still pinned at 0.111.0) since a prior dependency-bump PR never regenerated the lockfile.
+
 ## 2.2.0
 
 ### Added

@@ -66,9 +66,9 @@ sed -n '1,30p' package.json
     "@anthropic-ai/sdk": "^0.115.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
+    "@biomejs/biome": "^2.5.7",
     "@types/bun": "^1.3.14",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "obsidian": "^1.13.1",
     "typescript": "^7.0.2"
 ```
