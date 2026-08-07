@@ -202,7 +202,7 @@ export async function callClaudeForMetadata(
   const toolUse = toolUses.find(
     (block) => block.type === "tool_use" && block.name === TOOL_NAME,
   );
-  if (!toolUse || toolUse.type !== "tool_use") {
+  if (toolUse?.type !== "tool_use") {
     if (toolUses.length > 0) {
       const names = toolUses
         .map((block) => (block.type === "tool_use" ? block.name : ""))
