@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0
+
+### Changed
+
+- Default and selectable Claude models updated to the current generation: `claude-sonnet-5`, `claude-opus-5`, and the undated `claude-haiku-4-5` alias, replacing the pinned Sonnet 4.6 / Opus 4.6 / dated Haiku 4.5 IDs. A new settings-schema migration (v1 → v2) rewrites existing users' stored model selection automatically.
+
 ## 2.2.0
 
 ### Added
