@@ -60,7 +60,8 @@ sed -n '1,30p' package.json
     "format:check": "biome format .",
     "version": "bun run version-bump.ts",
     "test": "bun test",
-    "deploy": "bun run deploy.ts"
+    "deploy": "bun run deploy.ts",
+    "compare-models": "bun run scripts/compare-models.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0"
@@ -70,7 +71,6 @@ sed -n '1,30p' package.json
     "@types/bun": "^1.3.14",
     "@types/node": "^26.1.2",
     "obsidian": "^1.13.1",
-    "typescript": "^7.0.2"
 ```
 
 ## 2. Architecture
@@ -113,6 +113,7 @@ src/content/types.ts
 src/logger.ts
 src/main.ts
 src/metadata.ts
+src/prompt.ts
 src/settings.ts
 src/settingsMigrate.ts
 src/settingsTab.ts
@@ -450,7 +451,7 @@ single-note command and every per-file iteration of the bulk run.
 future entry point — speaks this union and nothing else.
 
 ```bash
-sed -n '102,143p' src/metadata.ts
+sed -n '71,112p' src/metadata.ts
 ```
 
 ```output
@@ -510,7 +511,7 @@ write decision (`update` / `keep`). Tags get a third method — `append` —
 selected later in `addMetadataWithClaude`.
 
 ```bash
-sed -n '154,203p' src/metadata.ts
+sed -n '123,172p' src/metadata.ts
 ```
 
 ```output
@@ -588,7 +589,7 @@ relies on this distinction.
   proposed tags already existed).
 
 ```bash
-sed -n '252,322p' src/metadata.ts
+sed -n '221,291p' src/metadata.ts
 ```
 
 ```output
@@ -670,7 +671,7 @@ tags use `append`, description and title use `update` — and sends each
 through `writeField` with the resolved per-field method:
 
 ```bash
-sed -n '326,402p' src/metadata.ts
+sed -n '295,371p' src/metadata.ts
 ```
 
 ```output
@@ -894,7 +895,7 @@ export async function callClaudeForMetadata(
   const toolUse = toolUses.find(
     (block) => block.type === "tool_use" && block.name === TOOL_NAME,
   );
-  if (!toolUse || toolUse.type !== "tool_use") {
+  if (toolUse?.type !== "tool_use") {
     if (toolUses.length > 0) {
       const names = toolUses
         .map((block) => (block.type === "tool_use" ? block.name : ""))
@@ -922,7 +923,7 @@ sed -n '30,57p' biome.json
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "style": {
         "noRestrictedImports": {
           "level": "error",

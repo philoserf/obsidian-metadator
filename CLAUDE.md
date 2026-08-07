@@ -24,6 +24,7 @@ bun test                 # Run tests
 bun test src/metadata.test.ts            # Run a single test file
 bun test --test-name-pattern "parses"    # Filter tests by name
 bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_DEPLOY_DEST
+bun run compare-models   # Send the same note to the live API once per configurable model
 ```
 
 The `deploy` script reads `OBSIDIAN_DEPLOY_DEST` from `.env.local` (gitignored). Set it to the target plugin directory, e.g.:
@@ -40,7 +41,8 @@ OBSIDIAN_DEPLOY_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
 - **[src/settings.ts](src/settings.ts)** — `MetadataToolSettings` interface, `DEFAULT_SETTINGS`, `CURRENT_SCHEMA_VERSION`, valid-option enums (models, truncate methods, update methods), and field labels.
 - **[src/settingsTab.ts](src/settingsTab.ts)** — Settings UI (`PluginSettingTab`). Strict positive-integer parsing (`parseStrictPositiveInt`) for numeric fields.
 - **[src/settingsMigrate.ts](src/settingsMigrate.ts)** — `migrateSettings`, the versioned `MIGRATIONS` map, and `applyMigrations`. Returns a discriminated `MigrationResult` so the plugin can refuse to overwrite forward-version data.
-- **[src/metadata.ts](src/metadata.ts)** — Single-file generation flow (`generateMetadata`, `generateMetadataForFile`), prompt building, and frontmatter write orchestration.
+- **[src/prompt.ts](src/prompt.ts)** — `buildPrompt` and `parseTags`, pure functions with no Obsidian dependency (unlike `metadata.ts`, which imports `obsidian` at module scope). Kept separate so they can be imported from a plain `bun run` script (e.g. `scripts/compare-models.ts`) without pulling in the Obsidian-runtime-only parts of `metadata.ts`. Re-exported from `metadata.ts` for backward compatibility.
+- **[src/metadata.ts](src/metadata.ts)** — Single-file generation flow (`generateMetadata`, `generateMetadataForFile`), and frontmatter write orchestration.
 - **[src/bulkOrchestrator.ts](src/bulkOrchestrator.ts)** — Folder-level entry: confirm modal → progress modal → run → summary modal.
 - **[src/bulkGenerate.ts](src/bulkGenerate.ts)** — Pure bulk-run engine: `collectCandidates`, `classifyCandidates`, `runBulk`, `computeDelayMs` (full jitter + Retry-After honoring).
 - **[src/bulkConfirmModal.ts](src/bulkConfirmModal.ts)**, **[src/bulkProgressModal.ts](src/bulkProgressModal.ts)**, **[src/bulkSummaryModal.ts](src/bulkSummaryModal.ts)** — UI modals for the bulk run lifecycle. Confirm modal hard-caps `willChange` count with an explicit override checkbox.
