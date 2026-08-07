@@ -7,7 +7,7 @@
 
 import { readFileSync } from "node:fs";
 import { ClaudeApiError, callClaudeForMetadata } from "../src/adapters/claude";
-import { buildPrompt } from "../src/metadata";
+import { buildPrompt } from "../src/prompt";
 import { DEFAULT_SETTINGS, VALID_MODEL_OPTIONS } from "../src/settings";
 
 const SAMPLE_CONTENT = `# Composting for apartment dwellers
