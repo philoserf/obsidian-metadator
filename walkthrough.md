@@ -27,7 +27,7 @@ cat manifest.json
 {
   "id": "metadator",
   "name": "Metadator",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "minAppVersion": "1.4.0",
   "description": "Automatically generate metadata for your notes using AI",
   "author": "Mark Ayers",
@@ -43,7 +43,7 @@ sed -n '1,30p' package.json
 ```output
 {
   "name": "metadator",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Automatically generate metadata for Obsidian notes using AI",
   "main": "main.js",
   "author": "Mark Ayers",
