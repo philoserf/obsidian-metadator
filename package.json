@@ -17,7 +17,8 @@
     "format:check": "biome format .",
     "version": "bun run version-bump.ts",
     "test": "bun test",
-    "deploy": "bun run deploy.ts"
+    "deploy": "bun run deploy.ts",
+    "compare-models": "bun run scripts/compare-models.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0"
