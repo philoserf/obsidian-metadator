@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.1
+
+### Added
+
+- `bun run compare-models` dev script: sends the same note content to the live API once per configurable model and prints tags/description/title side by side for manual comparison.
+
+### Fixed
+
+- `src/metadata.ts` had a module-level `import { Notice } from "obsidian"`, but the `obsidian` package ships type declarations only — no runtime module exists outside Obsidian itself, so importing anything from `metadata.ts` (even the fully pure `buildPrompt`) crashed when run standalone via `bun run`. Extracted `buildPrompt`, `parseTags`, and `PromptParts` into a new Obsidian-free module, `src/prompt.ts`; `metadata.ts` re-exports them for backward compatibility.
+
+### Internal
+
+- Fixed a pre-existing lint warning (`useOptionalChain` in `src/adapters/claude.ts`) and migrated `biome.json`'s deprecated `linter.rules.recommended` field to `linter.rules.preset`.
+
 ## 2.3.0
 
 ### Changed
