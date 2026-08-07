@@ -71,6 +71,21 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
         }
       },
     ],
+    [
+      2,
+      (s) => {
+        // 1 → 2: rename retired model identifiers.
+        if (s.anthropicModel === "claude-sonnet-4-6") {
+          s.anthropicModel = "claude-sonnet-5";
+        }
+        if (s.anthropicModel === "claude-opus-4-6") {
+          s.anthropicModel = "claude-opus-5";
+        }
+        if (s.anthropicModel === "claude-haiku-4-5-20251001") {
+          s.anthropicModel = "claude-haiku-4-5";
+        }
+      },
+    ],
   ]);
 
 function readSchemaVersion(raw: Record<string, unknown>): number {

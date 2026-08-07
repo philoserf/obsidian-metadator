@@ -26,25 +26,43 @@ describe("migrateSettings", () => {
     expect(migrateSettings([1, 2, 3])).toEqual({ kind: "missing" });
   });
 
-  test("migrates old sonnet model to claude-sonnet-4-6", () => {
+  test("migrates old sonnet model through to claude-sonnet-5", () => {
     expect(
       ok({ anthropicModel: "claude-sonnet-4-5-20250929" }).anthropicModel,
-    ).toBe("claude-sonnet-4-6");
+    ).toBe("claude-sonnet-5");
   });
 
-  test("migrates old opus model to claude-opus-4-6", () => {
+  test("migrates old opus model through to claude-opus-5", () => {
     expect(
       ok({ anthropicModel: "claude-opus-4-5-20251101" }).anthropicModel,
-    ).toBe("claude-opus-4-6");
+    ).toBe("claude-opus-5");
+  });
+
+  test("migrates claude-sonnet-4-6 to claude-sonnet-5", () => {
+    expect(ok({ anthropicModel: "claude-sonnet-4-6" }).anthropicModel).toBe(
+      "claude-sonnet-5",
+    );
+  });
+
+  test("migrates claude-opus-4-6 to claude-opus-5", () => {
+    expect(ok({ anthropicModel: "claude-opus-4-6" }).anthropicModel).toBe(
+      "claude-opus-5",
+    );
+  });
+
+  test("migrates dated haiku identifier to claude-haiku-4-5", () => {
+    expect(
+      ok({ anthropicModel: "claude-haiku-4-5-20251001" }).anthropicModel,
+    ).toBe("claude-haiku-4-5");
   });
 
   test("does not change current values", () => {
     const settings = ok({
       updateMethod: "always_regenerate",
-      anthropicModel: "claude-sonnet-4-6",
+      anthropicModel: "claude-sonnet-5",
     });
     expect(settings.updateMethod).toBe("always_regenerate");
-    expect(settings.anthropicModel).toBe("claude-sonnet-4-6");
+    expect(settings.anthropicModel).toBe("claude-sonnet-5");
   });
 
   test("preserves unrelated settings", () => {
@@ -83,7 +101,7 @@ describe("migrateSettings", () => {
     const validLoaded: MetadataToolSettings = {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       anthropicApiKey: "sk-test",
-      anthropicModel: "claude-haiku-4-5-20251001",
+      anthropicModel: "claude-haiku-4-5",
       tagsFieldName: "keywords",
       descriptionFieldName: "summary",
       titleFieldName: "headline",
@@ -163,7 +181,7 @@ describe("migrateSettings", () => {
       anthropicModel: "claude-sonnet-4-5-20250929",
     });
     expect(settings.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(settings.anthropicModel).toBe("claude-sonnet-4-6");
+    expect(settings.anthropicModel).toBe("claude-sonnet-5");
   });
 
   test("does not run migrations when input is already at current version", () => {
@@ -206,19 +224,19 @@ describe("migrateSettings", () => {
         schemaVersion: 1.5,
         anthropicModel: "claude-sonnet-4-5-20250929",
       }).anthropicModel,
-    ).toBe("claude-sonnet-4-6");
+    ).toBe("claude-sonnet-5");
     expect(
       ok({
         schemaVersion: -1,
         anthropicModel: "claude-opus-4-5-20251101",
       }).anthropicModel,
-    ).toBe("claude-opus-4-6");
+    ).toBe("claude-opus-5");
     expect(
       ok({
         schemaVersion: "1",
         anthropicModel: "claude-sonnet-4-5-20250929",
       }).anthropicModel,
-    ).toBe("claude-sonnet-4-6");
+    ).toBe("claude-sonnet-5");
   });
 
   test("drops orphan keys not in MetadataToolSettings", () => {

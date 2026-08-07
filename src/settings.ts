@@ -4,7 +4,7 @@ export const PROMPT_MAX_LENGTH = 1000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in main.ts. Each migration's key is the schema version it produces.
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export interface MetadataToolSettings {
   schemaVersion: number;
@@ -40,18 +40,18 @@ export interface MetadataToolSettings {
 }
 
 export const VALID_MODEL_OPTIONS = [
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-haiku-4-5-20251001",
+  "claude-sonnet-5",
+  "claude-opus-5",
+  "claude-haiku-4-5",
 ] as const;
 
 export const MODEL_OPTION_LABELS: Record<
   (typeof VALID_MODEL_OPTIONS)[number],
   string
 > = {
-  "claude-sonnet-4-6": "Claude Sonnet 4.6",
-  "claude-opus-4-6": "Claude Opus 4.6",
-  "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+  "claude-sonnet-5": "Claude Sonnet 5",
+  "claude-opus-5": "Claude Opus 5",
+  "claude-haiku-4-5": "Claude Haiku 4.5",
 };
 
 export const VALID_TRUNCATE_METHOD_OPTIONS = [
@@ -86,7 +86,7 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
 
   anthropicApiKey: "",
-  anthropicModel: "claude-sonnet-4-6",
+  anthropicModel: "claude-sonnet-5",
 
   tagsFieldName: "tags",
   descriptionFieldName: "description",

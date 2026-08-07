@@ -31,7 +31,7 @@ describe("logDebug", () => {
       logDebug({
         event: "claude_request_start",
         file: "note.md",
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         requestId: "abc12345",
       });
       expect(captured).toHaveLength(1);
@@ -39,7 +39,7 @@ describe("logDebug", () => {
       expect(captured[0][1]).toEqual({
         event: "claude_request_start",
         file: "note.md",
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         requestId: "abc12345",
       });
     } finally {
