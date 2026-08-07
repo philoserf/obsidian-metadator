@@ -63,14 +63,14 @@ sed -n '1,30p' package.json
     "deploy": "bun run deploy.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.1"
+    "@anthropic-ai/sdk": "^0.115.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.13",
-    "@types/bun": "^1.3.13",
-    "@types/node": "^25.6.0",
-    "obsidian": "^1.12.3",
-    "typescript": "^6.0.3"
+    "@biomejs/biome": "^2.5.4",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.1.1",
+    "obsidian": "^1.13.1",
+    "typescript": "^7.0.2"
 ```
 
 ## 2. Architecture
@@ -239,7 +239,7 @@ The settings interface, default values, valid-option enums, and the
 current schema version all live here. Any new persisted field added to
 the plugin must thread through this file.
 
-`CURRENT_SCHEMA_VERSION = 1` is the data-format version stamped onto
+`CURRENT_SCHEMA_VERSION = 2` is the data-format version stamped onto
 every saved `data.json`. Bumping it without adding a matching entry to
 `MIGRATIONS` is caught by `applyMigrations` at load time (next section).
 
@@ -254,7 +254,7 @@ export const PROMPT_MAX_LENGTH = 1000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in main.ts. Each migration's key is the schema version it produces.
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export interface MetadataToolSettings {
   schemaVersion: number;
@@ -303,7 +303,7 @@ it prevents the plugin from clobbering forward-version data with its
 defaults.
 
 ```bash
-sed -n '56,108p' src/settingsMigrate.ts
+sed -n '56,123p' src/settingsMigrate.ts
 ```
 
 ```output
@@ -322,6 +322,21 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
         }
         if (s.anthropicModel === "claude-opus-4-5-20251101") {
           s.anthropicModel = "claude-opus-4-6";
+        }
+      },
+    ],
+    [
+      2,
+      (s) => {
+        // 1 → 2: rename retired model identifiers.
+        if (s.anthropicModel === "claude-sonnet-4-6") {
+          s.anthropicModel = "claude-sonnet-5";
+        }
+        if (s.anthropicModel === "claude-opus-4-6") {
+          s.anthropicModel = "claude-opus-5";
+        }
+        if (s.anthropicModel === "claude-haiku-4-5-20251001") {
+          s.anthropicModel = "claude-haiku-4-5";
         }
       },
     ],
@@ -373,7 +388,7 @@ sanitizes types. They are cleanly separable; a future migration that
 needs to look at the legacy raw bag still has it.
 
 ```bash
-sed -n '110,150p' src/settingsMigrate.ts
+sed -n '125,165p' src/settingsMigrate.ts
 ```
 
 ```output
@@ -1528,4 +1543,3 @@ that respect that line — adding a new entry point, adding a new error
 kind, swapping the LLM provider — land cleanly. Edits that collapse it
 — putting UI in the worker, putting generation in a modal, bypassing
 `FileResult` with ad-hoc returns — silently damage the architecture.
-
