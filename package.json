@@ -21,7 +21,7 @@
     "compare-models": "bun run scripts/compare-models.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.117.1"
+    "@anthropic-ai/sdk": "^0.122.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
