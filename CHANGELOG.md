@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- A frontmatter write that threw was indistinguishable from "this note needed nothing": `writeField` returned `false` for both, so a file whose every write failed came back as `{kind: "skipped", reason: "no changes"}`. In bulk runs the per-field notice is suppressed, so the summary counted such a file as skipped even though the API had been called and billed; in the single-note flow `"skipped"` produces no final notice at all. Write failures are now tracked separately and reported as `kind: "error"`, naming the fields that failed and whether others were written. (#187)
 - Under `preserve_existing`, a field the user typed into while a generation request was in flight could be silently overwritten by the model's output. The write decision was made from a `metadataCache` snapshot taken before the request, which can run for up to `REQUEST_TIMEOUT_MS`, and then applied unconditionally at write time. The emptiness check now happens inside `processFrontMatter`, against the live frontmatter, via a new `update_if_empty` adapter method. `always_regenerate` still overwrites, as intended. (#178)
 
 ## 2.3.1
