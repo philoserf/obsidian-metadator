@@ -27,7 +27,7 @@ cat manifest.json
 {
   "id": "metadator",
   "name": "Metadator",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "minAppVersion": "1.4.0",
   "description": "Automatically generate metadata for your notes using AI",
   "author": "Mark Ayers",
@@ -43,7 +43,7 @@ sed -n '1,30p' package.json
 ```output
 {
   "name": "metadator",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "Automatically generate metadata for Obsidian notes using AI",
   "main": "main.js",
   "author": "Mark Ayers",
@@ -64,12 +64,12 @@ sed -n '1,30p' package.json
     "compare-models": "bun run scripts/compare-models.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0"
+    "@anthropic-ai/sdk": "^0.123.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.7",
-    "@types/bun": "^1.3.14",
-    "@types/node": "^26.1.2",
+    "@biomejs/biome": "^2.5.11",
+    "@types/bun": "^1.4.0",
+    "@types/node": "^26.4.1",
     "obsidian": "^1.13.1",
 ```
 
@@ -110,6 +110,7 @@ src/content/getContent.ts
 src/content/tokens.ts
 src/content/truncate.ts
 src/content/types.ts
+src/emptyValue.ts
 src/logger.ts
 src/main.ts
 src/metadata.ts
@@ -455,14 +456,6 @@ sed -n '71,112p' src/metadata.ts
 ```
 
 ```output
-export type WritePolicy = "update_all" | "only_empty";
-export type PresentationMode = "interactive" | "bulk";
-
-function writePolicyFromSettings(settings: MetadataToolSettings): WritePolicy {
-  return settings.updateMethod === "always_regenerate"
-    ? "update_all"
-    : "only_empty";
-}
 
 function resolveUpdateMethod(
   policy: WritePolicy,
@@ -482,6 +475,14 @@ export function shouldGenerate(
     isEmptyValue(frontMatter[settings.descriptionFieldName]) ||
     (settings.enableTitle && isEmptyValue(frontMatter[settings.titleFieldName]))
   );
+}
+
+// What a write pass actually did. `failures` is what separates "every field
+// was already populated" from "every write threw" — before this, both surfaced
+// as `hasChanges === false` and the file was reported as skipped (#187).
+interface WriteOutcome {
+  changed: boolean;
+  failures: { field: string; error: unknown }[];
 }
 
 export type FileResult =
@@ -541,7 +542,7 @@ export async function generateMetadataForFile(
   }
 
   try {
-    const hasChanges = await addMetadataWithClaude(
+    const outcome = await addMetadataWithClaude(
       app,
       file,
       settings,
@@ -550,21 +551,21 @@ export async function generateMetadataForFile(
       opts.presentation ?? "interactive",
       opts.signal,
     );
-    return hasChanges
-      ? { kind: "changed", file }
-      : { kind: "skipped", file, reason: "no changes" };
-  } catch (error) {
-    if (opts.signal?.aborted || isAbortError(error)) {
-      return { kind: "skipped", file, reason: "cancelled" };
+    if (outcome.failures.length > 0) {
+      // A write that threw is not "nothing to do": the request was made and
+      // billed, and the note did not get what the user asked for. Report it as
+      // an error so the bulk summary counts it and the single-note flow shows a
+      // notice, both of which treat "skipped" as unremarkable.
+      const fields = outcome.failures.map((f) => f.field).join(", ");
+      const partial = outcome.changed ? " (other fields were written)" : "";
+      return {
+        kind: "error",
+        file,
+        reason: `failed to write frontmatter: ${fields}${partial}`,
+        error: outcome.failures[0]?.error,
+      };
     }
-    return {
-      kind: "error",
-      file,
-      reason: error instanceof Error ? error.message : String(error),
-      error,
-    };
-  }
-}
+    return outcome.changed
 ```
 
 The worker is the choke point: every reachable `kind: "error"` path goes
@@ -583,16 +584,33 @@ relies on this distinction.
 - A short hex `requestId` correlates every log line for one generation,
   so a debugger reading the console for a 500-file bulk run can trace
   one file's lifecycle.
-- The function returns a boolean `hasChanges`. The caller decides
-  `changed` vs `skipped:no changes` based on that. This is what makes
-  the success Notice truthful when nothing actually changed (e.g. all
-  proposed tags already existed).
+- The function returns a `WriteOutcome` — `{changed, failures}`, not a
+  bare boolean. `changed` is what makes the success Notice truthful when
+  nothing actually changed (e.g. all proposed tags already existed).
+  `failures` exists because those two states used to be one: a write that
+  threw and a write that was intentionally skipped both returned `false`,
+  so a file whose every write failed reported as `skipped: no changes`
+  (#187). Any failure now surfaces as `kind: "error"`.
 
 ```bash
 sed -n '221,291p' src/metadata.ts
 ```
 
 ```output
+      file: file.path,
+      errorKind:
+        result.error instanceof ClaudeApiError ? result.error.kind : "unknown",
+      errorMessage:
+        result.error instanceof Error
+          ? result.error.message
+          : String(result.error),
+      errorName: result.error instanceof Error ? result.error.name : undefined,
+      errorStack:
+        result.error instanceof Error ? result.error.stack : undefined,
+    });
+  }
+}
+
 async function addMetadataWithClaude(
   app: App,
   file: TFile,
@@ -601,7 +619,7 @@ async function addMetadataWithClaude(
   policy: WritePolicy,
   presentation: PresentationMode,
   signal?: AbortSignal,
-): Promise<boolean> {
+): Promise<WriteOutcome> {
   const isBulk = presentation === "bulk";
   const requestId = newRequestId();
 
@@ -650,20 +668,6 @@ async function addMetadataWithClaude(
   } finally {
     notice?.hide();
   }
-
-  if (settings.debugLogging) {
-    logDebug({
-      event: "claude_request_completed",
-      file: file.path,
-      model: settings.anthropicModel,
-      requestId,
-      durationMs: Date.now() - startedAt,
-    });
-  }
-
-  if (signal?.aborted) {
-    return false;
-  }
 ```
 
 The write loop assembles a list of `FieldUpdate` discriminated values —
@@ -675,6 +679,22 @@ sed -n '295,371p' src/metadata.ts
 ```
 
 ```output
+      event: "claude_request_completed",
+      file: file.path,
+      model: settings.anthropicModel,
+      requestId,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  const failures: WriteOutcome["failures"] = [];
+
+  if (signal?.aborted) {
+    return { changed: false, failures };
+  }
+
+  let hasChanges = false;
+
   type FieldUpdate =
     | { fieldName: string; value: string[]; updateMethod: "append" }
     | { fieldName: string; value: string; updateMethod: "update" };
@@ -696,6 +716,20 @@ sed -n '295,371p' src/metadata.ts
           "append",
         );
       }
+      // Under only_empty the decision to overwrite must be made against the
+      // live frontmatter, not `frontMatter` — that snapshot was taken before a
+      // request that can run for REQUEST_TIMEOUT_MS (#178). The append path
+      // above needs no such guard: it merges with the live value, so a
+      // concurrent edit survives either way.
+      if (policy === "only_empty") {
+        return await updateFrontMatter(
+          app,
+          file,
+          u.fieldName,
+          u.value,
+          "update_if_empty",
+        );
+      }
       return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
     } catch (error) {
       if (!isBulk) {
@@ -712,6 +746,7 @@ sed -n '295,371p' src/metadata.ts
         errorName: error instanceof Error ? error.name : undefined,
         errorStack: error instanceof Error ? error.stack : undefined,
       });
+      failures.push({ field: u.fieldName, error });
       return false;
     }
   }
@@ -721,37 +756,6 @@ sed -n '295,371p' src/metadata.ts
   if (metadata.tags) {
     updates.push({
       fieldName: settings.tagsFieldName,
-      value: parseTags(metadata.tags),
-      updateMethod: "append",
-    });
-  }
-  if (metadata.description) {
-    updates.push({
-      fieldName: settings.descriptionFieldName,
-      value: metadata.description,
-      updateMethod: "update",
-    });
-  }
-  if (settings.enableTitle && metadata.title) {
-    updates.push({
-      fieldName: settings.titleFieldName,
-      value: stripSurroundingQuotes(metadata.title),
-      updateMethod: "update",
-    });
-  }
-
-  for (const u of updates) {
-    if (signal?.aborted) {
-      return hasChanges;
-    }
-    const resolved = resolveUpdateMethod(policy, frontMatter[u.fieldName]);
-    if (await writeField(u, resolved)) {
-      hasChanges = true;
-    }
-  }
-
-  return hasChanges;
-}
 ```
 
 The `FieldUpdate` discriminated union is a small but pleasing piece of
@@ -963,8 +967,15 @@ encode the three semantic operations the rest of the code wants to
 perform.
 
 The TypeScript overloads make the value/method combinations type-safe:
-`append` requires `string[]`, `update` accepts `string | boolean`,
-`keep` accepts any of them.
+`append` requires `string[]`, `update` and `update_if_empty` accept
+`string | boolean`, `keep` accepts any of them.
+
+`update_if_empty` is the one that carries a subtlety. The `frontmatter`
+object inside the callback is the *live* one at write time, not the
+snapshot the caller read before its API call — and that call can run for
+`REQUEST_TIMEOUT_MS`. Re-checking emptiness here is what stops a
+description the user typed during the request from being overwritten
+(#178).
 
 ```bash
 cat src/adapters/frontmatter.ts
@@ -972,6 +983,7 @@ cat src/adapters/frontmatter.ts
 
 ```output
 import type { App, TFile } from "obsidian";
+import { isEmptyValue } from "../emptyValue";
 
 export function updateFrontMatter(
   app: App,
@@ -991,6 +1003,13 @@ export function updateFrontMatter(
   app: App,
   file: TFile,
   key: string,
+  value: string | boolean,
+  method: "update_if_empty",
+): Promise<boolean>;
+export function updateFrontMatter(
+  app: App,
+  file: TFile,
+  key: string,
   value: string | boolean | string[],
   method: "keep",
 ): Promise<boolean>;
@@ -999,7 +1018,7 @@ export async function updateFrontMatter(
   file: TFile,
   key: string,
   value: string | boolean | string[],
-  method: "append" | "update" | "keep",
+  method: "append" | "update" | "update_if_empty" | "keep",
 ): Promise<boolean> {
   let changed = false;
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
@@ -1020,6 +1039,16 @@ export async function updateFrontMatter(
     } else if (method === "update") {
       if (frontmatter[key] !== value) changed = true;
       frontmatter[key] = value;
+    } else if (method === "update_if_empty") {
+      // `frontmatter` here is the live value at write time, not the caller's
+      // pre-call snapshot. Under the only_empty policy the generation request
+      // can take up to a minute, during which the user may type into the very
+      // field we are about to fill — re-checking here is what keeps that edit
+      // from being overwritten.
+      if (isEmptyValue(frontmatter[key])) {
+        if (frontmatter[key] !== value) changed = true;
+        frontmatter[key] = value;
+      }
     } else if (frontmatter[key] === undefined) {
       frontmatter[key] = value;
       changed = true;
@@ -1029,11 +1058,12 @@ export async function updateFrontMatter(
 }
 ```
 
-The boolean return value is what makes "no-op write" distinguishable
+The `changed` return value is what makes "no-op write" distinguishable
 from "real change". If a regenerated tag set is identical to the
-existing one, `changed` stays false; the caller sees `hasChanges:
-false`, and the user gets `skipped: no changes` instead of a misleading
-"Metadata updated successfully" notice.
+existing one, `changed` stays false and the user gets `skipped: no
+changes` instead of a misleading "Metadata updated successfully" notice.
+Note what it does *not* distinguish: a write that threw. That is why the
+caller tracks failures separately rather than inferring them here.
 
 ## 9. Content extraction & truncation — `src/content/`
 
@@ -1042,36 +1072,48 @@ cost and for the model's input window. Truncation is heuristic — the
 plugin's tokenizer is not Claude's actual tokenizer — but it's
 conservative enough to stay within budget.
 
-`splitIntoTokens` uses the Unicode v-flag set-subtraction syntax to
-tokenize CJK characters per-character and Latin/etc. as whole words. A
-try/catch falls back to a u-flag regex on older mobile WebViews that
-don't support v-flag; this is the only place in the codebase that
-explicitly handles older WebView quirks.
+`tokenize` uses the Unicode v-flag set-subtraction syntax to tokenize
+CJK characters per-character and Latin/etc. as whole words. A try/catch
+falls back to a u-flag regex on older mobile WebViews that don't support
+v-flag; this is the only place in the codebase that explicitly handles
+older WebView quirks.
+
+The trailing `\S` catch-all is load-bearing. Without it, emoji and every
+markdown symbol matched no alternative and vanished from the count
+(#179). Spaces and tabs are still uncounted on purpose, approximating how
+BPE tokenizers absorb whitespace into the following word.
+
+Each token carries `{text, start, end}` offsets back into the source.
+That is what lets truncation rebuild its output with `source.slice()`
+instead of re-joining token text — re-joining dropped or re-spaced every
+character the regex sees individually (#182). Counting and reconstruction
+want opposite things from the same token array, which is why both had to
+change together.
 
 ```bash
 sed -n '14,32p' src/content/tokens.ts
 ```
 
 ```output
+//
+// The v-flag set-subtraction syntax requires Chromium 112+/Safari 17+. The
+// constructor is wrapped in try/catch so older mobile WebViews fall back
+// to a u-flag regex (loses CJK-Latin boundary handling but the plugin
+// still loads and non-CJK scripts still tokenize correctly).
 const CJK_FAMILY_RANGES = "一-龥぀-ヿ가-힯";
 
 function buildTokenRegex(): RegExp {
   try {
     return new RegExp(
-      `[一-龥]|[぀-ヿ]|[가-힯]|[[\\p{Letter}\\p{Number}]--[${CJK_FAMILY_RANGES}]][[\\p{Letter}\\p{Mark}\\p{Number}]--[${CJK_FAMILY_RANGES}]]*|[.,!?;，。！？；#]|\\n`,
+      `[一-龥]|[぀-ヿ]|[가-힯]|[[\\p{Letter}\\p{Number}]--[${CJK_FAMILY_RANGES}]][[\\p{Letter}\\p{Mark}\\p{Number}]--[${CJK_FAMILY_RANGES}]]*|[.,!?;，。！？；#]|\\n|\\S`,
       "gv",
     );
   } catch {
-    return /[一-龥]|[぀-ヿ]|[가-힯]|[\p{Letter}\p{Number}][\p{Letter}\p{Mark}\p{Number}]*|[.,!?;，。！？；#]|\n/gu;
+    return /[一-龥]|[぀-ヿ]|[가-힯]|[\p{Letter}\p{Number}][\p{Letter}\p{Mark}\p{Number}]*|[.,!?;，。！？；#]|\n|\S/gu;
   }
 }
 
 const TOKEN_REGEX = buildTokenRegex();
-const NON_SPACING_TOKEN = /^[一-龥぀-ヿ가-힯.,!?;，。！？；#]$/;
-
-export function splitIntoTokens(str: string): string[] {
-  return str.match(TOKEN_REGEX) ?? [];
-}
 ```
 
 `getContent` reads the file, tokenizes, and dispatches on the configured
@@ -1100,13 +1142,13 @@ export async function getContent(
     return contentStr;
   }
 
-  const tokens = splitIntoTokens(contentStr);
+  const tokens = tokenize(contentStr);
 
   if (tokens.length > limit) {
     if (method === "head_tail") {
-      contentStr = truncateHeadTail(tokens, limit);
+      contentStr = truncateHeadTail(contentStr, tokens, limit);
     } else if (method === "head_only") {
-      contentStr = truncateHeadOnly(tokens, limit);
+      contentStr = truncateHeadOnly(contentStr, tokens, limit);
     } else if (method === "heading") {
       contentStr = truncateHeading(contentStr, tokens, limit);
     }
