@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { App, TFile } from "obsidian";
 import { getContent } from "./content/getContent";
-import { joinTokens, splitIntoTokens } from "./content/tokens";
+import { sliceTokens, splitIntoTokens, tokenize } from "./content/tokens";
 import {
   truncateHeading,
   truncateHeadOnly,
@@ -122,116 +122,126 @@ describe("splitIntoTokens", () => {
     expect(splitIntoTokens("١٢٣")).toEqual(["١٢٣"]);
   });
 
-  test("does not emit standalone combining marks from emoji selectors", () => {
-    // U+2764 (heart) + U+FE0F (variation selector-16). Neither should
-    // produce a token — the heart is a Symbol, and a bare combining mark
-    // is not a valid word start.
-    expect(splitIntoTokens("❤️")).toEqual([]);
+  test("counts emoji and their variation selectors", () => {
+    // U+2764 (heart) + U+FE0F (variation selector-16). Neither starts a word,
+    // so both fall to the `\S` catch-all — they cost real tokens at the API
+    // and must not vanish from the count (#179).
+    expect(splitIntoTokens("❤️")).toEqual(["❤", "\uFE0F"]);
   });
 
-  test("ignores leading combining marks; word starts at the next letter", () => {
-    expect(splitIntoTokens("́abc")).toEqual(["abc"]);
+  test("counts a leading combining mark without joining it to the word", () => {
+    expect(splitIntoTokens("́abc")).toEqual(["\u0301", "abc"]);
+  });
+
+  test("counts markdown syntax characters", () => {
+    expect(splitIntoTokens("**bold**")).toEqual(["*", "*", "bold", "*", "*"]);
+  });
+
+  test("still ignores spaces and tabs", () => {
+    expect(splitIntoTokens("a \t b")).toEqual(["a", "b"]);
   });
 });
 
-describe("joinTokens", () => {
-  test("joins English words with spaces", () => {
-    expect(joinTokens(["hello", "world"])).toBe("hello world");
+describe("tokenize / sliceTokens", () => {
+  test("token offsets point back into the source", () => {
+    const src = "hello world";
+    const tokens = tokenize(src);
+    expect(tokens.map((t) => src.slice(t.start, t.end))).toEqual([
+      "hello",
+      "world",
+    ]);
   });
 
-  test("joins CJK characters without spaces", () => {
-    expect(joinTokens(["你", "好", "世", "界"])).toBe("你好世界");
+  test("sliceTokens returns the source span, whitespace and all", () => {
+    const src = "Hello,   мир!";
+    expect(sliceTokens(src, tokenize(src))).toBe(src);
   });
 
-  test("attaches punctuation without leading space", () => {
-    expect(joinTokens(["hello", ",", "world"])).toBe("hello, world");
+  test("sliceTokens preserves characters the counting regex sees one-by-one", () => {
+    const src = "This is **bold** text";
+    const tokens = tokenize(src);
+    expect(sliceTokens(src, tokens.slice(0, 6))).toBe("This is **bold*");
   });
 
-  test("preserves newlines", () => {
-    expect(joinTokens(["hello", "\n", "world"])).toBe("hello\nworld");
-  });
-
-  test("returns empty string for empty array", () => {
-    expect(joinTokens([])).toBe("");
-  });
-
-  test("handles mixed content", () => {
-    expect(joinTokens(["hello", "你", "好", "world"])).toBe("hello你好 world");
-  });
-
-  test("handles single token", () => {
-    expect(joinTokens(["hello"])).toBe("hello");
-  });
-
-  test("joins Hiragana characters without spaces", () => {
-    expect(joinTokens(["こ", "ん", "に", "ち", "は"])).toBe("こんにちは");
-  });
-
-  test("joins Hangul syllables without spaces", () => {
-    expect(joinTokens(["안", "녕"])).toBe("안녕");
-  });
-
-  test("joins Cyrillic words with spaces", () => {
-    expect(joinTokens(["Привет", "мир"])).toBe("Привет мир");
-  });
-
-  test("round-trips mixed Latin and Cyrillic", () => {
-    const original = "Hello, мир!";
-    expect(joinTokens(splitIntoTokens(original))).toBe(original);
+  test("sliceTokens returns empty string for an empty run", () => {
+    expect(sliceTokens("anything", [])).toBe("");
   });
 });
 
 describe("truncateHeadOnly", () => {
+  const src = "one two three four five";
+
   test("returns first N tokens with ellipsis", () => {
-    const tokens = ["one", "two", "three", "four", "five"];
-    expect(truncateHeadOnly(tokens, 3)).toBe("one two three...");
+    expect(truncateHeadOnly(src, tokenize(src), 3)).toBe("one two three...");
   });
 
   test("handles limit of 1", () => {
-    const tokens = ["one", "two", "three"];
-    expect(truncateHeadOnly(tokens, 1)).toBe("one...");
+    expect(truncateHeadOnly(src, tokenize(src), 1)).toBe("one...");
   });
 
   test("returns all tokens when limit equals length", () => {
-    const tokens = ["one", "two", "three"];
-    expect(truncateHeadOnly(tokens, 3)).toBe("one two three");
+    const short = "one two three";
+    expect(truncateHeadOnly(short, tokenize(short), 3)).toBe("one two three");
   });
 
   test("returns all tokens when limit exceeds length", () => {
-    const tokens = ["one", "two"];
-    expect(truncateHeadOnly(tokens, 10)).toBe("one two");
+    const short = "one two";
+    expect(truncateHeadOnly(short, tokenize(short), 10)).toBe("one two");
+  });
+
+  test("keeps markdown syntax inside the kept span (#182)", () => {
+    // The exact string from #182. Before the fix this returned
+    // "# Title\n\nThis is bold and..." — every emphasis, link, and code
+    // marker inside the kept span was deleted, not merely uncounted.
+    const md =
+      "# Title\n\nThis is **bold** and _italic_ text with a [link](http://example.com) and `code`.";
+    const out = truncateHeadOnly(md, tokenize(md), 15);
+    expect(out).toBe("# Title\n\nThis is **bold** and _italic_...");
+  });
+
+  test("keeps emoji inside the kept span (#182)", () => {
+    const md = "alpha 😀 beta gamma delta";
+    expect(truncateHeadOnly(md, tokenize(md), 3)).toBe("alpha 😀 beta...");
   });
 });
 
 describe("truncateHeadTail", () => {
   test("returns full content when limit covers all tokens", () => {
-    const tokens = Array.from({ length: 10 }, (_, i) => `t${i}`);
-    const result = truncateHeadTail(tokens, 10);
-    expect(result).toBe(joinTokens(tokens));
+    const src = Array.from({ length: 10 }, (_, i) => `t${i}`).join(" ");
+    const result = truncateHeadTail(src, tokenize(src), 10);
+    expect(result).toBe(src);
     expect(result).not.toContain("...");
   });
 
   test("returns full content when limit exceeds token count", () => {
-    const tokens = ["a", "b", "c"];
-    const result = truncateHeadTail(tokens, 100);
-    expect(result).toBe(joinTokens(tokens));
+    const src = "a b c";
+    const result = truncateHeadTail(src, tokenize(src), 100);
+    expect(result).toBe(src);
     expect(result).not.toContain("...");
   });
 
   test("handles small limit", () => {
-    const tokens = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
-    const result = truncateHeadTail(tokens, 5);
+    const src = "a b c d e f g h i j";
+    const result = truncateHeadTail(src, tokenize(src), 5);
     // 80% of 5 = 4, 20% of 5 = 1
     expect(result).toContain("a");
     expect(result).toContain("\n...\n");
   });
 
   test("handles limit of 1", () => {
-    const tokens = ["a", "b", "c", "d", "e"];
-    const result = truncateHeadTail(tokens, 1);
+    const src = "a b c d e";
+    const result = truncateHeadTail(src, tokenize(src), 1);
     // All budget goes to head, tail is empty — no separator
     expect(result).toBe("a");
     expect(result).not.toContain("\n...\n");
+  });
+
+  test("keeps markdown in both halves (#182)", () => {
+    const src = "**start** one two three four five six _end_";
+    // left = floor(7 * 0.8) = 5 tokens (* * start * *), right = 2 (end _).
+    const result = truncateHeadTail(src, tokenize(src), 7);
+    expect(result).toContain("**start**");
+    expect(result).toContain("end_");
   });
 });
 
@@ -239,7 +249,7 @@ describe("truncateHeading", () => {
   test("extracts headings and first paragraph", () => {
     const content =
       "# Title\nSome paragraph text here for testing.\n\n## Section\nMore text in section.";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
     expect(result).toContain("# Title");
     expect(result).toContain("## Section");
@@ -264,14 +274,14 @@ describe("truncateHeading", () => {
 
   test("filters empty lines", () => {
     const content = "# Title\n\n\n\nParagraph after blanks.";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
     expect(result).toContain("# Title");
   });
 
   test("does not append ellipsis to short paragraphs", () => {
     const content = "# Title\nShort paragraph.";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
     // "Short paragraph." is < 30 tokens, should not get "..."
     expect(result).toContain("Short paragraph.");
@@ -283,7 +293,7 @@ describe("truncateHeading", () => {
     // tokenized: ["#", "A", "\n", "word"] = 4 tokens
     // limit=4 → remainingTokens=0 → no body section
     const content = "# A\nword";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 4);
     expect(result).toContain("Outline:");
     expect(result).not.toContain("Body:");
@@ -291,7 +301,7 @@ describe("truncateHeading", () => {
 
   test("handles content with no headings", () => {
     const content = "Just a plain paragraph with no headings at all.";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
     // No headings → empty outline, all budget goes to body
     expect(result).toContain("Body:");
@@ -300,7 +310,7 @@ describe("truncateHeading", () => {
   test("body does not duplicate outline content", () => {
     const content =
       "# Title\nFirst paragraph.\n\n## Section\nSecond paragraph.\n\nExtra content beyond the outline.";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 50);
     // Body should not start with the same tokens as the outline
     const bodyMatch = result.match(/Body:\s*(.*)/s);
@@ -315,7 +325,7 @@ describe("truncateHeading", () => {
     // Buggy offset (outline-token-count) undershoots, causing "word" — which
     // is already in the outline as the first paragraph — to reappear in body.
     const content = "# H\n\nword";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 5);
     const wordOccurrences = (result.match(/\bword\b/g) ?? []).length;
     expect(wordOccurrences).toBe(1);
@@ -326,7 +336,7 @@ describe("truncateHeading", () => {
     // bodyTokens.length > 0 is insufficient because joinTokens trims whitespace
     // to an empty string. Body section must be omitted in that case.
     const content = "# H\nword\n\n";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 10);
     expect(result).not.toContain("Body:");
   });
@@ -339,7 +349,7 @@ describe("truncateHeading", () => {
       " ",
     );
     const content = `# H\n${paragraph}\nFINALWORD`;
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 40);
     expect(result).toContain("Body:");
     expect(result).toContain("FINALWORD");

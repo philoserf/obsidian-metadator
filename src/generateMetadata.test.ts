@@ -38,16 +38,28 @@ function makeApp(opts: {
   file?: { extension: string } | null;
   frontmatter?: Record<string, unknown>;
   content?: string;
+  // Number of leading processFrontMatter calls that should throw, simulating a
+  // vault that has become unwritable. Writes go in `updates` order: tags,
+  // description, title.
+  failWrites?: number;
+  // When true, metadataCache hands back a *copy* of the frontmatter, the way
+  // the real cache hands back its own parsed object rather than the one
+  // processFrontMatter will later mutate. Needed to reproduce #178, where a
+  // write decision made from the cached copy is applied to live data.
+  snapshotCache?: boolean;
 }): { app: App; fm: Record<string, unknown> } {
   const fm = { ...(opts.frontmatter ?? {}) };
   const file = "file" in opts ? opts.file : { extension: "md" };
+  let writeCalls = 0;
 
   const app = {
     workspace: {
       getActiveFile: () => file,
     },
     metadataCache: {
-      getFileCache: () => ({ frontmatter: fm }),
+      getFileCache: () => ({
+        frontmatter: opts.snapshotCache ? { ...fm } : fm,
+      }),
     },
     vault: {
       read: async () => opts.content ?? "Some article content for testing.",
@@ -57,6 +69,9 @@ function makeApp(opts: {
         _file: unknown,
         fn: (fm: Record<string, unknown>) => void,
       ) => {
+        if (writeCalls++ < (opts.failWrites ?? 0)) {
+          throw new Error("vault is read-only");
+        }
         fn(fm);
       },
     },
@@ -301,6 +316,129 @@ describe("generateMetadata integration", () => {
     expect(result.kind).toBe("skipped");
     if (result.kind === "skipped") {
       expect(result.reason).toBe("cancelled");
+    }
+  });
+});
+
+describe("concurrent edits during the API call (#178)", () => {
+  beforeEach(() => {
+    mockCreate.mockClear();
+  });
+
+  test("preserve_existing does not overwrite a field the user filled in mid-request", async () => {
+    const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
+
+    // The note is empty when the request starts, so the pre-call snapshot says
+    // "description is empty, safe to write". While the request is in flight the
+    // user types a description into the open note.
+    mockCreate.mockImplementationOnce(async () => {
+      fm.description = "what the user typed";
+      return toolUseResponse({
+        tags: "ai,testing",
+        description: "what Claude generated",
+        title: "Generated Title",
+      });
+    });
+
+    await generateMetadata(app, makeSettings());
+
+    expect(fm.description).toBe("what the user typed");
+    // Fields the user did not touch are still filled in.
+    expect(fm.title).toBe("Generated Title");
+    expect(fm.tags).toEqual(["ai", "testing"]);
+  });
+
+  test("always_regenerate still overwrites, since the user asked for it", async () => {
+    const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
+
+    mockCreate.mockImplementationOnce(async () => {
+      fm.description = "what the user typed";
+      return toolUseResponse({
+        tags: "ai",
+        description: "what Claude generated",
+        title: "Generated Title",
+      });
+    });
+
+    await generateMetadata(
+      app,
+      makeSettings({ updateMethod: "always_regenerate" }),
+    );
+
+    expect(fm.description).toBe("what Claude generated");
+  });
+});
+
+describe("failed frontmatter writes (#187)", () => {
+  beforeEach(() => {
+    mockCreate.mockClear();
+  });
+
+  test("all writes failing reports an error, not a skip", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "ai",
+        description: "A test article",
+        title: "Test Title",
+      }),
+    );
+    const { app, fm } = makeApp({ failWrites: 3 });
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
+      makeSettings(),
+    );
+
+    expect(result.kind).toBe("error");
+    expect(fm.description).toBeUndefined();
+    if (result.kind === "error") {
+      expect(result.reason).toContain("failed to write frontmatter");
+      expect(result.reason).toContain("tags");
+      expect(result.reason).not.toContain("other fields were written");
+    }
+  });
+
+  test("a partial write failure is still reported as an error", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "ai",
+        description: "A test article",
+        title: "Test Title",
+      }),
+    );
+    const { app, fm } = makeApp({ failWrites: 1 });
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
+      makeSettings(),
+    );
+
+    expect(result.kind).toBe("error");
+    expect(fm.description).toBe("A test article");
+    if (result.kind === "error") {
+      expect(result.reason).toContain("other fields were written");
+    }
+  });
+
+  test("a genuine no-op is still reported as skipped", async () => {
+    // The model returned nothing usable, so no write is even attempted — the
+    // case "skipped: no changes" is supposed to describe.
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "", description: "", title: "" }),
+    );
+    const { app } = makeApp({});
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
+      makeSettings(),
+    );
+
+    expect(result.kind).toBe("skipped");
+    if (result.kind === "skipped") {
+      expect(result.reason).toBe("no changes");
     }
   });
 });

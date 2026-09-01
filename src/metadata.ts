@@ -6,6 +6,7 @@ import {
 } from "./adapters/claude";
 import { updateFrontMatter } from "./adapters/frontmatter";
 import { getContent } from "./content/getContent";
+import { isEmptyValue } from "./emptyValue";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, parseTags } from "./prompt";
 import type { MetadataToolSettings } from "./settings";
@@ -59,15 +60,6 @@ function stripSurroundingQuotes(str: string): string {
   return trimmed;
 }
 
-function isEmptyValue(value: unknown): boolean {
-  if (!value) return true;
-  if (typeof value === "string") return value.trim() === "";
-  if (Array.isArray(value)) {
-    return value.length === 0 || value.every((v) => String(v).trim() === "");
-  }
-  return false;
-}
-
 export type WritePolicy = "update_all" | "only_empty";
 export type PresentationMode = "interactive" | "bulk";
 
@@ -95,6 +87,14 @@ export function shouldGenerate(
     isEmptyValue(frontMatter[settings.descriptionFieldName]) ||
     (settings.enableTitle && isEmptyValue(frontMatter[settings.titleFieldName]))
   );
+}
+
+// What a write pass actually did. `failures` is what separates "every field
+// was already populated" from "every write threw" — before this, both surfaced
+// as `hasChanges === false` and the file was reported as skipped (#187).
+interface WriteOutcome {
+  changed: boolean;
+  failures: { field: string; error: unknown }[];
 }
 
 export type FileResult =
@@ -146,7 +146,7 @@ export async function generateMetadataForFile(
   }
 
   try {
-    const hasChanges = await addMetadataWithClaude(
+    const outcome = await addMetadataWithClaude(
       app,
       file,
       settings,
@@ -155,7 +155,21 @@ export async function generateMetadataForFile(
       opts.presentation ?? "interactive",
       opts.signal,
     );
-    return hasChanges
+    if (outcome.failures.length > 0) {
+      // A write that threw is not "nothing to do": the request was made and
+      // billed, and the note did not get what the user asked for. Report it as
+      // an error so the bulk summary counts it and the single-note flow shows a
+      // notice, both of which treat "skipped" as unremarkable.
+      const fields = outcome.failures.map((f) => f.field).join(", ");
+      const partial = outcome.changed ? " (other fields were written)" : "";
+      return {
+        kind: "error",
+        file,
+        reason: `failed to write frontmatter: ${fields}${partial}`,
+        error: outcome.failures[0]?.error,
+      };
+    }
+    return outcome.changed
       ? { kind: "changed", file }
       : { kind: "skipped", file, reason: "no changes" };
   } catch (error) {
@@ -226,7 +240,7 @@ async function addMetadataWithClaude(
   policy: WritePolicy,
   presentation: PresentationMode,
   signal?: AbortSignal,
-): Promise<boolean> {
+): Promise<WriteOutcome> {
   const isBulk = presentation === "bulk";
   const requestId = newRequestId();
 
@@ -286,8 +300,10 @@ async function addMetadataWithClaude(
     });
   }
 
+  const failures: WriteOutcome["failures"] = [];
+
   if (signal?.aborted) {
-    return false;
+    return { changed: false, failures };
   }
 
   let hasChanges = false;
@@ -313,6 +329,20 @@ async function addMetadataWithClaude(
           "append",
         );
       }
+      // Under only_empty the decision to overwrite must be made against the
+      // live frontmatter, not `frontMatter` — that snapshot was taken before a
+      // request that can run for REQUEST_TIMEOUT_MS (#178). The append path
+      // above needs no such guard: it merges with the live value, so a
+      // concurrent edit survives either way.
+      if (policy === "only_empty") {
+        return await updateFrontMatter(
+          app,
+          file,
+          u.fieldName,
+          u.value,
+          "update_if_empty",
+        );
+      }
       return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
     } catch (error) {
       if (!isBulk) {
@@ -329,6 +359,7 @@ async function addMetadataWithClaude(
         errorName: error instanceof Error ? error.name : undefined,
         errorStack: error instanceof Error ? error.stack : undefined,
       });
+      failures.push({ field: u.fieldName, error });
       return false;
     }
   }
@@ -359,7 +390,7 @@ async function addMetadataWithClaude(
 
   for (const u of updates) {
     if (signal?.aborted) {
-      return hasChanges;
+      return { changed: hasChanges, failures };
     }
     const resolved = resolveUpdateMethod(policy, frontMatter[u.fieldName]);
     if (await writeField(u, resolved)) {
@@ -367,5 +398,5 @@ async function addMetadataWithClaude(
     }
   }
 
-  return hasChanges;
+  return { changed: hasChanges, failures };
 }

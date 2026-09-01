@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Truncation silently deleted every character the token regex did not recognize. `TOKEN_REGEX` matched CJK, word runs, nine punctuation marks and `\n` and nothing else, so emoji and ordinary markdown syntax (`* _ ` [ ] ( ) - : | ...`) matched no alternative: they were absent from the token count, and because the truncation functions rebuilt their output by re-joining matched tokens rather than slicing the source, they were also dropped from the text sent to the API. `# Title\n\nThis is **bold** and _italic_ ...` truncated to `# Title\n\nThis is bold and...`. Tokens now carry source offsets and truncation slices the original string, and a `\S` catch-all makes every non-whitespace character count. (#179, #182)
+
+  **Behavior change:** notes with heavy markdown or emoji now report a higher token count than before — a more accurate one. If you set `contentTokenLimit` by trial and error against the old undercount, less prose will fit under the same limit. Spaces and tabs are still uncounted, matching how real tokenizers absorb whitespace into the following word; `joinTokens` is gone, since nothing reconstructs text from token strings any more.
+- A frontmatter write that threw was indistinguishable from "this note needed nothing": `writeField` returned `false` for both, so a file whose every write failed came back as `{kind: "skipped", reason: "no changes"}`. In bulk runs the per-field notice is suppressed, so the summary counted such a file as skipped even though the API had been called and billed; in the single-note flow `"skipped"` produces no final notice at all. Write failures are now tracked separately and reported as `kind: "error"`, naming the fields that failed and whether others were written. (#187)
+- Under `preserve_existing`, a field the user typed into while a generation request was in flight could be silently overwritten by the model's output. The write decision was made from a `metadataCache` snapshot taken before the request, which can run for up to `REQUEST_TIMEOUT_MS`, and then applied unconditionally at write time. The emptiness check now happens inside `processFrontMatter`, against the live frontmatter, via a new `update_if_empty` adapter method. `always_regenerate` still overwrites, as intended. (#178)
+
 ## 2.3.1
 
 ### Added

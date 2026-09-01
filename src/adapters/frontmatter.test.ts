@@ -160,4 +160,55 @@ describe("updateFrontMatter", () => {
     );
     expect(changed).toBe(true);
   });
+
+  test("update_if_empty: writes when the live value is empty", async () => {
+    const { app, fm } = makeApp({ description: "" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "generated",
+      "update_if_empty",
+    );
+    expect(fm.description).toBe("generated");
+    expect(changed).toBe(true);
+  });
+
+  test("update_if_empty: writes when the field is absent", async () => {
+    const { app, fm } = makeApp({});
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "generated",
+      "update_if_empty",
+    );
+    expect(fm.description).toBe("generated");
+    expect(changed).toBe(true);
+  });
+
+  test("update_if_empty: leaves a populated live value alone", async () => {
+    const { app, fm } = makeApp({ description: "user text" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "generated",
+      "update_if_empty",
+    );
+    expect(fm.description).toBe("user text");
+    expect(changed).toBe(false);
+  });
+
+  test("update_if_empty: treats a whitespace-only value as empty", async () => {
+    const { app, fm } = makeApp({ description: "   " });
+    await updateFrontMatter(
+      app,
+      {} as TFile,
+      "description",
+      "generated",
+      "update_if_empty",
+    );
+    expect(fm.description).toBe("generated");
+  });
 });

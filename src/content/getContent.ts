@@ -1,5 +1,5 @@
 import type { App, TFile } from "obsidian";
-import { splitIntoTokens } from "./tokens";
+import { tokenize } from "./tokens";
 import {
   truncateHeading,
   truncateHeadOnly,
@@ -23,13 +23,13 @@ export async function getContent(
     return contentStr;
   }
 
-  const tokens = splitIntoTokens(contentStr);
+  const tokens = tokenize(contentStr);
 
   if (tokens.length > limit) {
     if (method === "head_tail") {
-      contentStr = truncateHeadTail(tokens, limit);
+      contentStr = truncateHeadTail(contentStr, tokens, limit);
     } else if (method === "head_only") {
-      contentStr = truncateHeadOnly(tokens, limit);
+      contentStr = truncateHeadOnly(contentStr, tokens, limit);
     } else if (method === "heading") {
       contentStr = truncateHeading(contentStr, tokens, limit);
     }
