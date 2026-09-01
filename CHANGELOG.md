@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Under `preserve_existing`, a field the user typed into while a generation request was in flight could be silently overwritten by the model's output. The write decision was made from a `metadataCache` snapshot taken before the request, which can run for up to `REQUEST_TIMEOUT_MS`, and then applied unconditionally at write time. The emptiness check now happens inside `processFrontMatter`, against the live frontmatter, via a new `update_if_empty` adapter method. `always_regenerate` still overwrites, as intended. (#178)
+
 ## 2.3.1
 
 ### Added

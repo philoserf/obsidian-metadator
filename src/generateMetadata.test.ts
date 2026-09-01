@@ -38,6 +38,11 @@ function makeApp(opts: {
   file?: { extension: string } | null;
   frontmatter?: Record<string, unknown>;
   content?: string;
+  // When true, metadataCache hands back a *copy* of the frontmatter, the way
+  // the real cache hands back its own parsed object rather than the one
+  // processFrontMatter will later mutate. Needed to reproduce #178, where a
+  // write decision made from the cached copy is applied to live data.
+  snapshotCache?: boolean;
 }): { app: App; fm: Record<string, unknown> } {
   const fm = { ...(opts.frontmatter ?? {}) };
   const file = "file" in opts ? opts.file : { extension: "md" };
@@ -47,7 +52,9 @@ function makeApp(opts: {
       getActiveFile: () => file,
     },
     metadataCache: {
-      getFileCache: () => ({ frontmatter: fm }),
+      getFileCache: () => ({
+        frontmatter: opts.snapshotCache ? { ...fm } : fm,
+      }),
     },
     vault: {
       read: async () => opts.content ?? "Some article content for testing.",
@@ -302,5 +309,54 @@ describe("generateMetadata integration", () => {
     if (result.kind === "skipped") {
       expect(result.reason).toBe("cancelled");
     }
+  });
+});
+
+describe("concurrent edits during the API call (#178)", () => {
+  beforeEach(() => {
+    mockCreate.mockClear();
+  });
+
+  test("preserve_existing does not overwrite a field the user filled in mid-request", async () => {
+    const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
+
+    // The note is empty when the request starts, so the pre-call snapshot says
+    // "description is empty, safe to write". While the request is in flight the
+    // user types a description into the open note.
+    mockCreate.mockImplementationOnce(async () => {
+      fm.description = "what the user typed";
+      return toolUseResponse({
+        tags: "ai,testing",
+        description: "what Claude generated",
+        title: "Generated Title",
+      });
+    });
+
+    await generateMetadata(app, makeSettings());
+
+    expect(fm.description).toBe("what the user typed");
+    // Fields the user did not touch are still filled in.
+    expect(fm.title).toBe("Generated Title");
+    expect(fm.tags).toEqual(["ai", "testing"]);
+  });
+
+  test("always_regenerate still overwrites, since the user asked for it", async () => {
+    const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
+
+    mockCreate.mockImplementationOnce(async () => {
+      fm.description = "what the user typed";
+      return toolUseResponse({
+        tags: "ai",
+        description: "what Claude generated",
+        title: "Generated Title",
+      });
+    });
+
+    await generateMetadata(
+      app,
+      makeSettings({ updateMethod: "always_regenerate" }),
+    );
+
+    expect(fm.description).toBe("what Claude generated");
   });
 });

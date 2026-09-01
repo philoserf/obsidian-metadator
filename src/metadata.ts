@@ -6,6 +6,7 @@ import {
 } from "./adapters/claude";
 import { updateFrontMatter } from "./adapters/frontmatter";
 import { getContent } from "./content/getContent";
+import { isEmptyValue } from "./emptyValue";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, parseTags } from "./prompt";
 import type { MetadataToolSettings } from "./settings";
@@ -57,15 +58,6 @@ function stripSurroundingQuotes(str: string): string {
     return trimmed.substring(1, trimmed.length - 1);
   }
   return trimmed;
-}
-
-function isEmptyValue(value: unknown): boolean {
-  if (!value) return true;
-  if (typeof value === "string") return value.trim() === "";
-  if (Array.isArray(value)) {
-    return value.length === 0 || value.every((v) => String(v).trim() === "");
-  }
-  return false;
 }
 
 export type WritePolicy = "update_all" | "only_empty";
@@ -311,6 +303,20 @@ async function addMetadataWithClaude(
           u.fieldName,
           u.value,
           "append",
+        );
+      }
+      // Under only_empty the decision to overwrite must be made against the
+      // live frontmatter, not `frontMatter` — that snapshot was taken before a
+      // request that can run for REQUEST_TIMEOUT_MS (#178). The append path
+      // above needs no such guard: it merges with the live value, so a
+      // concurrent edit survives either way.
+      if (policy === "only_empty") {
+        return await updateFrontMatter(
+          app,
+          file,
+          u.fieldName,
+          u.value,
+          "update_if_empty",
         );
       }
       return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
