@@ -47,7 +47,8 @@ OBSIDIAN_DEPLOY_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
 - **[src/bulkGenerate.ts](src/bulkGenerate.ts)** — Pure bulk-run engine: `collectCandidates`, `classifyCandidates`, `runBulk`, `computeDelayMs` (full jitter + Retry-After honoring).
 - **[src/bulkConfirmModal.ts](src/bulkConfirmModal.ts)**, **[src/bulkProgressModal.ts](src/bulkProgressModal.ts)**, **[src/bulkSummaryModal.ts](src/bulkSummaryModal.ts)** — UI modals for the bulk run lifecycle. Confirm modal hard-caps `willChange` count with an explicit override checkbox.
 - **[src/adapters/claude.ts](src/adapters/claude.ts)** — Anthropic SDK wrapper. Forces the `submit_metadata` tool, validates input, classifies errors into `ClaudeApiError` (`auth | rate_limit | overloaded | api | unknown`) with optional `retryAfterMs`. Only module allowed to import `@anthropic-ai/sdk` (enforced by Biome).
-- **[src/adapters/frontmatter.ts](src/adapters/frontmatter.ts)** — `updateFrontMatter` adapter over `app.fileManager.processFrontMatter`.
+- **[src/adapters/frontmatter.ts](src/adapters/frontmatter.ts)** — `updateFrontMatter` adapter over `app.fileManager.processFrontMatter`. Its `update_if_empty` method re-checks emptiness against the live frontmatter inside the callback, so a decision made before a slow API call cannot overwrite what the user typed during it.
+- **[src/emptyValue.ts](src/emptyValue.ts)** — `isEmptyValue`, shared by the write-policy decision in `metadata.ts` and the write-time re-check in the frontmatter adapter. One definition, so the two cannot disagree.
 - **[src/content/](src/content)** — Content extraction (`getContent.ts`), tokenization (`tokens.ts`), and truncation strategies (`truncate.ts`, `types.ts`).
 
 ### Tests
@@ -77,7 +78,8 @@ Tests are colocated with source files in `src/` (or alongside their adapter unde
 ### Key Patterns
 
 - **Frontmatter updates** use `app.fileManager.processFrontMatter()` — not `parseYaml`/`stringifyYaml`
-- **Token counting** uses a regex that handles CJK characters, words, and punctuation: `/[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[.,!?;，。！？；#]|[\n]/g`
+- **Token counting** uses a regex (`src/content/tokens.ts`) with per-character CJK/kana/hangul alternatives, Unicode word runs, nine punctuation marks, `\n`, and a trailing `\S` catch-all. The catch-all is load-bearing: without it emoji and markdown syntax match nothing and vanish from the count. Spaces and tabs stay uncounted on purpose, approximating how BPE tokenizers absorb whitespace into the following word.
+- **Truncation reconstructs by slicing the source string**, never by re-joining token text. `tokenize` returns `{text, start, end}` and `sliceTokens(source, run)` returns the span. Re-joining would drop or re-space every character the counting regex sees individually — counting and reconstruction want opposite things from the same token array (#179, #182).
 - **Truncation methods**: `head_only` (first N tokens), `head_tail` (80% start + 20% end), `heading` (outline + first paragraph per section)
 - **Anthropic client** is initialized with `dangerouslyAllowBrowser: true` since it runs inside Obsidian's Electron renderer
 - **Tags, description, and title** all respect `updateMethod` — preserve_existing keeps populated fields, always_regenerate updates all
