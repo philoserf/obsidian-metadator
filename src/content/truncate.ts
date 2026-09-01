@@ -1,28 +1,36 @@
-import { joinTokens, splitIntoTokens } from "./tokens";
+import { sliceTokens, type Token, tokenize } from "./tokens";
 
-export function truncateHeadOnly(tokens: string[], limit: number): string {
+export function truncateHeadOnly(
+  source: string,
+  tokens: Token[],
+  limit: number,
+): string {
   const truncated = tokens.slice(0, limit);
   const suffix = truncated.length < tokens.length ? "..." : "";
-  return `${joinTokens(truncated)}${suffix}`;
+  return `${sliceTokens(source, truncated)}${suffix}`;
 }
 
-export function truncateHeadTail(tokens: string[], limit: number): string {
+export function truncateHeadTail(
+  source: string,
+  tokens: Token[],
+  limit: number,
+): string {
   if (limit >= tokens.length) {
-    return joinTokens(tokens);
+    return sliceTokens(source, tokens);
   }
   const left = Math.max(1, Math.floor(limit * 0.8));
   const right = Math.max(0, limit - left);
   const leftTokens = tokens.slice(0, left);
   if (right <= 0) {
-    return joinTokens(leftTokens);
+    return sliceTokens(source, leftTokens);
   }
   const rightTokens = tokens.slice(-right);
-  return `${joinTokens(leftTokens)}\n...\n${joinTokens(rightTokens)}`;
+  return `${sliceTokens(source, leftTokens)}\n...\n${sliceTokens(source, rightTokens)}`;
 }
 
 export function truncateHeading(
   contentStr: string,
-  tokens: string[],
+  tokens: Token[],
   limit: number,
 ): string {
   const rawLines = contentStr.split("\n");
@@ -31,11 +39,13 @@ export function truncateHeading(
   let tokenCursor = 0;
   // Exclusive index into `tokens` just past the last line the outline consumed.
   // Used as the body start so body never overlaps or misaligns with the
-  // reconstructed outline's own token count.
+  // reconstructed outline's own token count. The +1 accounts for the newline
+  // token between lines; `\S` never matches a newline, so the catch-all above
+  // leaves this arithmetic intact.
   let bodyStart = 0;
 
   for (const line of rawLines) {
-    const lineTokens = splitIntoTokens(line);
+    const lineTokens = tokenize(line);
     const nextCursor = tokenCursor + lineTokens.length + 1;
 
     if (line.startsWith("#")) {
@@ -45,7 +55,7 @@ export function truncateHeading(
     } else if (captureNextParagraph && line.trim() !== "") {
       const truncated = lineTokens.slice(0, 30);
       const suffix = truncated.length < lineTokens.length ? "..." : "";
-      newLines.push(`${joinTokens(truncated)}${suffix}`);
+      newLines.push(`${sliceTokens(line, truncated)}${suffix}`);
       captureNextParagraph = false;
       bodyStart = nextCursor;
     }
@@ -54,15 +64,17 @@ export function truncateHeading(
   }
 
   const result = newLines.join("\n");
-  const outlineTokens = splitIntoTokens(result);
+  const outlineTokens = tokenize(result);
   if (outlineTokens.length > limit) {
-    return joinTokens(outlineTokens.slice(0, limit));
+    return sliceTokens(result, outlineTokens.slice(0, limit));
   }
 
   const remainingTokens = limit - outlineTokens.length;
   const bodyTokens = tokens.slice(bodyStart, bodyStart + remainingTokens);
-  const bodyText = joinTokens(bodyTokens);
-  if (bodyText !== "") {
+  const bodyText = sliceTokens(contentStr, bodyTokens);
+  // A run of nothing but newline tokens slices to whitespace; there is no body
+  // worth showing in that case.
+  if (bodyText.trim() !== "") {
     const suffix = bodyStart + remainingTokens < tokens.length ? "..." : "";
     return `Outline: \n${result}\n\nBody: ${bodyText}${suffix}`;
   }
