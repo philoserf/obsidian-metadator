@@ -225,6 +225,19 @@ export async function callClaudeForMetadata(
     throw classifyError(error);
   }
 
+  // Checked before the content blocks, because a truncated tool call can still
+  // parse. validateMetadataInput only asserts the fields are strings, not that
+  // they are complete, so a description cut off mid-sentence would be written
+  // to frontmatter with nothing to signal it (#174). Not retryable: the same
+  // prompt overflows the same way, and after five in a row the bulk halt tells
+  // the user this is a configuration problem rather than a blip.
+  if (message.stop_reason === "max_tokens") {
+    throw new ClaudeApiError(
+      "api",
+      "Response was truncated at the token limit; the generated metadata would have been incomplete",
+    );
+  }
+
   if (!Array.isArray(message.content)) {
     throw new ClaudeApiError("api", "Response had no content blocks");
   }

@@ -469,3 +469,63 @@ describe("tool_choice by model family", () => {
     expect(usesAutoToolChoice("claude-haiku-4-5")).toBe(false);
   });
 });
+
+describe("truncated responses (#174)", () => {
+  test("rejects a response stopped at the token limit", async () => {
+    // The tool call is otherwise well formed — this is exactly the case that
+    // slipped through, since validateMetadataInput only checks types.
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: "max_tokens",
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: {
+            tags: "ai,testing",
+            description: "A description cut off mid-sen",
+            title: "A Title",
+          },
+        },
+      ],
+    });
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "api" });
+  });
+
+  test("a normal stop_reason passes through", async () => {
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: "tool_use",
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "ai", description: "d", title: "T" },
+        },
+      ],
+    });
+
+    const result = await callClaudeForMetadata("system", "user", settings);
+    expect(result.description).toBe("d");
+  });
+
+  test("an absent stop_reason is not treated as truncation", async () => {
+    // No existing fixture sets stop_reason, so undefined has to stay valid.
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "ai", description: "d", title: "T" },
+        },
+      ],
+    });
+
+    const result = await callClaudeForMetadata("system", "user", settings);
+    expect(result.tags).toBe("ai");
+  });
+});
