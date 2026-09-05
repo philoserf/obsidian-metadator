@@ -1,7 +1,11 @@
 import {
+  API_KEY_MAX_LENGTH,
+  areFieldNamesDistinct,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   isModelId,
+  MAX_BULK_FILES,
+  MAX_CONTENT_TOKEN_LIMIT,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
   VALID_TRUNCATE_METHOD_OPTIONS,
@@ -26,8 +30,15 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-function readPositiveInt(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isInteger(value) && value > 0
+function readPositiveInt(
+  value: unknown,
+  fallback: number,
+  max: number,
+): number {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= max
     ? value
     : fallback;
 }
@@ -160,6 +171,7 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     anthropicApiKey: readString(
       migrated.anthropicApiKey,
       DEFAULT_SETTINGS.anthropicApiKey,
+      { maxLength: API_KEY_MAX_LENGTH },
     ),
     // Accept any well-formed model id, not just the ones in the dropdown, so
     // a model released after this build survives a reload.
@@ -196,10 +208,12 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     contentTokenLimit: readPositiveInt(
       migrated.contentTokenLimit,
       DEFAULT_SETTINGS.contentTokenLimit,
+      MAX_CONTENT_TOKEN_LIMIT,
     ),
     maxBulkFiles: readPositiveInt(
       migrated.maxBulkFiles,
       DEFAULT_SETTINGS.maxBulkFiles,
+      MAX_BULK_FILES,
     ),
     truncateMethod: isTruncateMethod(truncateMethodCandidate)
       ? truncateMethodCandidate
@@ -225,6 +239,15 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       },
     ),
   };
+
+  // All three reset together, not just the colliding pair. It is the only rule
+  // that is order-independent and cannot itself produce a new collision, since
+  // the defaults are distinct by construction.
+  if (!areFieldNamesDistinct(normalized)) {
+    normalized.tagsFieldName = DEFAULT_SETTINGS.tagsFieldName;
+    normalized.descriptionFieldName = DEFAULT_SETTINGS.descriptionFieldName;
+    normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
+  }
 
   return { kind: "ok", settings: normalized };
 }

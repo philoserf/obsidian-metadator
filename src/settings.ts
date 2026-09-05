@@ -2,6 +2,25 @@ import type { TruncateMethod } from "./content/truncate";
 
 export const PROMPT_MAX_LENGTH = 1000;
 
+// Anthropic keys are "sk-ant-" plus roughly a hundred characters, so this is
+// generous while still catching a stray paste of a whole file, which was
+// otherwise accepted and persisted into data.json (#158).
+//
+// Note the key is necessarily stored in plaintext there — Obsidian has no
+// secure-credential API — and the password-style masking on the input is
+// cosmetic.
+export const API_KEY_MAX_LENGTH = 256;
+
+// Ceilings for the two numeric settings. Without them "positive integer" was
+// the only rule, so an all-digit paste became a precision-lossy double that
+// still satisfied n > 0 — and maxBulkFiles, whose whole job is to be a hard
+// limit, could be set to a value that defeats it (#184).
+export const MAX_BULK_FILES = 100_000;
+// Context windows currently run 200k-1M tokens, so a content limit above that
+// is meaningless rather than dangerous. Rounded generously so this does not
+// have to track model specifications.
+export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
+
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in main.ts. Each migration's key is the schema version it produces.
 export const CURRENT_SCHEMA_VERSION = 2;
@@ -55,6 +74,26 @@ export const VALID_MODEL_OPTIONS = [
 // better outcome than silently resetting the user's choice to the default.
 const MODEL_ID_PATTERN = /^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MODEL_ID_MAX_LENGTH = 100;
+
+// The three frontmatter field names must differ. If two collide, the writes
+// clobber each other in the user's note rather than in plugin state: tags is
+// written as an array and then the description overwrites the same key with a
+// string, the run reports success, and nothing surfaces the loss (#200).
+//
+// Shared so the load-time and edit-time rules cannot drift apart, the same
+// reason isEmptyValue lives on its own.
+export function areFieldNamesDistinct(names: {
+  tagsFieldName: string;
+  descriptionFieldName: string;
+  titleFieldName: string;
+}): boolean {
+  const seen = new Set([
+    names.tagsFieldName,
+    names.descriptionFieldName,
+    names.titleFieldName,
+  ]);
+  return seen.size === 3;
+}
 
 export function isModelId(value: string): boolean {
   return value.length <= MODEL_ID_MAX_LENGTH && MODEL_ID_PATTERN.test(value);

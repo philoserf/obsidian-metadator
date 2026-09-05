@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  API_KEY_MAX_LENGTH,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
+  MAX_BULK_FILES,
+  MAX_CONTENT_TOKEN_LIMIT,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
 } from "./settings";
@@ -342,5 +345,71 @@ describe("model id validation", () => {
         DEFAULT_SETTINGS.anthropicModel,
       );
     }
+  });
+});
+
+describe("numeric bounds (#184)", () => {
+  test("a stored value above the ceiling falls back to the default", () => {
+    expect(ok({ maxBulkFiles: 1_000_000 }).maxBulkFiles).toBe(
+      DEFAULT_SETTINGS.maxBulkFiles,
+    );
+    expect(ok({ contentTokenLimit: 10_000_000 }).contentTokenLimit).toBe(
+      DEFAULT_SETTINGS.contentTokenLimit,
+    );
+  });
+
+  test("a value exactly at the ceiling is kept", () => {
+    expect(ok({ maxBulkFiles: MAX_BULK_FILES }).maxBulkFiles).toBe(
+      MAX_BULK_FILES,
+    );
+    expect(
+      ok({ contentTokenLimit: MAX_CONTENT_TOKEN_LIMIT }).contentTokenLimit,
+    ).toBe(MAX_CONTENT_TOKEN_LIMIT);
+  });
+});
+
+describe("field-name collisions (#200)", () => {
+  test("colliding names reset all three, not just the pair", () => {
+    // Resetting only the second collider is order-dependent and can produce a
+    // fresh collision; resetting all three cannot, since the defaults differ.
+    const s = ok({
+      tagsFieldName: "meta",
+      descriptionFieldName: "meta",
+      titleFieldName: "headline",
+    });
+    expect(s.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(s.descriptionFieldName).toBe(DEFAULT_SETTINGS.descriptionFieldName);
+    expect(s.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
+  });
+
+  test("distinct custom names are left alone", () => {
+    const s = ok({
+      tagsFieldName: "keywords",
+      descriptionFieldName: "summary",
+      titleFieldName: "headline",
+    });
+    expect(s.tagsFieldName).toBe("keywords");
+    expect(s.descriptionFieldName).toBe("summary");
+    expect(s.titleFieldName).toBe("headline");
+  });
+});
+
+describe("API key length (#158)", () => {
+  test("an over-long stored key falls back to the default", () => {
+    // A stray paste of a whole file was accepted and persisted.
+    expect(
+      ok({ anthropicApiKey: "x".repeat(API_KEY_MAX_LENGTH + 1) })
+        .anthropicApiKey,
+    ).toBe(DEFAULT_SETTINGS.anthropicApiKey);
+  });
+
+  test("a realistic key is kept", () => {
+    const key = `sk-ant-${"a".repeat(100)}`;
+    expect(ok({ anthropicApiKey: key }).anthropicApiKey).toBe(key);
+  });
+
+  test("a key exactly at the limit is kept", () => {
+    const key = "x".repeat(API_KEY_MAX_LENGTH);
+    expect(ok({ anthropicApiKey: key }).anthropicApiKey).toBe(key);
   });
 });
