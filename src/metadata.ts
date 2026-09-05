@@ -63,22 +63,6 @@ function stripSurroundingQuotes(str: string): string {
 // useful instead of the generic "no changes".
 export const ALREADY_IN_PROGRESS = "already generating metadata for this note";
 
-export type WritePolicy = "update_all" | "only_empty";
-
-function writePolicyFromSettings(settings: MetadataToolSettings): WritePolicy {
-  return settings.updateMethod === "always_regenerate"
-    ? "update_all"
-    : "only_empty";
-}
-
-function resolveUpdateMethod(
-  policy: WritePolicy,
-  currentValue: unknown,
-): "update" | "keep" {
-  if (policy === "update_all") return "update";
-  return isEmptyValue(currentValue) ? "update" : "keep";
-}
-
 export function shouldGenerate(
   frontMatter: Record<string, unknown>,
   settings: MetadataToolSettings,
@@ -157,7 +141,7 @@ export async function generateMetadataForFile(
       file,
       settings,
       frontMatter,
-      writePolicyFromSettings(settings),
+      settings.updateMethod === "preserve_existing",
       opts.bulk ?? false,
       opts.signal,
     );
@@ -250,7 +234,7 @@ async function addMetadataWithClaude(
   file: TFile,
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
-  policy: WritePolicy,
+  preserveExisting: boolean,
   isBulk: boolean,
   signal?: AbortSignal,
 ): Promise<WriteOutcome> {
@@ -335,12 +319,12 @@ async function addMetadataWithClaude(
           "append",
         );
       }
-      // Under only_empty the decision to overwrite must be made against the
+      // Under preserve_existing the decision to overwrite must be made against the
       // live frontmatter, not `frontMatter` — that snapshot was taken before a
       // request that can run for REQUEST_TIMEOUT_MS (#178). The append path
       // above needs no such guard: it merges with the live value, so a
       // concurrent edit survives either way.
-      if (policy === "only_empty") {
+      if (preserveExisting) {
         return await updateFrontMatter(
           app,
           file,
@@ -398,11 +382,12 @@ async function addMetadataWithClaude(
     if (signal?.aborted) {
       return { changed: hasChanges, failures };
     }
-    // Nothing to write, so do not open the file. processFrontMatter serializes
-    // and writes back on every call regardless of whether the callback mutated
+    // A populated field under preserve_existing is left alone — and left alone
+    // means not opening the file at all. processFrontMatter serializes and
+    // writes back on every call regardless of whether the callback mutated
     // anything, so calling it here cost an mtime bump, a vault modify event and
     // disk I/O per skipped field, per file, across a whole bulk run (#185).
-    if (resolveUpdateMethod(policy, frontMatter[u.fieldName]) === "keep") {
+    if (preserveExisting && !isEmptyValue(frontMatter[u.fieldName])) {
       continue;
     }
     if (await writeField(u)) {
