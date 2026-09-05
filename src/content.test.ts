@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { App, TFile } from "obsidian";
 import { getContent } from "./content/getContent";
-import { sliceTokens, tokenize } from "./content/tokens";
+import { buildTokenRegex, sliceTokens, tokenize } from "./content/tokens";
 import {
   truncateHeading,
   truncateHeadOnly,
@@ -12,139 +12,151 @@ import {
 // tests only care about the text. No production caller wants this shape.
 const splitIntoTokens = (s: string) => tokenize(s).map((t) => t.text);
 
-describe("splitIntoTokens", () => {
-  test("splits English words", () => {
-    expect(splitIntoTokens("hello world")).toEqual(["hello", "world"]);
-  });
+// Both regex builds must agree exactly. The v-flag build is what every current
+// runtime takes; the u-flag fallback only runs on older mobile WebViews, so
+// without forcing it here its lookahead-based CJK exclusion would never be
+// exercised in CI — which is how #162's unbounded Latin+CJK merge survived.
+for (const [label, regex] of [
+  ["v-flag", buildTokenRegex()],
+  ["u-flag fallback", buildTokenRegex(true)],
+] as const) {
+  describe(`splitIntoTokens (${label})`, () => {
+    const splitIntoTokens = (s: string) =>
+      tokenize(s, regex).map((t) => t.text);
 
-  test("splits CJK characters individually", () => {
-    expect(splitIntoTokens("你好世界")).toEqual(["你", "好", "世", "界"]);
-  });
+    test("splits English words", () => {
+      expect(splitIntoTokens("hello world")).toEqual(["hello", "world"]);
+    });
 
-  test("handles mixed English and CJK", () => {
-    expect(splitIntoTokens("hello你好world")).toEqual([
-      "hello",
-      "你",
-      "好",
-      "world",
-    ]);
-  });
+    test("splits CJK characters individually", () => {
+      expect(splitIntoTokens("你好世界")).toEqual(["你", "好", "世", "界"]);
+    });
 
-  test("captures punctuation as separate tokens", () => {
-    expect(splitIntoTokens("hello, world!")).toEqual([
-      "hello",
-      ",",
-      "world",
-      "!",
-    ]);
-  });
+    test("handles mixed English and CJK", () => {
+      expect(splitIntoTokens("hello你好world")).toEqual([
+        "hello",
+        "你",
+        "好",
+        "world",
+      ]);
+    });
 
-  test("captures newlines as tokens", () => {
-    expect(splitIntoTokens("hello\nworld")).toEqual(["hello", "\n", "world"]);
-  });
+    test("captures punctuation as separate tokens", () => {
+      expect(splitIntoTokens("hello, world!")).toEqual([
+        "hello",
+        ",",
+        "world",
+        "!",
+      ]);
+    });
 
-  test("returns empty array for empty string", () => {
-    expect(splitIntoTokens("")).toEqual([]);
-  });
+    test("captures newlines as tokens", () => {
+      expect(splitIntoTokens("hello\nworld")).toEqual(["hello", "\n", "world"]);
+    });
 
-  test("returns empty array for whitespace-only string", () => {
-    expect(splitIntoTokens("   ")).toEqual([]);
-  });
+    test("returns empty array for empty string", () => {
+      expect(splitIntoTokens("")).toEqual([]);
+    });
 
-  test("captures hash as punctuation token", () => {
-    expect(splitIntoTokens("# heading")).toEqual(["#", "heading"]);
-  });
+    test("returns empty array for whitespace-only string", () => {
+      expect(splitIntoTokens("   ")).toEqual([]);
+    });
 
-  test("handles CJK punctuation", () => {
-    expect(splitIntoTokens("你好，世界！")).toEqual([
-      "你",
-      "好",
-      "，",
-      "世",
-      "界",
-      "！",
-    ]);
-  });
+    test("captures hash as punctuation token", () => {
+      expect(splitIntoTokens("# heading")).toEqual(["#", "heading"]);
+    });
 
-  test("preserves Cyrillic words", () => {
-    expect(splitIntoTokens("Привет мир")).toEqual(["Привет", "мир"]);
-  });
+    test("handles CJK punctuation", () => {
+      expect(splitIntoTokens("你好，世界！")).toEqual([
+        "你",
+        "好",
+        "，",
+        "世",
+        "界",
+        "！",
+      ]);
+    });
 
-  test("preserves Latin accented characters within a word", () => {
-    expect(splitIntoTokens("café résumé")).toEqual(["café", "résumé"]);
-  });
+    test("preserves Cyrillic words", () => {
+      expect(splitIntoTokens("Привет мир")).toEqual(["Привет", "мир"]);
+    });
 
-  test("preserves Greek words", () => {
-    expect(splitIntoTokens("γειά σου")).toEqual(["γειά", "σου"]);
-  });
+    test("preserves Latin accented characters within a word", () => {
+      expect(splitIntoTokens("café résumé")).toEqual(["café", "résumé"]);
+    });
 
-  test("preserves Hebrew words", () => {
-    expect(splitIntoTokens("שלום עולם")).toEqual(["שלום", "עולם"]);
-  });
+    test("preserves Greek words", () => {
+      expect(splitIntoTokens("γειά σου")).toEqual(["γειά", "σου"]);
+    });
 
-  test("preserves Arabic words", () => {
-    expect(splitIntoTokens("مرحبا بالعالم")).toEqual(["مرحبا", "بالعالم"]);
-  });
+    test("preserves Hebrew words", () => {
+      expect(splitIntoTokens("שלום עולם")).toEqual(["שלום", "עולם"]);
+    });
 
-  test("preserves Devanagari words including combining marks", () => {
-    expect(splitIntoTokens("नमस्ते दुनिया")).toEqual(["नमस्ते", "दुनिया"]);
-  });
+    test("preserves Arabic words", () => {
+      expect(splitIntoTokens("مرحبا بالعالم")).toEqual(["مرحبا", "بالعالم"]);
+    });
 
-  test("preserves Thai words", () => {
-    expect(splitIntoTokens("สวัสดี")).toEqual(["สวัสดี"]);
-  });
+    test("preserves Devanagari words including combining marks", () => {
+      expect(splitIntoTokens("नमस्ते दुनिया")).toEqual(["नमस्ते", "दुनिया"]);
+    });
 
-  test("splits Hiragana per character", () => {
-    expect(splitIntoTokens("こんにちは")).toEqual([
-      "こ",
-      "ん",
-      "に",
-      "ち",
-      "は",
-    ]);
-  });
+    test("preserves Thai words", () => {
+      expect(splitIntoTokens("สวัสดี")).toEqual(["สวัสดี"]);
+    });
 
-  test("splits Katakana per character", () => {
-    expect(splitIntoTokens("カタカナ")).toEqual(["カ", "タ", "カ", "ナ"]);
-  });
+    test("splits Hiragana per character", () => {
+      expect(splitIntoTokens("こんにちは")).toEqual([
+        "こ",
+        "ん",
+        "に",
+        "ち",
+        "は",
+      ]);
+    });
 
-  test("splits Hangul syllables per character", () => {
-    expect(splitIntoTokens("안녕하세요")).toEqual([
-      "안",
-      "녕",
-      "하",
-      "세",
-      "요",
-    ]);
-  });
+    test("splits Katakana per character", () => {
+      expect(splitIntoTokens("カタカナ")).toEqual(["カ", "タ", "カ", "ナ"]);
+    });
 
-  test("keeps letter-and-digit words as a single token", () => {
-    expect(splitIntoTokens("abc123 word")).toEqual(["abc123", "word"]);
-  });
+    test("splits Hangul syllables per character", () => {
+      expect(splitIntoTokens("안녕하세요")).toEqual([
+        "안",
+        "녕",
+        "하",
+        "세",
+        "요",
+      ]);
+    });
 
-  test("matches non-Latin digits as part of words", () => {
-    expect(splitIntoTokens("١٢٣")).toEqual(["١٢٣"]);
-  });
+    test("keeps letter-and-digit words as a single token", () => {
+      expect(splitIntoTokens("abc123 word")).toEqual(["abc123", "word"]);
+    });
 
-  test("counts emoji and their variation selectors", () => {
-    // U+2764 (heart) + U+FE0F (variation selector-16). Neither starts a word,
-    // so both fall to the `\S` catch-all — they cost real tokens at the API
-    // and must not vanish from the count (#179).
-    expect(splitIntoTokens("❤️")).toEqual(["❤", "\uFE0F"]);
-  });
+    test("matches non-Latin digits as part of words", () => {
+      expect(splitIntoTokens("١٢٣")).toEqual(["١٢٣"]);
+    });
 
-  test("counts a leading combining mark without joining it to the word", () => {
-    expect(splitIntoTokens("́abc")).toEqual(["\u0301", "abc"]);
-  });
+    test("counts emoji and their variation selectors", () => {
+      // U+2764 (heart) + U+FE0F (variation selector-16). Neither starts a word,
+      // so both fall to the `\S` catch-all — they cost real tokens at the API
+      // and must not vanish from the count (#179).
+      expect(splitIntoTokens("❤️")).toEqual(["❤", "\uFE0F"]);
+    });
 
-  test("counts markdown syntax characters", () => {
-    expect(splitIntoTokens("**bold**")).toEqual(["*", "*", "bold", "*", "*"]);
-  });
+    test("counts a leading combining mark without joining it to the word", () => {
+      expect(splitIntoTokens("́abc")).toEqual(["\u0301", "abc"]);
+    });
 
-  test("still ignores spaces and tabs", () => {
-    expect(splitIntoTokens("a \t b")).toEqual(["a", "b"]);
+    test("counts markdown syntax characters", () => {
+      expect(splitIntoTokens("**bold**")).toEqual(["*", "*", "bold", "*", "*"]);
+    });
+
+    test("still ignores spaces and tabs", () => {
+      expect(splitIntoTokens("a \t b")).toEqual(["a", "b"]);
+    });
   });
-});
+}
 
 describe("tokenize / sliceTokens", () => {
   test("token offsets point back into the source", () => {
@@ -268,9 +280,12 @@ describe("truncateHeading", () => {
     const tokens = tokenize(content);
     // Very small limit to force truncation of the outline itself
     const result = truncateHeading(content, tokens, 2);
-    const resultTokens = splitIntoTokens(result);
-    // Output should be truncated to at most the token limit
-    expect(resultTokens.length).toBeLessThanOrEqual(2);
+    // The "..." marker sits past the limit here, as it does in truncateHeadOnly
+    // and truncateHeadTail — so the budget applies to the sliced outline, not
+    // to the marker (#176).
+    expect(result.endsWith("...")).toBe(true);
+    const outlineTokens = splitIntoTokens(result.slice(0, -3));
+    expect(outlineTokens.length).toBeLessThanOrEqual(2);
     // Should not contain the Outline:/Body: wrapper since outline exceeded limit
     expect(result).not.toContain("Outline:");
     expect(result).not.toContain("Body:");
@@ -281,6 +296,8 @@ describe("truncateHeading", () => {
     const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
     expect(result).toContain("# Title");
+    // The blank run is the gap before the paragraph, not a terminator.
+    expect(result).toContain("Paragraph after blanks.");
   });
 
   test("does not append ellipsis to short paragraphs", () => {
@@ -307,8 +324,13 @@ describe("truncateHeading", () => {
     const content = "Just a plain paragraph with no headings at all.";
     const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
-    // No headings → empty outline, all budget goes to body
-    expect(result).toContain("Body:");
+    // No headings → no outline to label, so no wrapper at all. This asserted
+    // the presence of "Body:" until #168: an empty outline still emitted
+    // "Outline: \n\n\nBody: ...", labelling real content with a heading list
+    // that did not exist.
+    expect(result).not.toContain("Body:");
+    expect(result).not.toContain("Outline:");
+    expect(result).toBe(content);
   });
 
   test("body does not duplicate outline content", () => {
@@ -333,6 +355,9 @@ describe("truncateHeading", () => {
     const result = truncateHeading(content, tokens, 5);
     const wordOccurrences = (result.match(/\bword\b/g) ?? []).length;
     expect(wordOccurrences).toBe(1);
+    // …and the one occurrence is the outline's captured paragraph, not a body
+    // that got it only because capture was cancelled by the blank line.
+    expect(result).toContain("Outline: \n# H\nword");
   });
 
   test("omits body when remaining tokens render as empty after joinTokens", () => {
@@ -349,10 +374,14 @@ describe("truncateHeading", () => {
     // 31-word paragraph triggers the "..." suffix (3 extra tokens in outline).
     // Buggy offset overshoots the original stream and skips FINALWORD; fix
     // advances by source lines consumed, so body begins at FINALWORD.
+    //
+    // The blank line matters: without it FINALWORD is a soft-wrapped
+    // continuation of the same paragraph and belongs to the outline, not the
+    // body (#167).
     const paragraph = Array.from({ length: 31 }, (_, i) => `W${i + 1}`).join(
       " ",
     );
-    const content = `# H\n${paragraph}\nFINALWORD`;
+    const content = `# H\n${paragraph}\n\nFINALWORD`;
     const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 40);
     expect(result).toContain("Body:");
@@ -363,7 +392,7 @@ describe("truncateHeading", () => {
 describe("getContent", () => {
   function makeVaultApp(content: string) {
     return {
-      vault: { read: async () => content },
+      vault: { read: async () => content, cachedRead: async () => content },
     } as unknown as App;
   }
 
@@ -378,6 +407,243 @@ describe("getContent", () => {
     const content = "Hello world, this is some content.";
     const app = makeVaultApp(content);
     const result = await getContent(app, {} as TFile, -1);
+    expect(result).toBe(content);
+  });
+});
+
+describe("getContent frontmatter handling", () => {
+  function appWith(content: string) {
+    return {
+      vault: { read: async () => content, cachedRead: async () => content },
+    } as unknown as Parameters<typeof getContent>[0];
+  }
+
+  test("frontmatter does not spend the token budget", async () => {
+    const frontmatter = `---\ntags: [${Array.from({ length: 60 }, (_, i) => `t${i}`).join(", ")}]\n---\n`;
+    const body = "The article body that should survive truncation.";
+    const result = await getContent(
+      appWith(frontmatter + body),
+      {} as never,
+      20,
+      "head_only",
+    );
+    expect(result).toContain("article body");
+    expect(result).not.toContain("t59");
+  });
+
+  test("a frontmatter-only note yields nothing, not a YAML Body section", async () => {
+    const result = await getContent(
+      appWith("---\ntitle: Test\ntags: []\n---\n"),
+      {} as never,
+      1000,
+      "heading",
+    );
+    expect(result).toBe("");
+  });
+});
+
+describe("truncateHeading fenced code blocks", () => {
+  // Only the outline is under test. The "Body:" section is the verbatim tail of
+  // the document, so fenced code legitimately appears there — the bug was fence
+  // content being promoted into the outline as headings and prose.
+  function outline(content: string, limit = 1000) {
+    const result = truncateHeading(content, tokenize(content), limit);
+    return result.split("\n\nBody:")[0];
+  }
+
+  test("a # comment inside a fence is not a heading", () => {
+    const content = [
+      "# Real Heading",
+      "Real paragraph.",
+      "",
+      "```python",
+      "# this is a python comment, not a heading",
+      "def foo():",
+      "    pass",
+      "```",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real Heading");
+    expect(result).toContain("Real paragraph.");
+    expect(result).not.toContain("python comment");
+    expect(result).not.toContain("def foo");
+  });
+
+  test("a heading after the fence closes is still a heading", () => {
+    const content = [
+      "```",
+      "# not a heading",
+      "```",
+      "",
+      "# After The Fence",
+      "Its paragraph.",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# After The Fence");
+    expect(result).not.toContain("# not a heading");
+  });
+
+  test("a tilde fence works the same as a backtick fence", () => {
+    const content = ["~~~", "# not a heading", "~~~", "# Real"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# not a heading");
+  });
+
+  test("a backtick run inside a tilde fence does not close it", () => {
+    const content = ["~~~", "```", "# still inside", "~~~", "# Real"].join(
+      "\n",
+    );
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# still inside");
+  });
+
+  test("a longer closing marker still closes the fence", () => {
+    const content = ["```", "# inside", "````", "# Real"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# inside");
+  });
+
+  test("an unterminated fence swallows the rest, as a markdown parser would", () => {
+    const content = ["# Before", "```", "# inside", "# also inside"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Before");
+    expect(result).not.toContain("# also inside");
+  });
+
+  test("an indented fence is still a fence", () => {
+    const content = ["  ```", "# inside", "  ```", "# Real"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# inside");
+  });
+});
+
+describe("truncateHeading paragraph accumulation", () => {
+  function outline(content: string, limit = 1000) {
+    return truncateHeading(content, tokenize(content), limit).split(
+      "\n\nBody:",
+    )[0];
+  }
+
+  test("a soft-wrapped paragraph is captured whole", () => {
+    const content = [
+      "# Heading",
+      "First physical line of the paragraph",
+      "second line that soft-wrapped",
+      "and a third.",
+      "",
+      "Later content.",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("First physical line");
+    expect(result).toContain("second line that soft-wrapped");
+    expect(result).toContain("and a third.");
+  });
+
+  test("a blank line ends the paragraph", () => {
+    const content = [
+      "# Heading",
+      "The paragraph.",
+      "",
+      "A second paragraph that should not be captured.",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("The paragraph.");
+    expect(result).not.toContain("second paragraph");
+  });
+
+  test("the next heading ends the paragraph", () => {
+    const content = ["# One", "Para one.", "# Two", "Para two."].join("\n");
+    const result = outline(content);
+    expect(result).toContain("Para one.");
+    expect(result).toContain("# Two");
+    expect(result).toContain("Para two.");
+  });
+
+  test("a fence ends the paragraph", () => {
+    const content = ["# Heading", "The prose.", "```", "code()", "```"].join(
+      "\n",
+    );
+    const result = outline(content);
+    expect(result).toContain("The prose.");
+    expect(result).not.toContain("code()");
+  });
+
+  test("the 30-token cap applies to the whole paragraph, not per line", () => {
+    // Two lines of 20 words: under the old per-line rule the second line was
+    // dropped entirely and neither hit the cap. Together they exceed it.
+    const line = Array.from({ length: 20 }, (_, i) => `w${i}`).join(" ");
+    const content = `# H\n${line}\n${line}`;
+    const result = outline(content);
+    expect(result).toContain("...");
+    expect(result).toContain("w19");
+  });
+
+  test("a paragraph under the cap gets no ellipsis", () => {
+    const content = "# H\nShort first line\nand a short second.";
+    const result = outline(content);
+    expect(result).toContain("and a short second.");
+    expect(result).not.toContain("...");
+  });
+
+  test("a blank line between heading and paragraph does not cancel capture", () => {
+    // The standard markdown layout. A blank line ends a paragraph that is
+    // already accumulating, but one that arrives before the paragraph starts
+    // is just the gap after the heading — treating it as a terminator left
+    // every section in a conventionally formatted note with no prose at all.
+    const content = ["# Heading", "", "The paragraph.", "", "Later."].join(
+      "\n",
+    );
+    const result = outline(content);
+    expect(result).toContain("The paragraph.");
+    expect(result).not.toContain("Later.");
+  });
+
+  test("a captured paragraph does not emit a trailing blank line", () => {
+    // A line's token span includes its terminating newline; slicing it into
+    // the outline doubled up with the join and put a blank line after every
+    // paragraph.
+    const content = ["# One", "Para one.", "# Two", "Para two."].join("\n");
+    expect(outline(content)).toBe(
+      "Outline: \n# One\nPara one.\n# Two\nPara two.",
+    );
+  });
+
+  test("a paragraph of exactly the cap gets no ellipsis", () => {
+    // The terminating newline used to count toward PARAGRAPH_TOKEN_CAP, so a
+    // paragraph at exactly the cap was marked truncated with nothing cut.
+    const words = Array.from({ length: 30 }, (_, i) => `w${i}`).join(" ");
+    const result = outline(`# H\n${words}\n\ntail`);
+    expect(result).toContain("w29");
+    expect(result).not.toContain("...");
+  });
+});
+
+describe("truncateHeading without headings", () => {
+  test("falls back to a plain head truncation, no empty Outline wrapper", () => {
+    const content =
+      "Just a plain paragraph with no headings anywhere in the note.";
+    const result = truncateHeading(content, tokenize(content), 1000);
+    expect(result).not.toContain("Outline:");
+    expect(result).not.toContain("Body:");
+    expect(result).toBe(content);
+  });
+
+  test("the fallback still honours the limit and marks truncation", () => {
+    const content = Array.from({ length: 50 }, (_, i) => `w${i}`).join(" ");
+    const result = truncateHeading(content, tokenize(content), 10);
+    expect(result).not.toContain("Outline:");
+    expect(result).toBe(truncateHeadOnly(content, tokenize(content), 10));
+    expect(result.endsWith("...")).toBe(true);
+  });
+
+  test("a note whose only # is inside a fence has no outline either", () => {
+    const content = ["```", "# not a heading", "```", "Body prose."].join("\n");
+    const result = truncateHeading(content, tokenize(content), 1000);
+    expect(result).not.toContain("Outline:");
     expect(result).toBe(content);
   });
 });

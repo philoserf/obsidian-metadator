@@ -63,6 +63,8 @@ function makeApp(opts: {
     },
     vault: {
       read: async () => opts.content ?? "Some article content for testing.",
+      cachedRead: async () =>
+        opts.content ?? "Some article content for testing.",
     },
     fileManager: {
       processFrontMatter: async (
