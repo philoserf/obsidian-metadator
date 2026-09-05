@@ -322,7 +322,12 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text.setValue(this.plugin.settings.tagsFieldName);
         this.pending.push(
           commitOnBlur(text, async () => {
-            const name = text.getValue() || DEFAULT_SETTINGS.tagsFieldName;
+            // Trimmed to match settingsMigrate's readString(nonEmpty), which
+            // treats a whitespace-only name as absent. Without it " " was
+            // truthy, appeared to stick, wrote a malformed YAML key, then
+            // silently reverted on the next plugin load (#186).
+            const name =
+              text.getValue().trim() || DEFAULT_SETTINGS.tagsFieldName;
             if (name === this.plugin.settings.tagsFieldName) return;
             this.plugin.settings.tagsFieldName = name;
             text.setValue(name);
@@ -365,7 +370,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         this.pending.push(
           commitOnBlur(text, async () => {
             const name =
-              text.getValue() || DEFAULT_SETTINGS.descriptionFieldName;
+              text.getValue().trim() || DEFAULT_SETTINGS.descriptionFieldName;
             if (name === this.plugin.settings.descriptionFieldName) return;
             this.plugin.settings.descriptionFieldName = name;
             text.setValue(name);
@@ -423,7 +428,8 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text.setValue(this.plugin.settings.titleFieldName);
         this.pending.push(
           commitOnBlur(text, async () => {
-            const name = text.getValue() || DEFAULT_SETTINGS.titleFieldName;
+            const name =
+              text.getValue().trim() || DEFAULT_SETTINGS.titleFieldName;
             if (name === this.plugin.settings.titleFieldName) return;
             this.plugin.settings.titleFieldName = name;
             text.setValue(name);
