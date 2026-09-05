@@ -1,4 +1,5 @@
 import type { App, TFile } from "obsidian";
+import { stripFrontMatter } from "./frontmatter";
 import { tokenize } from "./tokens";
 import {
   type TruncateMethod,
@@ -18,9 +19,12 @@ export async function getContent(
   // (frontmatter writes go through processFrontMatter, which reads its own
   // copy). Obsidian reserves read() for the read side of a modification, and
   // a bulk run calls this once per note across a whole folder tree.
-  let contentStr = await app.vault.cachedRead(file);
+  const raw = await app.vault.cachedRead(file);
+  // Stripped before the empty check, so a note that is nothing but frontmatter
+  // returns "" rather than a "Body:" section full of YAML.
+  let contentStr = stripFrontMatter(raw);
 
-  if (contentStr.length === 0) {
+  if (contentStr.trim().length === 0) {
     return "";
   }
 
