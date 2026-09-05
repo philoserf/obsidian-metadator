@@ -350,6 +350,29 @@ describe("concurrent edits during the API call (#178)", () => {
     expect(fm.tags).toEqual(["ai", "testing"]);
   });
 
+  test("preserve_existing keeps a field whose value is 0 or false", async () => {
+    // Falsy but present. isEmptyValue used to report both as empty, so
+    // shouldGenerate sent the note to the API and the update_if_empty re-check
+    // then overwrote the very values it exists to protect (#201).
+    const { app, fm } = makeApp({
+      frontmatter: { description: 0, title: false },
+      snapshotCache: true,
+    });
+
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "ai,testing",
+        description: "what Claude generated",
+        title: "Generated Title",
+      }),
+    );
+
+    await generateMetadata(app, makeSettings());
+
+    expect(fm.description).toBe(0);
+    expect(fm.title).toBe(false);
+  });
+
   test("always_regenerate still overwrites, since the user asked for it", async () => {
     const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
 
