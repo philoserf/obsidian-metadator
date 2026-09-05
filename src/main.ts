@@ -1,5 +1,7 @@
 import { Notice, Plugin, TFolder } from "obsidian";
 import { runBulkForFolder } from "./bulkOrchestrator";
+import { clearInFlight } from "./inFlight";
+import { logError } from "./logger";
 import { generateMetadata } from "./metadata";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 import { migrateSettings } from "./settingsMigrate";
@@ -38,16 +40,34 @@ export default class MetadataToolPlugin extends Plugin {
             .setTitle("Generate metadata (recursive)")
             .setIcon("tags")
             .onClick(async () => {
-              await runBulkForFolder(
-                this.app,
-                fileOrFolder,
-                {
-                  ...this.settings,
-                },
-                {
-                  signal: this.runController.signal,
-                },
-              );
+              // Obsidian does not await this handler, so a rejection here would
+              // be an unhandled promise: no notice, no log, and a menu item that
+              // silently does nothing. The single-note command reaches the same
+              // guarantee through generateMetadata's own try/catch.
+              try {
+                await runBulkForFolder(
+                  this.app,
+                  fileOrFolder,
+                  {
+                    ...this.settings,
+                  },
+                  {
+                    signal: this.runController.signal,
+                  },
+                );
+              } catch (error) {
+                const errorMessage =
+                  error instanceof Error ? error.message : String(error);
+                new Notice(
+                  `Bulk metadata generation failed: ${errorMessage}`,
+                  8000,
+                );
+                logError({
+                  event: "generation_failed",
+                  file: fileOrFolder.path,
+                  errorMessage,
+                });
+              }
             }),
         );
       }),
@@ -58,6 +78,7 @@ export default class MetadataToolPlugin extends Plugin {
 
   onunload(): void {
     this.runController.abort("plugin_unloaded");
+    clearInFlight();
   }
 
   async loadSettings(): Promise<void> {

@@ -1,5 +1,5 @@
 import { type App, TFile, TFolder } from "obsidian";
-import { ClaudeApiError } from "./adapters/claude";
+import { ClaudeApiError, type ClaudeErrorKind } from "./adapters/claude";
 import { logDebug } from "./logger";
 import {
   type FileResult,
@@ -68,6 +68,36 @@ export interface RunBulkOptions {
   retryDelaysMs?: readonly number[];
   signal?: AbortSignal;
   random?: () => number;
+}
+
+// A run that fails this many times in a row with the same non-retryable kind
+// is failing systemically, not per-file. Retryable kinds (rate_limit,
+// overloaded) never count toward it — those are expected and already backed off.
+export const CONSECUTIVE_FAILURE_LIMIT = 5;
+
+// Why a run stopped before reaching every file. "auth" is decided on the first
+// occurrence: a rejected key rejects every subsequent file too, so one
+// round-trip is all the evidence needed. Everything else needs
+// CONSECUTIVE_FAILURE_LIMIT in a row, because a single "api" or "unknown" is
+// just as likely to be one bad note as a broken run.
+// "other" covers failures that never reached the API — a frontmatter write
+// against a read-only vault, say. Those are as systemic as any auth failure:
+// every file fails identically.
+export type HaltKind = ClaudeErrorKind | "other";
+
+export interface BulkHalt {
+  kind: HaltKind;
+  message: string;
+  consecutive: number;
+}
+
+export interface BulkRunOutcome {
+  results: FileResult[];
+  halted?: BulkHalt;
+}
+
+function haltKindOf(error: unknown): HaltKind {
+  return error instanceof ClaudeApiError ? error.kind : "other";
 }
 
 function isRateLimitOrOverload(error: unknown): boolean {
@@ -175,10 +205,12 @@ export async function runBulk(
     signal,
     random,
   }: RunBulkOptions = {},
-): Promise<FileResult[]> {
+): Promise<BulkRunOutcome> {
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const results: FileResult[] = [];
   let errors = 0;
+  let streakKind: HaltKind | undefined;
+  let streak = 0;
 
   for (let i = 0; i < files.length; i++) {
     if (shouldAbort?.() || signal?.aborted) break;
@@ -194,8 +226,34 @@ export async function runBulk(
       random,
     );
     results.push(result);
-    if (result.kind === "error") errors++;
+    if (result.kind !== "error") {
+      streakKind = undefined;
+      streak = 0;
+      continue;
+    }
+    errors++;
+
+    // Every error kind counts, including rate_limit and overloaded: those only
+    // reach here once runFileWithRetry has exhausted the whole backoff
+    // schedule, so by this point they are a proven ceiling rather than a blip.
+    const kind = haltKindOf(result.error);
+    streak = kind === streakKind ? streak + 1 : 1;
+    streakKind = kind;
+
+    if (kind === "auth" || streak >= CONSECUTIVE_FAILURE_LIMIT) {
+      return {
+        results,
+        halted: {
+          kind,
+          message:
+            result.error instanceof Error
+              ? result.error.message
+              : String(result.error),
+          consecutive: streak,
+        },
+      };
+    }
   }
 
-  return results;
+  return { results };
 }

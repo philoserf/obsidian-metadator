@@ -10,6 +10,11 @@ const MAX_RESPONSE_TOKENS = 2048;
 // call to land, so give that path its own larger budget.
 const MAX_RESPONSE_TOKENS_AUTO_TOOL_CHOICE = 8192;
 const REQUEST_TIMEOUT_MS = 60_000;
+// The SDK retries internally beneath the bulk retry policy, so one logical
+// attempt can be several HTTP requests. Pinned rather than left to the SDK
+// default so the confirm modal's worst-case call estimate stays truthful.
+export const SDK_MAX_RETRIES = 2;
+export const REQUESTS_PER_ATTEMPT = SDK_MAX_RETRIES + 1;
 const TOOL_NAME = "submit_metadata";
 
 // Model families that reject a forced tool_choice ({type: "tool"}) with a 400.
@@ -180,6 +185,7 @@ export async function callClaudeForMetadata(
   const anthropic = new Anthropic({
     apiKey: settings.anthropicApiKey,
     dangerouslyAllowBrowser: true,
+    maxRetries: SDK_MAX_RETRIES,
   });
 
   const tool = buildToolSchema(settings.enableTitle);
