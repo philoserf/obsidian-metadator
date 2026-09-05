@@ -265,7 +265,7 @@ describe("truncateHeading", () => {
 
   test("truncates when outline exceeds limit", () => {
     const content = "# H1\nParagraph one.\n# H2\nParagraph two.";
-    const tokens = splitIntoTokens(content);
+    const tokens = tokenize(content);
     // Very small limit to force truncation of the outline itself
     const result = truncateHeading(content, tokens, 2);
     const resultTokens = splitIntoTokens(result);

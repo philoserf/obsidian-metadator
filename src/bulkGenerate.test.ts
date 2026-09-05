@@ -137,6 +137,16 @@ describe("collectCandidates", () => {
     ]);
   });
 
+  test("orders by code point, not by locale collation", () => {
+    // localeCompare would put "a.md" before "B.md"; a code-point sort is the
+    // only ordering that cannot shift with the host's locale.
+    const f = folder("root", [file("a.md"), file("B.md")]);
+    expect(collectCandidates(f).map((x: TFile) => x.path)).toEqual([
+      "B.md",
+      "a.md",
+    ]);
+  });
+
   test("sorts across subtrees, not just within each folder", () => {
     // Depth-first order would be b/x.md, b/y.md, a.md — the sort has to run
     // over the whole collected tree, not per level.
