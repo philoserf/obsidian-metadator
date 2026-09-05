@@ -1,7 +1,18 @@
 import { type App, Modal } from "obsidian";
+import { DEFAULT_RETRY_DELAYS_MS } from "./bulkGenerate";
 import type { MetadataToolSettings } from "./settings";
 
 const LARGE_BATCH_THRESHOLD = 100;
+
+// Worst case, not best: every file can be requested once and then retried on
+// the full schedule under sustained rate limiting. Derived from the schedule
+// rather than hard-coded so the two cannot drift.
+export function worstCaseApiCalls(
+  willChange: number,
+  retryDelaysMs: readonly number[] = DEFAULT_RETRY_DELAYS_MS,
+): number {
+  return willChange * (retryDelaysMs.length + 1);
+}
 
 export interface ConfirmModalInfo {
   folderPath: string;
@@ -44,9 +55,12 @@ export class BulkConfirmModal extends Modal {
       text: `Model: ${settings.anthropicModel} · Update: ${settings.updateMethod} · Truncation: ${truncLabel}`,
     });
 
-    if (total > LARGE_BATCH_THRESHOLD) {
+    // Gauged on willChange, not total: a folder of 500 already-tagged notes
+    // with 3 to generate is not a large batch, and 90 notes that all need
+    // generating is. willChange is also what the cap gate below tests.
+    if (willChange > LARGE_BATCH_THRESHOLD) {
       const warn = contentEl.createEl("p", {
-        text: `⚠ Large batch — this will make up to ${willChange} API calls`,
+        text: `⚠ Large batch — ${willChange} notes, up to ${worstCaseApiCalls(willChange)} API calls if rate limits force retries`,
       });
       warn.style.color = "var(--text-warning)";
       warn.style.fontWeight = "bold";
