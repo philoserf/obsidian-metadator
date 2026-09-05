@@ -214,7 +214,8 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.tagsFieldName)
           .onChange(async (value) => {
-            this.plugin.settings.tagsFieldName = value || "tags";
+            this.plugin.settings.tagsFieldName =
+              value || DEFAULT_SETTINGS.tagsFieldName;
             await this.plugin.saveSettings();
           }),
       );
@@ -251,7 +252,8 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.descriptionFieldName)
           .onChange(async (value) => {
-            this.plugin.settings.descriptionFieldName = value || "description";
+            this.plugin.settings.descriptionFieldName =
+              value || DEFAULT_SETTINGS.descriptionFieldName;
             await this.plugin.saveSettings();
           }),
       );
@@ -302,7 +304,8 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.titleFieldName)
           .onChange(async (value) => {
-            this.plugin.settings.titleFieldName = value || "title";
+            this.plugin.settings.titleFieldName =
+              value || DEFAULT_SETTINGS.titleFieldName;
             await this.plugin.saveSettings();
           }),
       );
