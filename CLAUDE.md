@@ -10,19 +10,9 @@ The current next step for this repo is tracked in the workspace backlog at `../N
 
 ## Development Commands
 
+Standard scripts are in `package.json`. The two with non-obvious effects:
+
 ```bash
-bun install              # Install dependencies
-bun run dev              # Watch mode with auto-rebuild
-bun run build            # Production build (runs check first)
-bun run check            # Run all checks (typecheck + biome)
-bun run typecheck        # TypeScript type checking only
-bun run lint             # Biome lint + format check
-bun run lint:fix         # Auto-fix lint and format issues
-bun run format           # Format code with Biome
-bun run version          # Sync package.json version to manifest.json + versions.json
-bun test                 # Run tests
-bun test src/metadata.test.ts            # Run a single test file
-bun test --test-name-pattern "parses"    # Filter tests by name
 bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_DEPLOY_DEST
 bun run compare-models   # Send the same note to the live API once per configurable model
 ```
@@ -37,43 +27,11 @@ OBSIDIAN_DEPLOY_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
 
 ### Source Files
 
-- **[src/main.ts](src/main.ts)** — Plugin entry point. Registers the `generate-metadata` command and the folder-menu "Generate metadata (recursive)" item, owns lifecycle + settings load/save (with refusal-to-save when a forward-version data file is detected).
-- **[src/settings.ts](src/settings.ts)** — `MetadataToolSettings` interface, `DEFAULT_SETTINGS`, `CURRENT_SCHEMA_VERSION`, valid-option enums (models, truncate methods, update methods), and field labels.
-- **[src/settingsTab.ts](src/settingsTab.ts)** — Settings UI (`PluginSettingTab`). Strict positive-integer parsing (`parseStrictPositiveInt`) for numeric fields.
-- **[src/settingsMigrate.ts](src/settingsMigrate.ts)** — `migrateSettings`, the versioned `MIGRATIONS` map, and `applyMigrations`. Returns a discriminated `MigrationResult` so the plugin can refuse to overwrite forward-version data.
+Most of `src/` is self-describing. These three exist in the shape they do for reasons the code cannot state:
+
 - **[src/prompt.ts](src/prompt.ts)** — `buildPrompt` and `parseTags`, pure functions with no Obsidian dependency (unlike `metadata.ts`, which imports `obsidian` at module scope). Kept separate so they can be imported from a plain `bun run` script (e.g. `scripts/compare-models.ts`) without pulling in the Obsidian-runtime-only parts of `metadata.ts`. Re-exported from `metadata.ts` for backward compatibility.
-- **[src/metadata.ts](src/metadata.ts)** — Single-file generation flow (`generateMetadata`, `generateMetadataForFile`), and frontmatter write orchestration.
-- **[src/bulkOrchestrator.ts](src/bulkOrchestrator.ts)** — Folder-level entry: confirm modal → progress modal → run → summary modal.
-- **[src/bulkGenerate.ts](src/bulkGenerate.ts)** — Pure bulk-run engine: `collectCandidates`, `classifyCandidates`, `runBulk`, `computeDelayMs` (full jitter + Retry-After honoring).
-- **[src/bulkConfirmModal.ts](src/bulkConfirmModal.ts)**, **[src/bulkProgressModal.ts](src/bulkProgressModal.ts)**, **[src/bulkSummaryModal.ts](src/bulkSummaryModal.ts)** — UI modals for the bulk run lifecycle. Confirm modal hard-caps `willChange` count with an explicit override checkbox.
-- **[src/adapters/claude.ts](src/adapters/claude.ts)** — Anthropic SDK wrapper. Forces the `submit_metadata` tool, validates input, classifies errors into `ClaudeApiError` (`auth | rate_limit | overloaded | api | unknown`) with optional `retryAfterMs`. Only module allowed to import `@anthropic-ai/sdk` (enforced by Biome).
 - **[src/adapters/frontmatter.ts](src/adapters/frontmatter.ts)** — `updateFrontMatter` adapter over `app.fileManager.processFrontMatter`. Its `update_if_empty` method re-checks emptiness against the live frontmatter inside the callback, so a decision made before a slow API call cannot overwrite what the user typed during it.
 - **[src/emptyValue.ts](src/emptyValue.ts)** — `isEmptyValue`, shared by the write-policy decision in `metadata.ts` and the write-time re-check in the frontmatter adapter. One definition, so the two cannot disagree.
-- **[src/content/](src/content)** — Content extraction (`getContent.ts`), tokenization (`tokens.ts`), and truncation strategies (`truncate.ts`, `types.ts`).
-
-### Tests
-
-Tests are colocated with source files in `src/` (or alongside their adapter under `src/adapters/`):
-
-- **Settings & migrations**: [settingsMigrate.test.ts](src/settingsMigrate.test.ts), [settingsTab.test.ts](src/settingsTab.test.ts).
-- **Generation flow**: [metadata.test.ts](src/metadata.test.ts) (pure-helper format contracts: `parseTags`, `buildPrompt`), [generateMetadata.test.ts](src/generateMetadata.test.ts) (end-to-end integration through a fake `App`).
-- **Adapter**: [callClaude.test.ts](src/callClaude.test.ts) (tool-use response, error taxonomy, Retry-After parsing), [adapters/frontmatter.test.ts](src/adapters/frontmatter.test.ts).
-- **Bulk**: [bulkGenerate.test.ts](src/bulkGenerate.test.ts) (collect/classify/runBulk and `computeDelayMs`).
-- **Content**: [content.test.ts](src/content.test.ts).
-- **[src/test-preload.ts](src/test-preload.ts)** — Bun preload providing Obsidian API mocks.
-
-### Scripts
-
-- **[version-bump.ts](version-bump.ts)** — Syncs version from `package.json` into `manifest.json` and `versions.json`
-
-### Data Flow
-
-1. User runs "Generate metadata for current note" command
-2. `generateMetadata()` checks which fields need population based on `updateMethod`
-3. Content is extracted and optionally truncated via `getContent()`
-4. `callClaudeForMetadata()` sends the prompt to the Anthropic API with a forced `submit_metadata` tool call
-5. The model's `tool_use` block input is validated against the schema and returned as `MetadataFields`
-6. `updateFrontMatter()` writes each field via `processFrontMatter()`
 
 ### Key Patterns
 
@@ -91,10 +49,7 @@ Tests are colocated with source files in `src/` (or alongside their adapter unde
 
 ## Build System
 
-- **[build.ts](build.ts)** — Bun's native bundler producing CommonJS output (`main.js`)
-- Externals: `obsidian`, `electron`
-- Production builds are minified; dev builds are not
-- `main.js` is committed to the repo (required by Obsidian plugin distribution)
+`main.js` is committed to the repo — Obsidian distributes the committed bundle, so a build that isn't committed doesn't ship.
 
 ## Release Process
 
@@ -108,4 +63,4 @@ Pre-release: run `bun run check` and `bun run build`.
 
 ## Code Style
 
-Enforced by Biome: 2-space indent, organized imports, git-aware VCS integration.
+Enforced by Biome (`biome.json`). Tests are colocated with their source files in `src/`.
