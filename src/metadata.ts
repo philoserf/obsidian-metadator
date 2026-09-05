@@ -8,6 +8,7 @@ import { updateFrontMatter } from "./adapters/frontmatter";
 import { getContent } from "./content/getContent";
 import { isEmptyValue } from "./emptyValue";
 import { isAbortError } from "./errors";
+import { acquire, release } from "./inFlight";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, parseTags } from "./prompt";
 import type { MetadataToolSettings } from "./settings";
@@ -57,6 +58,10 @@ function stripSurroundingQuotes(str: string): string {
   }
   return trimmed;
 }
+
+// Recognised by generateMetadata so the interactive path can say something
+// useful instead of the generic "no changes".
+export const ALREADY_IN_PROGRESS = "already generating metadata for this note";
 
 export type WritePolicy = "update_all" | "only_empty";
 
@@ -133,6 +138,14 @@ export async function generateMetadataForFile(
     return { kind: "skipped", file, reason: "cancelled before request" };
   }
 
+  // Guards both entry points at the one place they share. Without it, a
+  // double-triggered hotkey — or the single-note command run on a file a
+  // folder pass is already working through — makes two billed calls whose
+  // writes both derive from equally stale pre-call snapshots.
+  if (!acquire(file.path)) {
+    return { kind: "skipped", file, reason: ALREADY_IN_PROGRESS };
+  }
+
   try {
     const outcome = await addMetadataWithClaude(
       app,
@@ -170,6 +183,8 @@ export async function generateMetadataForFile(
       reason: error instanceof Error ? error.message : String(error),
       error,
     };
+  } finally {
+    release(file.path);
   }
 }
 
@@ -202,6 +217,11 @@ export async function generateMetadata(
   });
   if (result.kind === "changed") {
     new Notice("Metadata updated successfully");
+  } else if (
+    result.kind === "skipped" &&
+    result.reason === ALREADY_IN_PROGRESS
+  ) {
+    new Notice("Already generating metadata for this note");
   } else if (result.kind === "error") {
     notifyApiError(result.error);
     logError({

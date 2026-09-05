@@ -294,6 +294,52 @@ describe("runBulk", () => {
     expect(results.length).toBeLessThan(3);
   });
 
+  test("skips a file another run already has in flight", async () => {
+    const { acquire, release } = await import("./inFlight");
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d", title: "T" },
+        },
+      ],
+    });
+    const files = [file("n1.md"), file("n2.md")];
+
+    expect(acquire("n1.md")).toBe(true);
+    try {
+      const { results } = await runBulk(makeApp(), files, settings(), {
+        retryDelaysMs: FAST_RETRIES,
+      });
+      expect(results[0].kind).toBe("skipped");
+      expect(results[1].kind).toBe("changed");
+      // Only the un-held file reached the API.
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    } finally {
+      release("n1.md");
+    }
+  });
+
+  test("releases the in-flight lock after each file", async () => {
+    const { isInFlight } = await import("./inFlight");
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d", title: "T" },
+        },
+      ],
+    });
+    await runBulk(makeApp(), [file("n1.md")], settings(), {
+      retryDelaysMs: FAST_RETRIES,
+    });
+    expect(isInFlight("n1.md")).toBe(false);
+  });
+
   test("halts the whole run on the first auth error", async () => {
     const Anthropic = (await import("@anthropic-ai/sdk"))
       .default as unknown as {

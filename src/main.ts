@@ -1,5 +1,6 @@
 import { Notice, Plugin, TFolder } from "obsidian";
 import { runBulkForFolder } from "./bulkOrchestrator";
+import { clearInFlight } from "./inFlight";
 import { logError } from "./logger";
 import { generateMetadata } from "./metadata";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
@@ -77,6 +78,7 @@ export default class MetadataToolPlugin extends Plugin {
 
   onunload(): void {
     this.runController.abort("plugin_unloaded");
+    clearInFlight();
   }
 
   async loadSettings(): Promise<void> {
