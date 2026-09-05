@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { areFieldNamesDistinct, DEFAULT_SETTINGS } from "./settings";
+import {
+  areFieldNamesDistinct,
+  DEFAULT_SETTINGS,
+  isModelId,
+  MAX_BULK_FILES,
+  MAX_CONTENT_TOKEN_LIMIT,
+  PROMPT_MAX_LENGTH,
+} from "./settings";
 
 type FieldNames = Parameters<typeof areFieldNamesDistinct>[0];
 
@@ -39,5 +46,34 @@ describe("areFieldNamesDistinct", () => {
         names({ descriptionFieldName: "tags", titleFieldName: "tags" }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("DEFAULT_SETTINGS satisfies its own validators", () => {
+  // A default that violates a rule the settings tab enforces is a trap: the UI
+  // shows the value but refuses to save it back, and migrateSettings falls back
+  // to a default that is itself invalid.
+  const prompts = [
+    ["tagsPrompt", DEFAULT_SETTINGS.tagsPrompt],
+    ["descriptionPrompt", DEFAULT_SETTINGS.descriptionPrompt],
+    ["titlePrompt", DEFAULT_SETTINGS.titlePrompt],
+  ] as const;
+
+  for (const [name, value] of prompts) {
+    test(`${name} is non-empty and within PROMPT_MAX_LENGTH`, () => {
+      expect(value.trim()).not.toBe("");
+      expect(value.length).toBeLessThanOrEqual(PROMPT_MAX_LENGTH);
+    });
+  }
+
+  test("the numeric defaults are within their ceilings", () => {
+    expect(DEFAULT_SETTINGS.maxBulkFiles).toBeLessThanOrEqual(MAX_BULK_FILES);
+    expect(DEFAULT_SETTINGS.contentTokenLimit).toBeLessThanOrEqual(
+      MAX_CONTENT_TOKEN_LIMIT,
+    );
+  });
+
+  test("the default model is a well-formed model id", () => {
+    expect(isModelId(DEFAULT_SETTINGS.anthropicModel)).toBe(true);
   });
 });
