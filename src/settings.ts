@@ -158,10 +158,21 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
 
   maxBulkFiles: 500,
 
+  // These are starting points a user is expected to edit, so they are written
+  // as rules a model can actually check itself against rather than adjectives
+  // ("concise but useful") that it cannot. Each one also closes a failure this
+  // codebase has had to handle downstream:
+  //
+  // - tags are returned as one comma-separated string and split on commas, so a
+  //   tag containing a comma silently becomes two (parseTags);
+  //   Obsidian frontmatter tags carry no leading "#";
+  // - titles came back wrapped in quotation marks often enough that
+  //   stripSurroundingQuotes exists to unwrap them. Saying so here is a fix at
+  //   the source; that function stays as a backstop.
   tagsPrompt:
-    "Select 3-5 relevant tags in lowercase with hyphens instead of spaces (e.g., 'knowledge-management', 'note-taking')",
+    "Select 3-5 tags. Exactly one names the kind of note — choose from reference, howto, journal, meeting, idea, project. The rest name what the note is about. Use lowercase with hyphens instead of spaces (e.g. knowledge-management). Do not prefix a tag with #, and never put a comma inside a tag. Skip terms too generic to narrow a search, such as notes, general, or misc.",
   descriptionPrompt:
-    "Write a concise but useful summary in 1-2 sentences that captures the main purpose and key points",
+    'Write 1-2 sentences, at most 40 words, saying what the note covers and its most useful specifics. Begin with the subject itself — no "This note...", "This article..." or similar preamble. Do not restate the title. Use plain present-tense prose.',
   titlePrompt:
-    "Create a simple, concise title with minimal adjectives that clearly states the topic",
+    "Write a title in sentence case: capitalize only the first word and proper nouns. Keep it under 10 words, state the topic directly, and leave out adjectives that add no information. Return the title text only — no surrounding quotation marks and no trailing punctuation.",
 };
