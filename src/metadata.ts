@@ -268,7 +268,11 @@ async function addMetadataWithClaude(
       )
     : await getContent(app, file, -1, "head_only");
 
-  const { system, userMessage } = buildPrompt(contentStr, settings);
+  const { system, userMessage } = buildPrompt(
+    contentStr,
+    settings,
+    `article-${requestId}`,
+  );
 
   if (settings.debugLogging) {
     logDebug({
