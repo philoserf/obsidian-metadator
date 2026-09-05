@@ -296,6 +296,8 @@ describe("truncateHeading", () => {
     const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
     expect(result).toContain("# Title");
+    // The blank run is the gap before the paragraph, not a terminator.
+    expect(result).toContain("Paragraph after blanks.");
   });
 
   test("does not append ellipsis to short paragraphs", () => {
@@ -353,6 +355,9 @@ describe("truncateHeading", () => {
     const result = truncateHeading(content, tokens, 5);
     const wordOccurrences = (result.match(/\bword\b/g) ?? []).length;
     expect(wordOccurrences).toBe(1);
+    // …and the one occurrence is the outline's captured paragraph, not a body
+    // that got it only because capture was cancelled by the blank line.
+    expect(result).toContain("Outline: \n# H\nword");
   });
 
   test("omits body when remaining tokens render as empty after joinTokens", () => {
@@ -581,6 +586,38 @@ describe("truncateHeading paragraph accumulation", () => {
     const content = "# H\nShort first line\nand a short second.";
     const result = outline(content);
     expect(result).toContain("and a short second.");
+    expect(result).not.toContain("...");
+  });
+
+  test("a blank line between heading and paragraph does not cancel capture", () => {
+    // The standard markdown layout. A blank line ends a paragraph that is
+    // already accumulating, but one that arrives before the paragraph starts
+    // is just the gap after the heading — treating it as a terminator left
+    // every section in a conventionally formatted note with no prose at all.
+    const content = ["# Heading", "", "The paragraph.", "", "Later."].join(
+      "\n",
+    );
+    const result = outline(content);
+    expect(result).toContain("The paragraph.");
+    expect(result).not.toContain("Later.");
+  });
+
+  test("a captured paragraph does not emit a trailing blank line", () => {
+    // A line's token span includes its terminating newline; slicing it into
+    // the outline doubled up with the join and put a blank line after every
+    // paragraph.
+    const content = ["# One", "Para one.", "# Two", "Para two."].join("\n");
+    expect(outline(content)).toBe(
+      "Outline: \n# One\nPara one.\n# Two\nPara two.",
+    );
+  });
+
+  test("a paragraph of exactly the cap gets no ellipsis", () => {
+    // The terminating newline used to count toward PARAGRAPH_TOKEN_CAP, so a
+    // paragraph at exactly the cap was marked truncated with nothing cut.
+    const words = Array.from({ length: 30 }, (_, i) => `w${i}`).join(" ");
+    const result = outline(`# H\n${words}\n\ntail`);
+    expect(result).toContain("w29");
     expect(result).not.toContain("...");
   });
 });

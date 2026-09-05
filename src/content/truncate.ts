@@ -106,7 +106,15 @@ export function truncateHeading(
   // so the ellipsis lands where the paragraph was actually cut.
   function flushParagraph(): void {
     if (paragraphStart === undefined) return;
-    const paragraphTokens = tokens.slice(paragraphStart, paragraphEnd);
+    // A line's tokenEnd includes the newline that terminates it. Left in the
+    // slice, that newline is emitted on top of the one `newLines.join("\n")`
+    // already adds — a blank line after every captured paragraph — and it
+    // counts against PARAGRAPH_TOKEN_CAP, so a paragraph of exactly the cap
+    // gets an "..." with nothing actually cut. Interior newlines between
+    // soft-wrapped lines are real source text and stay.
+    let end = paragraphEnd;
+    while (end > paragraphStart && tokens[end - 1].text === "\n") end--;
+    const paragraphTokens = tokens.slice(paragraphStart, end);
     const truncated = paragraphTokens.slice(0, PARAGRAPH_TOKEN_CAP);
     const suffix = truncated.length < paragraphTokens.length ? "..." : "";
     newLines.push(`${sliceTokens(contentStr, truncated)}${suffix}`);
@@ -143,9 +151,12 @@ export function truncateHeading(
       if (paragraphStart === undefined) paragraphStart = line.tokenStart;
       paragraphEnd = line.tokenEnd;
       bodyStart = line.tokenEnd;
-    } else if (captureNextParagraph) {
+    } else if (paragraphStart !== undefined) {
+      // A blank line ends the paragraph being accumulated. A blank line that
+      // arrives before one has started is just the gap between a heading and
+      // its paragraph — the standard markdown layout — so it must not cancel
+      // capture, or no section ever contributes prose to the outline.
       flushParagraph();
-      captureNextParagraph = false;
     }
   }
   flushParagraph();
