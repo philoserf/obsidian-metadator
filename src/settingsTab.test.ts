@@ -1,40 +1,54 @@
 import { describe, expect, test } from "bun:test";
-import { parseStrictPositiveInt } from "./settingsTab";
+import { MAX_BULK_FILES } from "./settings";
+import { parseBoundedPositiveInt } from "./settingsTab";
 
-describe("parseStrictPositiveInt", () => {
+const parse = (v: string) => parseBoundedPositiveInt(v, MAX_BULK_FILES);
+
+describe("parseBoundedPositiveInt", () => {
   test("accepts positive integers", () => {
-    expect(parseStrictPositiveInt("500")).toBe(500);
-    expect(parseStrictPositiveInt("1")).toBe(1);
-    expect(parseStrictPositiveInt("10000")).toBe(10000);
+    expect(parse("500")).toBe(500);
+    expect(parse("1")).toBe(1);
+    expect(parse("10000")).toBe(10000);
   });
 
   test("rejects zero", () => {
-    expect(parseStrictPositiveInt("0")).toBeNull();
+    expect(parse("0")).toBeNull();
   });
 
   test("rejects negative numbers", () => {
-    expect(parseStrictPositiveInt("-1")).toBeNull();
-    expect(parseStrictPositiveInt("-100")).toBeNull();
+    expect(parse("-1")).toBeNull();
+    expect(parse("-100")).toBeNull();
   });
 
   test("rejects floats (no truncation)", () => {
-    expect(parseStrictPositiveInt("1.5")).toBeNull();
-    expect(parseStrictPositiveInt("0.9")).toBeNull();
+    expect(parse("1.5")).toBeNull();
+    expect(parse("0.9")).toBeNull();
   });
 
   test("rejects digit-prefixed strings (no prefix parsing)", () => {
-    expect(parseStrictPositiveInt("100abc")).toBeNull();
-    expect(parseStrictPositiveInt("12 ")).toBe(12);
-    expect(parseStrictPositiveInt("12px")).toBeNull();
+    expect(parse("100abc")).toBeNull();
+    expect(parse("12 ")).toBe(12);
+    expect(parse("12px")).toBeNull();
   });
 
   test("rejects non-numeric strings and empty input", () => {
-    expect(parseStrictPositiveInt("abc")).toBeNull();
-    expect(parseStrictPositiveInt("")).toBeNull();
-    expect(parseStrictPositiveInt("   ")).toBeNull();
+    expect(parse("abc")).toBeNull();
+    expect(parse("")).toBeNull();
+    expect(parse("   ")).toBeNull();
   });
 
   test("trims surrounding whitespace", () => {
-    expect(parseStrictPositiveInt(" 42 ")).toBe(42);
+    expect(parse(" 42 ")).toBe(42);
+  });
+
+  test("rejects values above the ceiling", () => {
+    expect(parse(String(MAX_BULK_FILES))).toBe(MAX_BULK_FILES);
+    expect(parse(String(MAX_BULK_FILES + 1))).toBeNull();
+  });
+
+  test("rejects an all-digit paste that would lose precision", () => {
+    // Number("99999999999999999999999999") is a finite double greater than
+    // zero, so "positive integer" alone accepted it (#184).
+    expect(parse("99999999999999999999999999")).toBeNull();
   });
 });

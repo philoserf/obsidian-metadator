@@ -3,6 +3,8 @@ import type MetadataToolPlugin from "./main";
 import {
   DEFAULT_SETTINGS,
   isModelId,
+  MAX_BULK_FILES,
+  MAX_CONTENT_TOKEN_LIMIT,
   MODEL_OPTION_LABELS,
   PROMPT_MAX_LENGTH,
   TRUNCATE_METHOD_LABELS,
@@ -12,11 +14,16 @@ import {
   VALID_UPDATE_METHOD_OPTIONS,
 } from "./settings";
 
-export function parseStrictPositiveInt(value: string): number | null {
+// `max` is required rather than optional: a bounded parser named "strict
+// positive int" would be lying about what it enforces.
+export function parseBoundedPositiveInt(
+  value: string,
+  max: number,
+): number | null {
   const trimmed = value.trim();
   if (!/^\d+$/.test(trimmed)) return null;
   const n = Number(trimmed);
-  return n > 0 ? n : null;
+  return n > 0 && n <= max ? n : null;
 }
 
 export class MetadataToolSettingTab extends PluginSettingTab {
@@ -140,9 +147,11 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.maxBulkFiles.toString())
           .onChange(async (value) => {
-            const parsed = parseStrictPositiveInt(value);
+            const parsed = parseBoundedPositiveInt(value, MAX_BULK_FILES);
             if (parsed === null) {
-              new Notice("Max bulk files must be a positive integer");
+              new Notice(
+                `Max bulk files must be a positive integer up to ${MAX_BULK_FILES}`,
+              );
               text.setValue(this.plugin.settings.maxBulkFiles.toString());
               return;
             }
@@ -172,9 +181,14 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.contentTokenLimit.toString())
           .onChange(async (value) => {
-            const parsed = parseStrictPositiveInt(value);
+            const parsed = parseBoundedPositiveInt(
+              value,
+              MAX_CONTENT_TOKEN_LIMIT,
+            );
             if (parsed === null) {
-              new Notice("Content token limit must be a positive integer");
+              new Notice(
+                `Content token limit must be a positive integer up to ${MAX_CONTENT_TOKEN_LIMIT}`,
+              );
               text.setValue(this.plugin.settings.contentTokenLimit.toString());
               return;
             }

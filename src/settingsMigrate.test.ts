@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
+  MAX_BULK_FILES,
+  MAX_CONTENT_TOKEN_LIMIT,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
 } from "./settings";
@@ -342,5 +344,25 @@ describe("model id validation", () => {
         DEFAULT_SETTINGS.anthropicModel,
       );
     }
+  });
+});
+
+describe("numeric bounds (#184)", () => {
+  test("a stored value above the ceiling falls back to the default", () => {
+    expect(ok({ maxBulkFiles: 1_000_000 }).maxBulkFiles).toBe(
+      DEFAULT_SETTINGS.maxBulkFiles,
+    );
+    expect(ok({ contentTokenLimit: 10_000_000 }).contentTokenLimit).toBe(
+      DEFAULT_SETTINGS.contentTokenLimit,
+    );
+  });
+
+  test("a value exactly at the ceiling is kept", () => {
+    expect(ok({ maxBulkFiles: MAX_BULK_FILES }).maxBulkFiles).toBe(
+      MAX_BULK_FILES,
+    );
+    expect(
+      ok({ contentTokenLimit: MAX_CONTENT_TOKEN_LIMIT }).contentTokenLimit,
+    ).toBe(MAX_CONTENT_TOKEN_LIMIT);
   });
 });
