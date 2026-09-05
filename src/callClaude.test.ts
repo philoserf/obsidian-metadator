@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_SETTINGS } from "./settings";
 
 // Mock error classes matching the Anthropic SDK shape
@@ -56,6 +56,7 @@ const {
   callClaudeForMetadata,
   ClaudeApiError,
   parseRetryAfterMs,
+  resetClientCache,
   usesAutoToolChoice,
 } = await import("./adapters/claude");
 
@@ -63,6 +64,13 @@ const settings = {
   ...DEFAULT_SETTINGS,
   anthropicApiKey: "sk-test-key",
 };
+// claude.ts caches one Anthropic client per API key for the whole run, while
+// mock.module is per-file. These suites use colliding keys, so without this a
+// client built under another file's mocked SDK gets served here and its
+// messages.create belongs to that file's mock.
+beforeEach(() => {
+  resetClientCache();
+});
 
 function toolUseResponse(input: Record<string, unknown>) {
   return {
@@ -566,5 +574,53 @@ describe("connection error classification (#180)", () => {
     await expect(
       callClaudeForMetadata("system", "user", settings),
     ).rejects.toMatchObject({ kind: "api" });
+  });
+});
+
+describe("client caching (#207)", () => {
+  test("reuses one client across calls with the same key", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    let constructed = 0;
+    const Counting = new Proxy(Anthropic as never, {
+      construct(target, args) {
+        constructed++;
+        return Reflect.construct(target as never, args);
+      },
+    });
+    mock.module("@anthropic-ai/sdk", () => ({ default: Counting }));
+    resetClientCache();
+
+    mockCreate.mockResolvedValue(
+      toolUseResponse({ tags: "a", description: "d", title: "T" }),
+    );
+    await callClaudeForMetadata("system", "user", settings);
+    await callClaudeForMetadata("system", "user", settings);
+    await callClaudeForMetadata("system", "user", settings);
+
+    expect(constructed).toBe(1);
+  });
+
+  test("rebuilds when the API key changes, so a settings edit takes effect", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const keys: string[] = [];
+    const Recording = new Proxy(Anthropic as never, {
+      construct(target, args) {
+        keys.push((args[0] as { apiKey: string }).apiKey);
+        return Reflect.construct(target as never, args);
+      },
+    });
+    mock.module("@anthropic-ai/sdk", () => ({ default: Recording }));
+    resetClientCache();
+
+    mockCreate.mockResolvedValue(
+      toolUseResponse({ tags: "a", description: "d", title: "T" }),
+    );
+    await callClaudeForMetadata("system", "user", settings);
+    await callClaudeForMetadata("system", "user", {
+      ...settings,
+      anthropicApiKey: "sk-different",
+    });
+
+    expect(keys).toEqual(["sk-test-key", "sk-different"]);
   });
 });

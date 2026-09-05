@@ -33,7 +33,14 @@ const {
   DEFAULT_RETRY_DELAYS_MS,
   CONSECUTIVE_FAILURE_LIMIT,
 } = await import("./bulkGenerate");
-const { ClaudeApiError } = await import("./adapters/claude");
+const { ClaudeApiError, resetClientCache } = await import("./adapters/claude");
+// claude.ts caches one Anthropic client per API key for the whole run, while
+// mock.module is per-file. These suites use colliding keys, so without this a
+// client built under another file's mocked SDK gets served here and its
+// messages.create belongs to that file's mock.
+beforeEach(() => {
+  resetClientCache();
+});
 
 // Zero delays in tests to keep the suite fast; production uses DEFAULT_RETRY_DELAYS_MS.
 const FAST_RETRIES = [0, 0, 0];

@@ -182,18 +182,41 @@ function validateMetadataInput(
   return out;
 }
 
+// One client per API key. Constructing it per call meant a folder run built one
+// per file, and one more per retry attempt, each starting with an empty
+// connection pool — so a several-hundred-note run paid TLS setup repeatedly and
+// forfeited keep-alive reuse (#207). Keyed on the key so a settings change is
+// never served by a stale client.
+let cachedClient: { apiKey: string; client: Anthropic } | undefined;
+
+function getClient(apiKey: string): Anthropic {
+  if (cachedClient?.apiKey === apiKey) return cachedClient.client;
+  cachedClient = {
+    apiKey,
+    // Allowing browser compatibility mode — safe within Obsidian's Electron-controlled environment under current use cases.
+    client: new Anthropic({
+      apiKey,
+      dangerouslyAllowBrowser: true,
+      maxRetries: SDK_MAX_RETRIES,
+    }),
+  };
+  return cachedClient.client;
+}
+
+// For tests. mock.module is per-file but this module loads once, so a client
+// built under one file's mocked SDK would otherwise be served to another file
+// using the same key.
+export function resetClientCache(): void {
+  cachedClient = undefined;
+}
+
 export async function callClaudeForMetadata(
   system: string,
   userMessage: string,
   settings: MetadataToolSettings,
   options: CallClaudeOptions = {},
 ): Promise<MetadataFields> {
-  // Allowing browser compatibility mode — safe within Obsidian's Electron-controlled environment under current use cases.
-  const anthropic = new Anthropic({
-    apiKey: settings.anthropicApiKey,
-    dangerouslyAllowBrowser: true,
-    maxRetries: SDK_MAX_RETRIES,
-  });
+  const anthropic = getClient(settings.anthropicApiKey);
 
   const tool = buildToolSchema(settings.enableTitle);
   const autoToolChoice = usesAutoToolChoice(settings.anthropicModel);

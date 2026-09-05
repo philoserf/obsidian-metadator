@@ -24,6 +24,14 @@ mock.module("@anthropic-ai/sdk", () => {
 const { generateMetadata, generateMetadataForFile } = await import(
   "./metadata"
 );
+const { resetClientCache } = await import("./adapters/claude");
+// claude.ts caches one Anthropic client per API key for the whole run, while
+// mock.module is per-file. These suites use colliding keys, so without this a
+// client built under another file's mocked SDK gets served here and its
+// messages.create belongs to that file's mock.
+beforeEach(() => {
+  resetClientCache();
+});
 
 function toolUseResponse(input: Record<string, unknown>) {
   return {
