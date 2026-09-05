@@ -26,17 +26,102 @@ export function parseBoundedPositiveInt(
   return n > 0 && n <= max ? n : null;
 }
 
+// Two commit strategies, because the fields split into two kinds.
+//
+// Fields whose validation can only judge a finished value — the numeric ones,
+// the model id, the frontmatter field names — commit on blur. Validating as the
+// user types rejects the value on the way to a good one: clearing the box is the
+// first keystroke of almost every edit, and an empty box is invalid, so changing
+// 500 to 300 used to fire a Notice and snap the old value back before a digit
+// was typed (#203). The Model field already worked this way; the rest did not.
+//
+// Free-text fields update settings in memory immediately and debounce only the
+// disk write, so typing a 1000-character prompt is one save rather than a
+// thousand (#177). Blur alone would risk losing the edit if the tab is closed
+// without the field ever losing focus.
+//
+// Both register a flush that hide() runs, so an edit is never stranded by
+// closing the settings tab.
+interface PendingCommit {
+  flush: () => void;
+}
+
+interface EditableText {
+  getValue(): string;
+  setValue(value: string): void;
+  inputEl: HTMLInputElement | HTMLTextAreaElement;
+}
+
+function commitOnBlur(
+  text: EditableText,
+  commit: () => void | Promise<void>,
+): PendingCommit {
+  const run = () => {
+    void commit();
+  };
+  text.inputEl.addEventListener("blur", run);
+  return { flush: run };
+}
+
+export const SETTINGS_SAVE_DEBOUNCE_MS = 400;
+
+// Extracted so the timing is testable without rendering a settings tab.
+export function createDebouncer(
+  commit: () => void,
+  delayMs: number = SETTINGS_SAVE_DEBOUNCE_MS,
+): { schedule: () => void; flush: () => void; pending: () => boolean } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    schedule() {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        commit();
+      }, delayMs);
+    },
+    // Runs the pending commit now. A no-op when nothing is pending, so hide()
+    // can call it unconditionally without writing settings that did not change.
+    flush() {
+      if (timer === undefined) return;
+      clearTimeout(timer);
+      timer = undefined;
+      commit();
+    },
+    pending() {
+      return timer !== undefined;
+    },
+  };
+}
+
 export class MetadataToolSettingTab extends PluginSettingTab {
   plugin: MetadataToolPlugin;
+  // Cleared by display(), which empties containerEl — otherwise a re-render
+  // would leave flushes pointing at inputs that no longer exist.
+  private pending: PendingCommit[] = [];
 
   constructor(app: App, plugin: MetadataToolPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
+  // Obsidian does not await hide(), so each flush is fire-and-forget.
+  hide(): void {
+    for (const p of this.pending) p.flush();
+    this.pending = [];
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    this.pending = [];
+
+    const saveLater = () => {
+      const d = createDebouncer(() => {
+        void this.plugin.saveSettings();
+      });
+      this.pending.push(d);
+      return d;
+    };
 
     // Anthropic API Settings
     new Setting(containerEl).setName("Anthropic API Settings").setHeading();
@@ -52,12 +137,13 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         "Your Anthropic API key. Get one at console.anthropic.com (requires an account with billing enabled)",
       )
       .addText((text) => {
+        const save = saveLater();
         text
           .setPlaceholder("sk-ant-...")
           .setValue(this.plugin.settings.anthropicApiKey)
-          .onChange(async (value) => {
+          .onChange((value) => {
             this.plugin.settings.anthropicApiKey = value;
-            await this.plugin.saveSettings();
+            save.schedule();
           });
         text.inputEl.type = "password";
       });
@@ -84,22 +170,23 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           .setPlaceholder(DEFAULT_SETTINGS.anthropicModel)
           .setValue(this.plugin.settings.anthropicModel);
         text.inputEl.setAttribute("list", modelListId);
-        // Commit on blur rather than per keystroke: every prefix of a model id
-        // ("claude-fable-5-") is itself malformed, so validating as the user
-        // types would reject the value on the way to a good one.
-        text.inputEl.addEventListener("blur", async () => {
-          const model = text.getValue().trim();
-          if (model === this.plugin.settings.anthropicModel) return;
-          if (!isModelId(model)) {
-            new Notice(
-              "Model must be an Anthropic model id, e.g. claude-sonnet-5",
-            );
-            text.setValue(this.plugin.settings.anthropicModel);
-            return;
-          }
-          this.plugin.settings.anthropicModel = model;
-          await this.plugin.saveSettings();
-        });
+        // Every prefix of a model id ("claude-fable-5-") is itself malformed,
+        // which is why this field has always committed on blur.
+        this.pending.push(
+          commitOnBlur(text, async () => {
+            const model = text.getValue().trim();
+            if (model === this.plugin.settings.anthropicModel) return;
+            if (!isModelId(model)) {
+              new Notice(
+                "Model must be an Anthropic model id, e.g. claude-sonnet-5",
+              );
+              text.setValue(this.plugin.settings.anthropicModel);
+              return;
+            }
+            this.plugin.settings.anthropicModel = model;
+            await this.plugin.saveSettings();
+          }),
+        );
       });
 
     new Setting(containerEl)
@@ -143,11 +230,14 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       .setDesc(
         "Hard limit on files-that-will-change in a single bulk run. Above this, the confirm dialog requires explicit override.",
       )
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.maxBulkFiles.toString())
-          .onChange(async (value) => {
-            const parsed = parseBoundedPositiveInt(value, MAX_BULK_FILES);
+      .addText((text) => {
+        text.setValue(this.plugin.settings.maxBulkFiles.toString());
+        this.pending.push(
+          commitOnBlur(text, async () => {
+            const parsed = parseBoundedPositiveInt(
+              text.getValue(),
+              MAX_BULK_FILES,
+            );
             if (parsed === null) {
               new Notice(
                 `Max bulk files must be a positive integer up to ${MAX_BULK_FILES}`,
@@ -155,10 +245,12 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               text.setValue(this.plugin.settings.maxBulkFiles.toString());
               return;
             }
+            if (parsed === this.plugin.settings.maxBulkFiles) return;
             this.plugin.settings.maxBulkFiles = parsed;
             await this.plugin.saveSettings();
           }),
-      );
+        );
+      });
 
     new Setting(containerEl)
       .setName("Truncate Content")
@@ -177,12 +269,12 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     const contentTokenLimitSetting = new Setting(containerEl)
       .setName("Content Token Limit")
       .setDesc("Maximum number of tokens of note content sent to the API")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.contentTokenLimit.toString())
-          .onChange(async (value) => {
+      .addText((text) => {
+        text.setValue(this.plugin.settings.contentTokenLimit.toString());
+        this.pending.push(
+          commitOnBlur(text, async () => {
             const parsed = parseBoundedPositiveInt(
-              value,
+              text.getValue(),
               MAX_CONTENT_TOKEN_LIMIT,
             );
             if (parsed === null) {
@@ -192,10 +284,12 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               text.setValue(this.plugin.settings.contentTokenLimit.toString());
               return;
             }
+            if (parsed === this.plugin.settings.contentTokenLimit) return;
             this.plugin.settings.contentTokenLimit = parsed;
             await this.plugin.saveSettings();
           }),
-      );
+        );
+      });
 
     const truncateMethodSetting = new Setting(containerEl)
       .setName("Truncate Method")
@@ -224,15 +318,18 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Tags Field Name")
       .setDesc("Frontmatter field name for tags")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.tagsFieldName)
-          .onChange(async (value) => {
-            this.plugin.settings.tagsFieldName =
-              value || DEFAULT_SETTINGS.tagsFieldName;
+      .addText((text) => {
+        text.setValue(this.plugin.settings.tagsFieldName);
+        this.pending.push(
+          commitOnBlur(text, async () => {
+            const name = text.getValue() || DEFAULT_SETTINGS.tagsFieldName;
+            if (name === this.plugin.settings.tagsFieldName) return;
+            this.plugin.settings.tagsFieldName = name;
+            text.setValue(name);
             await this.plugin.saveSettings();
           }),
-      );
+        );
+      });
 
     new Setting(containerEl)
       .setName("Tags Prompt")
@@ -240,19 +337,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         `Instructions for tag generation (max ${PROMPT_MAX_LENGTH} chars)`,
       )
       .addTextArea((text) => {
-        text
-          .setValue(this.plugin.settings.tagsPrompt)
-          .onChange(async (value) => {
-            if (value.length > PROMPT_MAX_LENGTH) {
-              new Notice(
-                `Tags prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
-              );
-              text.setValue(this.plugin.settings.tagsPrompt);
-              return;
-            }
-            this.plugin.settings.tagsPrompt = value;
-            await this.plugin.saveSettings();
-          });
+        const save = saveLater();
+        text.setValue(this.plugin.settings.tagsPrompt).onChange((value) => {
+          // The length check stays immediate — it can judge a partial value,
+          // unlike the blur-committed fields. Only the disk write is deferred.
+          if (value.length > PROMPT_MAX_LENGTH) {
+            new Notice(
+              `Tags prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
+            );
+            text.setValue(this.plugin.settings.tagsPrompt);
+            return;
+          }
+          this.plugin.settings.tagsPrompt = value;
+          save.schedule();
+        });
         text.inputEl.setAttr("rows", "3");
       });
 
@@ -262,15 +360,19 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Description Field Name")
       .setDesc("Frontmatter field name for description")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.descriptionFieldName)
-          .onChange(async (value) => {
-            this.plugin.settings.descriptionFieldName =
-              value || DEFAULT_SETTINGS.descriptionFieldName;
+      .addText((text) => {
+        text.setValue(this.plugin.settings.descriptionFieldName);
+        this.pending.push(
+          commitOnBlur(text, async () => {
+            const name =
+              text.getValue() || DEFAULT_SETTINGS.descriptionFieldName;
+            if (name === this.plugin.settings.descriptionFieldName) return;
+            this.plugin.settings.descriptionFieldName = name;
+            text.setValue(name);
             await this.plugin.saveSettings();
           }),
-      );
+        );
+      });
 
     new Setting(containerEl)
       .setName("Description Prompt")
@@ -278,9 +380,12 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         `Instructions for description generation (max ${PROMPT_MAX_LENGTH} chars)`,
       )
       .addTextArea((text) => {
+        const save = saveLater();
         text
           .setValue(this.plugin.settings.descriptionPrompt)
-          .onChange(async (value) => {
+          .onChange((value) => {
+            // The length check stays immediate — it can judge a partial value,
+            // unlike the blur-committed fields. Only the disk write is deferred.
             if (value.length > PROMPT_MAX_LENGTH) {
               new Notice(
                 `Description prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
@@ -289,7 +394,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               return;
             }
             this.plugin.settings.descriptionPrompt = value;
-            await this.plugin.saveSettings();
+            save.schedule();
           });
         text.inputEl.setAttr("rows", "3");
       });
@@ -314,15 +419,18 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     const titleFieldNameSetting = new Setting(containerEl)
       .setName("Title Field Name")
       .setDesc("Frontmatter field name for title")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.titleFieldName)
-          .onChange(async (value) => {
-            this.plugin.settings.titleFieldName =
-              value || DEFAULT_SETTINGS.titleFieldName;
+      .addText((text) => {
+        text.setValue(this.plugin.settings.titleFieldName);
+        this.pending.push(
+          commitOnBlur(text, async () => {
+            const name = text.getValue() || DEFAULT_SETTINGS.titleFieldName;
+            if (name === this.plugin.settings.titleFieldName) return;
+            this.plugin.settings.titleFieldName = name;
+            text.setValue(name);
             await this.plugin.saveSettings();
           }),
-      );
+        );
+      });
 
     const titlePromptSetting = new Setting(containerEl)
       .setName("Title Prompt")
@@ -330,19 +438,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         `Instructions for title generation (max ${PROMPT_MAX_LENGTH} chars)`,
       )
       .addTextArea((text) => {
-        text
-          .setValue(this.plugin.settings.titlePrompt)
-          .onChange(async (value) => {
-            if (value.length > PROMPT_MAX_LENGTH) {
-              new Notice(
-                `Title prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
-              );
-              text.setValue(this.plugin.settings.titlePrompt);
-              return;
-            }
-            this.plugin.settings.titlePrompt = value;
-            await this.plugin.saveSettings();
-          });
+        const save = saveLater();
+        text.setValue(this.plugin.settings.titlePrompt).onChange((value) => {
+          // The length check stays immediate — it can judge a partial value,
+          // unlike the blur-committed fields. Only the disk write is deferred.
+          if (value.length > PROMPT_MAX_LENGTH) {
+            new Notice(
+              `Title prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
+            );
+            text.setValue(this.plugin.settings.titlePrompt);
+            return;
+          }
+          this.plugin.settings.titlePrompt = value;
+          save.schedule();
+        });
         text.inputEl.setAttr("rows", "3");
       });
 

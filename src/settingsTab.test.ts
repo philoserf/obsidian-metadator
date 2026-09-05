@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MAX_BULK_FILES } from "./settings";
-import { parseBoundedPositiveInt } from "./settingsTab";
+import { createDebouncer, parseBoundedPositiveInt } from "./settingsTab";
 
 const parse = (v: string) => parseBoundedPositiveInt(v, MAX_BULK_FILES);
 
@@ -50,5 +50,65 @@ describe("parseBoundedPositiveInt", () => {
     // Number("99999999999999999999999999") is a finite double greater than
     // zero, so "positive integer" alone accepted it (#184).
     expect(parse("99999999999999999999999999")).toBeNull();
+  });
+});
+
+describe("createDebouncer (#177)", () => {
+  const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  test("collapses a burst of keystrokes into one commit", async () => {
+    let commits = 0;
+    const d = createDebouncer(() => commits++, 20);
+
+    for (let i = 0; i < 50; i++) d.schedule();
+    expect(commits).toBe(0);
+
+    await tick(40);
+    expect(commits).toBe(1);
+  });
+
+  test("flush commits a pending change immediately", async () => {
+    let commits = 0;
+    const d = createDebouncer(() => commits++, 1_000);
+
+    d.schedule();
+    expect(d.pending()).toBe(true);
+    d.flush();
+
+    expect(commits).toBe(1);
+    expect(d.pending()).toBe(false);
+  });
+
+  test("flush with nothing pending writes nothing", () => {
+    let commits = 0;
+    const d = createDebouncer(() => commits++, 20);
+
+    d.flush();
+
+    expect(commits).toBe(0);
+  });
+
+  test("flush cancels the timer, so the commit does not run twice", async () => {
+    let commits = 0;
+    const d = createDebouncer(() => commits++, 20);
+
+    d.schedule();
+    d.flush();
+    await tick(40);
+
+    // Left uncancelled, this would fire against a torn-down settings tab.
+    expect(commits).toBe(1);
+  });
+
+  test("a later burst schedules again after a flush", async () => {
+    let commits = 0;
+    const d = createDebouncer(() => commits++, 20);
+
+    d.schedule();
+    d.flush();
+    d.schedule();
+    await tick(40);
+
+    expect(commits).toBe(2);
   });
 });
