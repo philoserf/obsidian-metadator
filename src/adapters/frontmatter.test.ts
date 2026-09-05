@@ -21,30 +21,6 @@ function makeApp(initial: Record<string, unknown> = {}): {
 }
 
 describe("updateFrontMatter", () => {
-  test("keep: preserves an existing value", async () => {
-    const { app, fm } = makeApp({ description: "existing" });
-    await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect(fm.description).toBe("existing");
-  });
-
-  test("keep: sets the value when field is absent", async () => {
-    const { app, fm } = makeApp({});
-    await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect(fm.description).toBe("new value");
-  });
-
   test("update: overwrites an existing value", async () => {
     const { app, fm } = makeApp({ description: "old" });
     await updateFrontMatter(
@@ -137,30 +113,6 @@ describe("updateFrontMatter", () => {
     expect(changed).toBe(true);
   });
 
-  test("keep: returns false when field already exists", async () => {
-    const { app } = makeApp({ description: "existing" });
-    const changed = await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect(changed).toBe(false);
-  });
-
-  test("keep: returns true when field is absent", async () => {
-    const { app } = makeApp({});
-    const changed = await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect(changed).toBe(true);
-  });
-
   test("update_if_empty: writes when the live value is empty", async () => {
     const { app, fm } = makeApp({ description: "" });
     const changed = await updateFrontMatter(
@@ -210,5 +162,89 @@ describe("updateFrontMatter", () => {
       "update_if_empty",
     );
     expect(fm.description).toBe("generated");
+  });
+});
+
+describe("append with no values", () => {
+  test("does not create an empty array where the field was absent", async () => {
+    const { app, fm } = makeApp({});
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "append",
+    );
+    expect("tags" in fm).toBe(false);
+    expect(changed).toBe(false);
+  });
+
+  test("leaves an existing array untouched", async () => {
+    const { app, fm } = makeApp({ tags: ["a", "b"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "append",
+    );
+    expect(fm.tags).toEqual(["a", "b"]);
+    expect(changed).toBe(false);
+  });
+
+  test("does not create an empty array where the field is blank", async () => {
+    const { app, fm } = makeApp({ tags: "" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "append",
+    );
+    expect(fm.tags).toBe("");
+    expect(changed).toBe(false);
+  });
+});
+
+describe("append onto a blank existing value", () => {
+  // `existing != null` used to count these as content, so String(existing)
+  // seeded a blank entry into the merge and the note kept an empty tag.
+  test("an empty string is not merged in as a tag", async () => {
+    const { app, fm } = makeApp({ tags: "" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["ai", "testing"],
+      "append",
+    );
+    expect(fm.tags).toEqual(["ai", "testing"]);
+    expect(changed).toBe(true);
+  });
+
+  test("an array of blanks is not merged in as tags", async () => {
+    const { app, fm } = makeApp({ tags: ["", "  "] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["ai"],
+      "append",
+    );
+    expect(fm.tags).toEqual(["ai"]);
+    expect(changed).toBe(true);
+  });
+
+  test("a null value is not merged in as a tag", async () => {
+    const { app, fm } = makeApp({ tags: null });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["ai"],
+      "append",
+    );
+    expect(fm.tags).toEqual(["ai"]);
+    expect(changed).toBe(true);
   });
 });

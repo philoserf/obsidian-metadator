@@ -48,13 +48,32 @@ function notifyApiError(error: unknown): void {
   );
 }
 
-function stripSurroundingQuotes(str: string): string {
+// "Starts with a quote and ends with a quote" is not the same as "is quoted".
+// A title that merely opens and closes with quoted phrases satisfied the old
+// test and lost its outer characters: `"Hello" and "Goodbye"` became
+// `Hello" and "Goodbye`, leaving unbalanced quotes in the note (#206).
+//
+// The interior check is what separates the two cases. A genuinely wrapped
+// title has no further copy of its own delimiter inside it, so `"It's here"`
+// still unwraps — the delimiter is `"` and the interior only holds `'`.
+//
+// An apostrophe inside a word is not a delimiter, so it does not count: that
+// keeps `'It's a Wonderful Life'` unwrapping.
+//
+// What is left is genuinely ambiguous. `"The "Great" Gatsby"` is wrapped and
+// `"Hello" and "Goodbye"` is not, and nothing about their shape distinguishes
+// them. Both are left alone, because a stray pair of quotes is cosmetic while
+// slicing characters off a title the user then has to repair is not.
+export function stripSurroundingQuotes(str: string): string {
   const trimmed = str.trim();
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
-    return trimmed.substring(1, trimmed.length - 1);
+  if (trimmed.length < 2) return trimmed;
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' || first === "'") && first === last) {
+    const inner = trimmed.slice(1, -1);
+    const significant =
+      first === "'" ? inner.replace(/(\p{L})'(\p{L})/gu, "$1$2") : inner;
+    if (!significant.includes(first)) return inner;
   }
   return trimmed;
 }
@@ -62,22 +81,6 @@ function stripSurroundingQuotes(str: string): string {
 // Recognised by generateMetadata so the interactive path can say something
 // useful instead of the generic "no changes".
 export const ALREADY_IN_PROGRESS = "already generating metadata for this note";
-
-export type WritePolicy = "update_all" | "only_empty";
-
-function writePolicyFromSettings(settings: MetadataToolSettings): WritePolicy {
-  return settings.updateMethod === "always_regenerate"
-    ? "update_all"
-    : "only_empty";
-}
-
-function resolveUpdateMethod(
-  policy: WritePolicy,
-  currentValue: unknown,
-): "update" | "keep" {
-  if (policy === "update_all") return "update";
-  return isEmptyValue(currentValue) ? "update" : "keep";
-}
 
 export function shouldGenerate(
   frontMatter: Record<string, unknown>,
@@ -157,7 +160,7 @@ export async function generateMetadataForFile(
       file,
       settings,
       frontMatter,
-      writePolicyFromSettings(settings),
+      settings.updateMethod === "preserve_existing",
       opts.bulk ?? false,
       opts.signal,
     );
@@ -250,7 +253,7 @@ async function addMetadataWithClaude(
   file: TFile,
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
-  policy: WritePolicy,
+  preserveExisting: boolean,
   isBulk: boolean,
   signal?: AbortSignal,
 ): Promise<WriteOutcome> {
@@ -324,14 +327,8 @@ async function addMetadataWithClaude(
     | { fieldName: string; value: string[]; updateMethod: "append" }
     | { fieldName: string; value: string; updateMethod: "update" };
 
-  async function writeField(
-    u: FieldUpdate,
-    resolved: "update" | "keep",
-  ): Promise<boolean> {
+  async function writeField(u: FieldUpdate): Promise<boolean> {
     try {
-      if (resolved === "keep") {
-        return await updateFrontMatter(app, file, u.fieldName, u.value, "keep");
-      }
       if (u.updateMethod === "append") {
         return await updateFrontMatter(
           app,
@@ -341,12 +338,12 @@ async function addMetadataWithClaude(
           "append",
         );
       }
-      // Under only_empty the decision to overwrite must be made against the
+      // Under preserve_existing the decision to overwrite must be made against the
       // live frontmatter, not `frontMatter` — that snapshot was taken before a
       // request that can run for REQUEST_TIMEOUT_MS (#178). The append path
       // above needs no such guard: it merges with the live value, so a
       // concurrent edit survives either way.
-      if (policy === "only_empty") {
+      if (preserveExisting) {
         return await updateFrontMatter(
           app,
           file,
@@ -378,24 +375,37 @@ async function addMetadataWithClaude(
 
   const updates: FieldUpdate[] = [];
 
-  if (metadata.tags) {
+  // Guarded on the parsed result, not the raw string. A model returning ","
+  // or " , " satisfies validateMetadataInput and is truthy, but parseTags
+  // yields [] — which the append path then wrote as an empty tags array and
+  // reported as a change, so the user was told "Metadata updated successfully"
+  // for content that did not exist (#161).
+  const tags = metadata.tags ? parseTags(metadata.tags) : [];
+  if (tags.length > 0) {
     updates.push({
       fieldName: settings.tagsFieldName,
-      value: parseTags(metadata.tags),
+      value: tags,
       updateMethod: "append",
     });
   }
-  if (metadata.description) {
+  // Same shape as the tags guard: judge the value that would actually be
+  // written, not the raw string. validateMetadataInput only checks that these
+  // are strings, so "   " reaches here as truthy and wrote a blank description.
+  if (metadata.description.trim() !== "") {
     updates.push({
       fieldName: settings.descriptionFieldName,
       value: metadata.description,
       updateMethod: "update",
     });
   }
-  if (settings.enableTitle && metadata.title) {
+  // stripSurroundingQuotes trims and can empty the string outright — `""`
+  // unwraps to "". Guarding on metadata.title instead let that through and
+  // wrote an empty title while reporting "Metadata updated successfully".
+  const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
+  if (settings.enableTitle && title !== "") {
     updates.push({
       fieldName: settings.titleFieldName,
-      value: stripSurroundingQuotes(metadata.title),
+      value: title,
       updateMethod: "update",
     });
   }
@@ -404,8 +414,15 @@ async function addMetadataWithClaude(
     if (signal?.aborted) {
       return { changed: hasChanges, failures };
     }
-    const resolved = resolveUpdateMethod(policy, frontMatter[u.fieldName]);
-    if (await writeField(u, resolved)) {
+    // A populated field under preserve_existing is left alone — and left alone
+    // means not opening the file at all. processFrontMatter serializes and
+    // writes back on every call regardless of whether the callback mutated
+    // anything, so calling it here cost an mtime bump, a vault modify event and
+    // disk I/O per skipped field, per file, across a whole bulk run (#185).
+    if (preserveExisting && !isEmptyValue(frontMatter[u.fieldName])) {
+      continue;
+    }
+    if (await writeField(u)) {
       hasChanges = true;
     }
   }

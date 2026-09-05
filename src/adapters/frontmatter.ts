@@ -1,52 +1,33 @@
 import type { App, TFile } from "obsidian";
 import { isEmptyValue } from "../emptyValue";
 
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string[],
-  method: "append",
-): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean,
-  method: "update",
-): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean,
-  method: "update_if_empty",
-): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean | string[],
-  method: "keep",
-): Promise<boolean>;
 export async function updateFrontMatter(
   app: App,
   file: TFile,
   key: string,
   value: string | boolean | string[],
-  method: "append" | "update" | "update_if_empty" | "keep",
+  method: "append" | "update" | "update_if_empty",
 ): Promise<boolean> {
   let changed = false;
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
     if (method === "append") {
       const values = value as string[];
       const existing = frontmatter[key];
-      const base = Array.isArray(existing)
-        ? existing
-        : existing != null
-          ? [String(existing)]
-          : [];
+      // "Has something to merge with" is isEmptyValue, the same predicate
+      // update_if_empty uses below — a second definition here diverged from it:
+      // `existing != null` treated `tags: ""` and `tags: [""]` as content, so
+      // String("") was seeded into the merge and the note ended up with a blank
+      // tag alongside the generated ones.
+      const base = isEmptyValue(existing)
+        ? []
+        : Array.isArray(existing)
+          ? existing
+          : [String(existing)];
       const merged = Array.from(new Set(base.concat(values)));
+      // An empty append against an empty field is not a change: without this
+      // the !Array.isArray(existing) term alone reported one, writing key: []
+      // where nothing existed (#161).
+      if (merged.length === 0 && isEmptyValue(existing)) return;
       changed =
         !Array.isArray(existing) ||
         base.length !== merged.length ||
@@ -57,7 +38,7 @@ export async function updateFrontMatter(
       frontmatter[key] = value;
     } else if (method === "update_if_empty") {
       // `frontmatter` here is the live value at write time, not the caller's
-      // pre-call snapshot. Under the only_empty policy the generation request
+      // pre-call snapshot. Under preserve_existing the generation request
       // can take up to a minute, during which the user may type into the very
       // field we are about to fill — re-checking here is what keeps that edit
       // from being overwritten.
@@ -65,9 +46,6 @@ export async function updateFrontMatter(
         if (frontmatter[key] !== value) changed = true;
         frontmatter[key] = value;
       }
-    } else if (frontmatter[key] === undefined) {
-      frontmatter[key] = value;
-      changed = true;
     }
   });
   return changed;

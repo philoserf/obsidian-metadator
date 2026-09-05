@@ -79,7 +79,7 @@ function makeApp(opts: {
     },
   } as unknown as App;
 
-  return { app, fm };
+  return { app, fm, writes: () => writeCalls };
 }
 
 function makeFile(path = "note.md"): { path: string; extension: string } {
@@ -350,6 +350,59 @@ describe("concurrent edits during the API call (#178)", () => {
     expect(fm.tags).toEqual(["ai", "testing"]);
   });
 
+  test("preserve_existing does not open the file for a field it is keeping", async () => {
+    // processFrontMatter serializes and writes the file back on every call,
+    // whether or not the callback mutates anything. Calling it for a field we
+    // have already decided to leave alone cost an mtime bump and a vault
+    // modify event per skipped field, per file (#185).
+    //
+    // tags is empty so generation still runs; description and title are
+    // populated, so under preserve_existing they resolve to keep. Exactly one
+    // write should reach the file — before the fix there were three.
+    const { app, writes } = makeApp({
+      frontmatter: {
+        description: "existing description",
+        title: "Existing Title",
+      },
+      snapshotCache: true,
+    });
+
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "ai,testing",
+        description: "generated",
+        title: "Generated",
+      }),
+    );
+
+    await generateMetadata(app, makeSettings());
+
+    expect(writes()).toBe(1);
+  });
+
+  test("preserve_existing keeps a field whose value is 0 or false", async () => {
+    // Falsy but present. isEmptyValue used to report both as empty, so
+    // shouldGenerate sent the note to the API and the update_if_empty re-check
+    // then overwrote the very values it exists to protect (#201).
+    const { app, fm } = makeApp({
+      frontmatter: { description: 0, title: false },
+      snapshotCache: true,
+    });
+
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "ai,testing",
+        description: "what Claude generated",
+        title: "Generated Title",
+      }),
+    );
+
+    await generateMetadata(app, makeSettings());
+
+    expect(fm.description).toBe(0);
+    expect(fm.title).toBe(false);
+  });
+
   test("always_regenerate still overwrites, since the user asked for it", async () => {
     const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
 
@@ -422,6 +475,48 @@ describe("failed frontmatter writes (#187)", () => {
     if (result.kind === "error") {
       expect(result.reason).toContain("other fields were written");
     }
+  });
+
+  test("an all-punctuation tags string writes nothing and reports no change", async () => {
+    // "," is a non-empty string, so it passed validateMetadataInput and the
+    // truthiness guard, but parseTags reduces it to []. That empty array was
+    // written as `tags: []` and reported as a change (#161).
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: " , ", description: "", title: "" }),
+    );
+    const { app, fm, writes } = makeApp({});
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
+      makeSettings(),
+    );
+
+    expect("tags" in fm).toBe(false);
+    expect(writes()).toBe(0);
+    expect(result.kind).toBe("skipped");
+  });
+
+  test("a quoted-empty title and a blank description write nothing", async () => {
+    // `""` is truthy and survives validateMetadataInput, but
+    // stripSurroundingQuotes unwraps it to "". Guarding on the raw string wrote
+    // an empty title and reported "Metadata updated successfully"; the same
+    // holds for a whitespace-only description.
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "", description: "   ", title: '""' }),
+    );
+    const { app, fm, writes } = makeApp({});
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
+      makeSettings(),
+    );
+
+    expect("title" in fm).toBe(false);
+    expect("description" in fm).toBe(false);
+    expect(writes()).toBe(0);
+    expect(result.kind).toBe("skipped");
   });
 
   test("a genuine no-op is still reported as skipped", async () => {
