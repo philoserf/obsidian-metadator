@@ -1,31 +1,7 @@
 import { mock } from "bun:test";
+import { obsidianDoubles } from "./testDom";
 
-mock.module("obsidian", () => ({
-  Plugin: class Plugin {},
-  Notice: class Notice {
-    hide() {}
-  },
-  PluginSettingTab: class PluginSettingTab {},
-  Setting: class Setting {},
-  Modal: class Modal {
-    app: unknown;
-    contentEl = {
-      empty() {},
-      createEl() {
-        return {};
-      },
-      createDiv() {
-        return {};
-      },
-    };
-    constructor(app: unknown) {
-      this.app = app;
-    }
-    open() {}
-    close() {}
-    onOpen() {}
-    onClose() {}
-  },
-  TFolder: class TFolder {},
-  TFile: class TFile {},
-}));
+// Installed for every test file. A file needing a richer Modal re-mocks
+// "obsidian" itself, spreading obsidianDoubles so the class identities — which
+// instanceof depends on — stay the same across the whole run.
+mock.module("obsidian", () => obsidianDoubles);
