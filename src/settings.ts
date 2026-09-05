@@ -1,4 +1,4 @@
-import type { TruncateMethod } from "./content/types";
+import type { TruncateMethod } from "./content/truncate";
 
 export const PROMPT_MAX_LENGTH = 1000;
 
