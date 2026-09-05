@@ -150,6 +150,14 @@ export function truncateHeading(
   }
   flushParagraph();
 
+  // No headings means no outline. Emitting the wrapper anyway produced
+  // "Outline: \n\n\nBody: <text>" — two blank lines and a meaningless label
+  // wrapped around real content (#168). head_only is the nearest honest
+  // degradation: someone who picked `heading` wants the top of the document.
+  if (newLines.length === 0) {
+    return truncateHeadOnly(contentStr, tokens, limit);
+  }
+
   const result = newLines.join("\n");
   // The outline is a constructed string — reordered lines, some with an
   // ellipsis appended — so its tokens are not a contiguous slice of `tokens`

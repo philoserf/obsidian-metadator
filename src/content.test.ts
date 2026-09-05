@@ -319,8 +319,13 @@ describe("truncateHeading", () => {
     const content = "Just a plain paragraph with no headings at all.";
     const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 1000);
-    // No headings → empty outline, all budget goes to body
-    expect(result).toContain("Body:");
+    // No headings → no outline to label, so no wrapper at all. This asserted
+    // the presence of "Body:" until #168: an empty outline still emitted
+    // "Outline: \n\n\nBody: ...", labelling real content with a heading list
+    // that did not exist.
+    expect(result).not.toContain("Body:");
+    expect(result).not.toContain("Outline:");
+    expect(result).toBe(content);
   });
 
   test("body does not duplicate outline content", () => {
@@ -574,5 +579,31 @@ describe("truncateHeading paragraph accumulation", () => {
     const result = outline(content);
     expect(result).toContain("and a short second.");
     expect(result).not.toContain("...");
+  });
+});
+
+describe("truncateHeading without headings", () => {
+  test("falls back to a plain head truncation, no empty Outline wrapper", () => {
+    const content =
+      "Just a plain paragraph with no headings anywhere in the note.";
+    const result = truncateHeading(content, tokenize(content), 1000);
+    expect(result).not.toContain("Outline:");
+    expect(result).not.toContain("Body:");
+    expect(result).toBe(content);
+  });
+
+  test("the fallback still honours the limit and marks truncation", () => {
+    const content = Array.from({ length: 50 }, (_, i) => `w${i}`).join(" ");
+    const result = truncateHeading(content, tokenize(content), 10);
+    expect(result).not.toContain("Outline:");
+    expect(result).toBe(truncateHeadOnly(content, tokenize(content), 10));
+    expect(result.endsWith("...")).toBe(true);
+  });
+
+  test("a note whose only # is inside a fence has no outline either", () => {
+    const content = ["```", "# not a heading", "```", "Body prose."].join("\n");
+    const result = truncateHeading(content, tokenize(content), 1000);
+    expect(result).not.toContain("Outline:");
+    expect(result).toBe(content);
   });
 });
