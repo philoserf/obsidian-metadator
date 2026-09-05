@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildPrompt, parseTags } from "./metadata";
+import { buildPrompt, parseTags } from "./prompt";
 import { DEFAULT_SETTINGS } from "./settings";
 
 describe("parseTags", () => {

@@ -46,9 +46,6 @@ function notifyApiError(error: unknown): void {
   );
 }
 
-export type { MetadataFields } from "./adapters/claude";
-export { buildPrompt, type PromptParts, parseTags } from "./prompt";
-
 function stripSurroundingQuotes(str: string): string {
   const trimmed = str.trim();
   if (
