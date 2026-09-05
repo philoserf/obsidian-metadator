@@ -6,12 +6,16 @@ import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 const mockCreate = mock();
 
 mock.module("@anthropic-ai/sdk", () => {
+  class APIError extends Error {}
   class Anthropic {
     messages = { create: mockCreate };
     static AuthenticationError = class extends Error {};
     static RateLimitError = class extends Error {};
     static InternalServerError = class extends Error {};
-    static APIError = class extends Error {};
+    static APIError = APIError;
+    // classifyError checks this before APIError; leaving it undefined makes
+    // `instanceof undefined` throw from inside the adapter.
+    static APIConnectionError = class extends APIError {};
   }
   return { default: Anthropic };
 });

@@ -42,6 +42,8 @@ function haltExplanation(halt: BulkHalt): string {
       return "Rate limited repeatedly, even after retries. Try again later.";
     case "overloaded":
       return "The API stayed overloaded across retries. Try again later.";
+    case "connection":
+      return "Could not reach the API after repeated retries — check your network connection.";
     case "other":
       return `${halt.consecutive} notes in a row failed before reaching the API: ${halt.message}. A read-only vault or a permissions problem will do this.`;
     default:

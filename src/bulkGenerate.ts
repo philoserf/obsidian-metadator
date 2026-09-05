@@ -100,11 +100,12 @@ function haltKindOf(error: unknown): HaltKind {
   return error instanceof ClaudeApiError ? error.kind : "other";
 }
 
-function isRateLimitOrOverload(error: unknown): boolean {
-  return (
-    error instanceof ClaudeApiError &&
-    (error.kind === "rate_limit" || error.kind === "overloaded")
-  );
+// Kinds worth another attempt: server-side throttling, and the network blips
+// and timeouts that used to fail a file outright on the first hiccup (#180).
+const RETRYABLE_KINDS = new Set(["rate_limit", "overloaded", "connection"]);
+
+function isRetryable(error: unknown): boolean {
+  return error instanceof ClaudeApiError && RETRYABLE_KINDS.has(error.kind);
 }
 
 // Cap server-provided Retry-After at this multiple of the scheduled base
@@ -169,7 +170,7 @@ async function runFileWithRetry(
       bulk: true,
       signal,
     });
-    if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
+    if (r.kind !== "error" || !isRetryable(r.error)) return r;
     if (attempt === retryDelaysMs.length) return r;
     const delayMs = computeDelayMs(retryDelaysMs[attempt], r.error, random);
     if (settings.debugLogging) {

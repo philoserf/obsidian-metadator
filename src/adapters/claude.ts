@@ -35,6 +35,7 @@ export type ClaudeErrorKind =
   | "auth"
   | "rate_limit"
   | "overloaded"
+  | "connection"
   | "api"
   | "unknown";
 
@@ -123,6 +124,12 @@ function classifyError(error: unknown): ClaudeApiError {
       error.message,
       parseRetryAfterMs(error.headers),
     );
+  }
+  // Above the APIError branch on purpose: APIConnectionTimeoutError extends
+  // APIConnectionError extends APIError, so the generic branch would swallow
+  // both and this kind would be unreachable. One check covers the timeout too.
+  if (error instanceof Anthropic.APIConnectionError) {
+    return new ClaudeApiError("connection", error.message);
   }
   if (error instanceof Anthropic.APIError) {
     return new ClaudeApiError("api", error.message);

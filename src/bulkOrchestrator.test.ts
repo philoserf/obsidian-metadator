@@ -10,6 +10,7 @@ const mockCreate = mock();
 // would hand the stub to bulkGenerate.test.ts as well.
 mock.module("@anthropic-ai/sdk", () => {
   class APIError extends Error {}
+  class APIConnectionError extends APIError {}
   class AuthenticationError extends Error {}
   class RateLimitError extends Error {
     status = 429;
@@ -23,6 +24,7 @@ mock.module("@anthropic-ai/sdk", () => {
     static RateLimitError = RateLimitError;
     static InternalServerError = InternalServerError;
     static APIError = APIError;
+    static APIConnectionError = APIConnectionError;
   }
   return { default: Anthropic };
 });

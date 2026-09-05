@@ -32,6 +32,11 @@ class MockInternalServerError extends Error {
 class MockAPIError extends Error {
   name = "APIError";
 }
+// Mirrors the SDK: APIConnectionTimeoutError extends APIConnectionError
+// extends APIError, so classifyError must test this one first.
+class MockAPIConnectionError extends MockAPIError {
+  name = "APIConnectionError";
+}
 
 const mockCreate = mock();
 
@@ -42,6 +47,7 @@ mock.module("@anthropic-ai/sdk", () => {
     static RateLimitError = MockRateLimitError;
     static InternalServerError = MockInternalServerError;
     static APIError = MockAPIError;
+    static APIConnectionError = MockAPIConnectionError;
   }
   return { default: Anthropic };
 });
@@ -527,5 +533,38 @@ describe("truncated responses (#174)", () => {
 
     const result = await callClaudeForMetadata("system", "user", settings);
     expect(result.tags).toBe("ai");
+  });
+});
+
+describe("connection error classification (#180)", () => {
+  test("a connection error is its own kind, not generic api", async () => {
+    // The trap this guards: APIConnectionError extends APIError, so a
+    // classifier that tests APIError first makes this kind unreachable.
+    mockCreate.mockRejectedValueOnce(
+      new MockAPIConnectionError("Connection error."),
+    );
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "connection" });
+  });
+
+  test("a timeout subclass classifies as connection too", async () => {
+    class MockTimeout extends MockAPIConnectionError {
+      name = "APIConnectionTimeoutError";
+    }
+    mockCreate.mockRejectedValueOnce(new MockTimeout("Request timed out."));
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "connection" });
+  });
+
+  test("a plain API error is still api", async () => {
+    mockCreate.mockRejectedValueOnce(new MockAPIError("bad request"));
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "api" });
   });
 });

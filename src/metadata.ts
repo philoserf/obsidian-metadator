@@ -34,6 +34,12 @@ function notifyApiError(error: unknown): void {
           8000,
         );
         return;
+      case "connection":
+        new Notice(
+          "Could not reach the API. Check your network connection and try again.",
+          8000,
+        );
+        return;
       case "api":
         new Notice(`API error: ${error.message}`, 8000);
         return;
