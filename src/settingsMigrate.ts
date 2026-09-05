@@ -1,4 +1,5 @@
 import {
+  API_KEY_MAX_LENGTH,
   areFieldNamesDistinct,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
@@ -170,6 +171,7 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     anthropicApiKey: readString(
       migrated.anthropicApiKey,
       DEFAULT_SETTINGS.anthropicApiKey,
+      { maxLength: API_KEY_MAX_LENGTH },
     ),
     // Accept any well-formed model id, not just the ones in the dropdown, so
     // a model released after this build survives a reload.

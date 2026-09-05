@@ -1,6 +1,7 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
 import {
+  API_KEY_MAX_LENGTH,
   areFieldNamesDistinct,
   DEFAULT_SETTINGS,
   isModelId,
@@ -143,6 +144,13 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           .setPlaceholder("sk-ant-...")
           .setValue(this.plugin.settings.anthropicApiKey)
           .onChange((value) => {
+            if (value.length > API_KEY_MAX_LENGTH) {
+              new Notice(
+                `API key cannot exceed ${API_KEY_MAX_LENGTH} characters`,
+              );
+              text.setValue(this.plugin.settings.anthropicApiKey);
+              return;
+            }
             this.plugin.settings.anthropicApiKey = value;
             save.schedule();
           });

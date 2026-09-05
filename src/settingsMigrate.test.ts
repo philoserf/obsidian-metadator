@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  API_KEY_MAX_LENGTH,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   MAX_BULK_FILES,
@@ -390,5 +391,25 @@ describe("field-name collisions (#200)", () => {
     expect(s.tagsFieldName).toBe("keywords");
     expect(s.descriptionFieldName).toBe("summary");
     expect(s.titleFieldName).toBe("headline");
+  });
+});
+
+describe("API key length (#158)", () => {
+  test("an over-long stored key falls back to the default", () => {
+    // A stray paste of a whole file was accepted and persisted.
+    expect(
+      ok({ anthropicApiKey: "x".repeat(API_KEY_MAX_LENGTH + 1) })
+        .anthropicApiKey,
+    ).toBe(DEFAULT_SETTINGS.anthropicApiKey);
+  });
+
+  test("a realistic key is kept", () => {
+    const key = `sk-ant-${"a".repeat(100)}`;
+    expect(ok({ anthropicApiKey: key }).anthropicApiKey).toBe(key);
+  });
+
+  test("a key exactly at the limit is kept", () => {
+    const key = "x".repeat(API_KEY_MAX_LENGTH);
+    expect(ok({ anthropicApiKey: key }).anthropicApiKey).toBe(key);
   });
 });

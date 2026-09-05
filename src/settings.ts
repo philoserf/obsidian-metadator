@@ -2,6 +2,15 @@ import type { TruncateMethod } from "./content/truncate";
 
 export const PROMPT_MAX_LENGTH = 1000;
 
+// Anthropic keys are "sk-ant-" plus roughly a hundred characters, so this is
+// generous while still catching a stray paste of a whole file, which was
+// otherwise accepted and persisted into data.json (#158).
+//
+// Note the key is necessarily stored in plaintext there — Obsidian has no
+// secure-credential API — and the password-style masking on the input is
+// cosmetic.
+export const API_KEY_MAX_LENGTH = 256;
+
 // Ceilings for the two numeric settings. Without them "positive integer" was
 // the only rule, so an all-digit paste became a precision-lossy double that
 // still satisfied n > 0 — and maxBulkFiles, whose whole job is to be a hard
