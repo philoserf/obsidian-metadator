@@ -2,6 +2,29 @@ import { type App, Modal } from "obsidian";
 import type { BulkHalt } from "./bulkGenerate";
 import type { FileResult } from "./metadata";
 
+// A systemic failure produces one row per file, all saying the same thing.
+// Grouping collapses that to a single line; the cap bounds what is left when
+// the failures really are distinct. Both matter because this list is built
+// synchronously on the UI thread — thousands of <li> nodes visibly stutter
+// Obsidian while the modal lays out.
+const MAX_ERROR_ROWS = 20;
+
+interface ErrorGroup {
+  reason: string;
+  paths: string[];
+}
+
+export function groupErrors(results: FileResult[]): ErrorGroup[] {
+  const byReason = new Map<string, string[]>();
+  for (const r of results) {
+    if (r.kind !== "error") continue;
+    const paths = byReason.get(r.reason);
+    if (paths) paths.push(r.file.path);
+    else byReason.set(r.reason, [r.file.path]);
+  }
+  return Array.from(byReason, ([reason, paths]) => ({ reason, paths }));
+}
+
 export interface SummaryModalInfo {
   aborted: boolean;
   halted?: BulkHalt;
@@ -66,10 +89,17 @@ export class BulkSummaryModal extends Modal {
     if (errors.length > 0) {
       contentEl.createEl("h3", { text: "Errors" });
       const errList = contentEl.createEl("ul");
-      for (const e of errors) {
-        if (e.kind === "error") {
-          errList.createEl("li", { text: `${e.file.path}: ${e.reason}` });
-        }
+      const groups = groupErrors(this.results);
+      for (const g of groups.slice(0, MAX_ERROR_ROWS)) {
+        const text =
+          g.paths.length === 1
+            ? `${g.paths[0]}: ${g.reason}`
+            : `${g.paths.length} notes: ${g.reason}`;
+        errList.createEl("li", { text });
+      }
+      const hidden = groups.length - MAX_ERROR_ROWS;
+      if (hidden > 0) {
+        errList.createEl("li", { text: `…and ${hidden} more` });
       }
     }
 
