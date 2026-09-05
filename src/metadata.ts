@@ -48,13 +48,22 @@ function notifyApiError(error: unknown): void {
   );
 }
 
-function stripSurroundingQuotes(str: string): string {
+// "Starts with a quote and ends with a quote" is not the same as "is quoted".
+// A title that merely opens and closes with quoted phrases satisfied the old
+// test and lost its outer characters: `"Hello" and "Goodbye"` became
+// `Hello" and "Goodbye`, leaving unbalanced quotes in the note (#206).
+//
+// The interior check is what separates the two cases. A genuinely wrapped
+// title has no further copy of its own delimiter inside it, so `"It's here"`
+// still unwraps — the delimiter is `"` and the interior only holds `'`.
+export function stripSurroundingQuotes(str: string): string {
   const trimmed = str.trim();
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
-    return trimmed.substring(1, trimmed.length - 1);
+  if (trimmed.length < 2) return trimmed;
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' || first === "'") && first === last) {
+    const inner = trimmed.slice(1, -1);
+    if (!inner.includes(first)) return inner;
   }
   return trimmed;
 }
