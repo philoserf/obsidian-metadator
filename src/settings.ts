@@ -39,11 +39,26 @@ export interface MetadataToolSettings {
   titlePrompt: string;
 }
 
+// Models offered in the settings dropdown. This list is a convenience, not a
+// constraint: anthropicModel accepts any well-formed model id (see
+// isModelId), so a model released after this build can be typed in without a
+// code change.
 export const VALID_MODEL_OPTIONS = [
   "claude-sonnet-5",
   "claude-opus-5",
+  "claude-fable-5-1",
   "claude-haiku-4-5",
 ] as const;
+
+// Shape of an Anthropic model id, deliberately loose. A well-formed but
+// unknown id reaches the API and fails there with a clear error, which is a
+// better outcome than silently resetting the user's choice to the default.
+const MODEL_ID_PATTERN = /^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MODEL_ID_MAX_LENGTH = 100;
+
+export function isModelId(value: string): boolean {
+  return value.length <= MODEL_ID_MAX_LENGTH && MODEL_ID_PATTERN.test(value);
+}
 
 export const MODEL_OPTION_LABELS: Record<
   (typeof VALID_MODEL_OPTIONS)[number],
@@ -51,6 +66,7 @@ export const MODEL_OPTION_LABELS: Record<
 > = {
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-opus-5": "Claude Opus 5",
+  "claude-fable-5-1": "Claude Fable 5.1",
   "claude-haiku-4-5": "Claude Haiku 4.5",
 };
 

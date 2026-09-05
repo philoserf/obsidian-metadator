@@ -186,14 +186,15 @@ describe("migrateSettings", () => {
 
   test("does not run migrations when input is already at current version", () => {
     // claude-sonnet-4-5-20250929 is the *old* identifier; if the v0→v1
-    // migration ran, it would be rewritten. Since the input already declares
-    // schemaVersion=current, the migration is skipped — and then the
-    // trust-boundary check rejects the unknown model and falls back to default.
+    // migration ran, it would be rewritten to a current one. Since the input
+    // already declares schemaVersion=current, the migration is skipped and the
+    // value survives untouched — the trust-boundary check only enforces the
+    // shape of a model id, not membership in the current lineup.
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       anthropicModel: "claude-sonnet-4-5-20250929",
     });
-    expect(settings.anthropicModel).toBe(DEFAULT_SETTINGS.anthropicModel);
+    expect(settings.anthropicModel).toBe("claude-sonnet-4-5-20250929");
   });
 
   test("returns kind:future and warns when schemaVersion is newer than this plugin", () => {
@@ -311,5 +312,35 @@ describe("applyMigrations", () => {
     const result = applyMigrations({}, 1, migrations, 1);
     expect(ran).toEqual([]);
     expect(result.schemaVersion).toBe(1);
+  });
+});
+
+describe("model id validation", () => {
+  test("keeps a well-formed model id that predates this build's dropdown", () => {
+    expect(
+      ok({ schemaVersion: 2, anthropicModel: "claude-fable-5-2" })
+        .anthropicModel,
+    ).toBe("claude-fable-5-2");
+  });
+
+  test("keeps the newly offered fable model", () => {
+    expect(
+      ok({ schemaVersion: 2, anthropicModel: "claude-fable-5-1" })
+        .anthropicModel,
+    ).toBe("claude-fable-5-1");
+  });
+
+  test("falls back to the default for malformed model ids", () => {
+    for (const bad of [
+      "",
+      "gpt-4",
+      "Claude-Opus-5",
+      "claude-opus-5; drop table",
+      `claude-${"x".repeat(200)}`,
+    ]) {
+      expect(ok({ schemaVersion: 2, anthropicModel: bad }).anthropicModel).toBe(
+        DEFAULT_SETTINGS.anthropicModel,
+      );
+    }
   });
 });

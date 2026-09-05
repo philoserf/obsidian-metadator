@@ -1,6 +1,8 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
 import {
+  DEFAULT_SETTINGS,
+  isModelId,
   MODEL_OPTION_LABELS,
   PROMPT_MAX_LENGTH,
   TRUNCATE_METHOD_LABELS,
@@ -53,19 +55,44 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         text.inputEl.type = "password";
       });
 
+    // A text input backed by a datalist rather than a dropdown: the known
+    // models autocomplete, but a model released after this build can be typed
+    // in without waiting for a plugin update.
+    const modelListId = "metadator-model-options";
+    const modelList = containerEl.createEl("datalist");
+    modelList.id = modelListId;
+    for (const model of VALID_MODEL_OPTIONS) {
+      const option = modelList.createEl("option");
+      option.value = model;
+      option.label = MODEL_OPTION_LABELS[model];
+    }
+
     new Setting(containerEl)
       .setName("Model")
-      .setDesc("Model to use for metadata generation")
-      .addDropdown((dropdown) => {
-        for (const model of VALID_MODEL_OPTIONS) {
-          dropdown.addOption(model, MODEL_OPTION_LABELS[model]);
-        }
-        dropdown
-          .setValue(this.plugin.settings.anthropicModel)
-          .onChange(async (value) => {
-            this.plugin.settings.anthropicModel = value;
-            await this.plugin.saveSettings();
-          });
+      .setDesc(
+        "Model to use for metadata generation. Pick a suggestion or type any Anthropic model id.",
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder(DEFAULT_SETTINGS.anthropicModel)
+          .setValue(this.plugin.settings.anthropicModel);
+        text.inputEl.setAttribute("list", modelListId);
+        // Commit on blur rather than per keystroke: every prefix of a model id
+        // ("claude-fable-5-") is itself malformed, so validating as the user
+        // types would reject the value on the way to a good one.
+        text.inputEl.addEventListener("blur", async () => {
+          const model = text.getValue().trim();
+          if (model === this.plugin.settings.anthropicModel) return;
+          if (!isModelId(model)) {
+            new Notice(
+              "Model must be an Anthropic model id, e.g. claude-sonnet-5",
+            );
+            text.setValue(this.plugin.settings.anthropicModel);
+            return;
+          }
+          this.plugin.settings.anthropicModel = model;
+          await this.plugin.saveSettings();
+        });
       });
 
     new Setting(containerEl)

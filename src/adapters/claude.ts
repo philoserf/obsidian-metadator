@@ -4,8 +4,26 @@ import type { MetadataToolSettings } from "../settings";
 // Output budget for the model's tool-use response (tags + description + title).
 // Distinct from settings.contentTokenLimit, which bounds the input note content.
 const MAX_RESPONSE_TOKENS = 2048;
+// Models on the auto-tool-choice path think before answering, and thinking
+// tokens count against max_tokens. 2048 leaves too little room for the tool
+// call to land, so give that path its own larger budget.
+const MAX_RESPONSE_TOKENS_AUTO_TOOL_CHOICE = 8192;
 const REQUEST_TIMEOUT_MS = 60_000;
 const TOOL_NAME = "submit_metadata";
+
+// Model families that reject a forced tool_choice ({type: "tool"}) with a 400.
+// Claude Fable 5.1 dropped forced tool use; match the whole family by prefix
+// so later releases (fable 5.2, mythos, ...) are handled without a code
+// change. These models get tool_choice "auto" plus an explicit instruction.
+const AUTO_TOOL_CHOICE_FAMILIES = /^claude-(?:fable|mythos)-/;
+
+// Appended to the system prompt on the auto path, where nothing but the
+// instruction makes the model call the tool.
+const TOOL_CALL_INSTRUCTION = `Respond only by calling the ${TOOL_NAME} tool. Do not write a text reply.`;
+
+export function usesAutoToolChoice(model: string): boolean {
+  return AUTO_TOOL_CHOICE_FAMILIES.test(model);
+}
 
 export type ClaudeErrorKind =
   | "auth"
@@ -173,17 +191,31 @@ export async function callClaudeForMetadata(
   });
 
   const tool = buildToolSchema(settings.enableTitle);
+  const autoToolChoice = usesAutoToolChoice(settings.anthropicModel);
 
   let message: Awaited<ReturnType<typeof anthropic.messages.create>>;
   try {
     message = await anthropic.messages.create(
       {
         model: settings.anthropicModel,
-        max_tokens: MAX_RESPONSE_TOKENS,
-        system,
+        max_tokens: autoToolChoice
+          ? MAX_RESPONSE_TOKENS_AUTO_TOOL_CHOICE
+          : MAX_RESPONSE_TOKENS,
+        system: autoToolChoice
+          ? `${system}\n\n${TOOL_CALL_INSTRUCTION}`
+          : system,
         messages: [{ role: "user", content: userMessage }],
         tools: [tool],
-        tool_choice: { type: "tool", name: TOOL_NAME },
+        // Forced tool use is a 400 on the auto families; keep it everywhere
+        // else, where it is the stronger guarantee.
+        tool_choice: autoToolChoice
+          ? { type: "auto" }
+          : { type: "tool", name: TOOL_NAME },
+        // Metadata extraction needs no deep reasoning; low effort keeps the
+        // thinking these models always do from crowding out the tool call.
+        ...(autoToolChoice
+          ? { output_config: { effort: "low" as const } }
+          : {}),
       },
       {
         timeout: REQUEST_TIMEOUT_MS,

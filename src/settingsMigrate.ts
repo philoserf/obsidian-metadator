@@ -1,14 +1,12 @@
 import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
+  isModelId,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
-  VALID_MODEL_OPTIONS,
   VALID_TRUNCATE_METHOD_OPTIONS,
   VALID_UPDATE_METHOD_OPTIONS,
 } from "./settings";
-
-const VALID_MODELS = new Set<string>(VALID_MODEL_OPTIONS);
 
 function readString(
   value: unknown,
@@ -163,7 +161,9 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       migrated.anthropicApiKey,
       DEFAULT_SETTINGS.anthropicApiKey,
     ),
-    anthropicModel: VALID_MODELS.has(anthropicModel)
+    // Accept any well-formed model id, not just the ones in the dropdown, so
+    // a model released after this build survives a reload.
+    anthropicModel: isModelId(anthropicModel)
       ? anthropicModel
       : DEFAULT_SETTINGS.anthropicModel,
     tagsFieldName: readString(

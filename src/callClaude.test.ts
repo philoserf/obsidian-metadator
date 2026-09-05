@@ -46,8 +46,12 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const { callClaudeForMetadata, ClaudeApiError, parseRetryAfterMs } =
-  await import("./adapters/claude");
+const {
+  callClaudeForMetadata,
+  ClaudeApiError,
+  parseRetryAfterMs,
+  usesAutoToolChoice,
+} = await import("./adapters/claude");
 
 const settings = {
   ...DEFAULT_SETTINGS,
@@ -414,5 +418,54 @@ describe("parseRetryAfterMs", () => {
     expect(parseRetryAfterMs(makeHeaders({ "retry-after": "-1" }))).toBe(
       undefined,
     );
+  });
+});
+
+describe("tool_choice by model family", () => {
+  function lastRequest(): Record<string, unknown> {
+    const call = mockCreate.mock.calls.at(-1);
+    return (call as unknown[])[0] as Record<string, unknown>;
+  }
+
+  test("forces the metadata tool on models that support it", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+    );
+    await callClaudeForMetadata("system prompt", "u", {
+      ...settings,
+      anthropicModel: "claude-sonnet-5",
+    });
+
+    const req = lastRequest();
+    expect(req.tool_choice).toEqual({ type: "tool", name: "submit_metadata" });
+    expect(req.system).toBe("system prompt");
+    expect(req.output_config).toBeUndefined();
+  });
+
+  test("uses auto tool_choice plus an instruction on the fable family", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+    );
+    await callClaudeForMetadata("system prompt", "u", {
+      ...settings,
+      anthropicModel: "claude-fable-5-1",
+    });
+
+    const req = lastRequest();
+    expect(req.tool_choice).toEqual({ type: "auto" });
+    expect(req.system).toContain("system prompt");
+    expect(req.system).toContain("submit_metadata");
+    expect(req.output_config).toEqual({ effort: "low" });
+    // Thinking tokens share the output budget, so this path needs more room.
+    expect(req.max_tokens).toBeGreaterThan(2048);
+  });
+
+  test("recognizes unreleased members of the auto families", () => {
+    expect(usesAutoToolChoice("claude-fable-5-2")).toBe(true);
+    expect(usesAutoToolChoice("claude-fable-6")).toBe(true);
+    expect(usesAutoToolChoice("claude-mythos-5-1")).toBe(true);
+    expect(usesAutoToolChoice("claude-opus-5")).toBe(false);
+    expect(usesAutoToolChoice("claude-sonnet-5")).toBe(false);
+    expect(usesAutoToolChoice("claude-haiku-4-5")).toBe(false);
   });
 });
