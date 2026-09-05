@@ -66,7 +66,7 @@ export async function runBulkForFolder(
   progress.open();
 
   try {
-    const results = await runBulk(app, willChange, settings, {
+    const { results, halted } = await runBulk(app, willChange, settings, {
       onProgress: (p) => progress.setProgress(p),
       shouldAbort: () =>
         (opts.shouldAbort?.() ?? false) || progress.isAborted(),
@@ -79,7 +79,11 @@ export async function runBulkForFolder(
       runController.signal.aborted;
     progress.finish();
 
-    new BulkSummaryModal(app, results, aborted, willChange.length).open();
+    new BulkSummaryModal(app, results, {
+      aborted,
+      halted,
+      totalPlanned: willChange.length,
+    }).open();
   } finally {
     // Covers the path where runBulk throws, which would otherwise leave the
     // progress modal open with no summary behind it. finish() is idempotent, so

@@ -29,6 +29,7 @@ const {
   computeDelayMs,
   runBulk,
   DEFAULT_RETRY_DELAYS_MS,
+  CONSECUTIVE_FAILURE_LIMIT,
 } = await import("./bulkGenerate");
 const { ClaudeApiError } = await import("./adapters/claude");
 
@@ -260,7 +261,7 @@ describe("runBulk", () => {
     const files = [file("n1.md"), file("n2.md"), file("n3.md")];
     const app = makeApp();
     const progressCalls: number[] = [];
-    const results = await runBulk(app, files, settings(), {
+    const { results } = await runBulk(app, files, settings(), {
       onProgress: (p: { current: number }) => progressCalls.push(p.current),
     });
     expect(results).toHaveLength(3);
@@ -284,13 +285,95 @@ describe("runBulk", () => {
     const files = [file("n1.md"), file("n2.md"), file("n3.md")];
     const app = makeApp();
     let processed = 0;
-    const results = await runBulk(app, files, settings(), {
+    const { results } = await runBulk(app, files, settings(), {
       onProgress: () => {
         processed++;
       },
       shouldAbort: () => processed >= 2,
     });
     expect(results.length).toBeLessThan(3);
+  });
+
+  test("halts the whole run on the first auth error", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      AuthenticationError: new (msg: string) => Error;
+    };
+    mockCreate.mockRejectedValue(new Anthropic.AuthenticationError("401"));
+    const files = [file("n1.md"), file("n2.md"), file("n3.md")];
+
+    const { results, halted } = await runBulk(makeApp(), files, settings(), {
+      retryDelaysMs: FAST_RETRIES,
+    });
+
+    // A rejected key rejects every remaining file too, so one round-trip is
+    // all the evidence needed — the other two notes are never requested.
+    expect(halted?.kind).toBe("auth");
+    expect(results).toHaveLength(1);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  test("halts after CONSECUTIVE_FAILURE_LIMIT identical non-retryable errors", async () => {
+    mockCreate.mockRejectedValue(new Error("boom"));
+    const files = Array.from({ length: 10 }, (_, i) => file(`n${i}.md`));
+
+    const { results, halted } = await runBulk(makeApp(), files, settings(), {
+      retryDelaysMs: FAST_RETRIES,
+    });
+
+    expect(halted?.consecutive).toBe(CONSECUTIVE_FAILURE_LIMIT);
+    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+  });
+
+  test("a success resets the consecutive-failure streak", async () => {
+    const ok = {
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d", title: "T" },
+        },
+      ],
+    };
+    // Four failures, a success, then four more: never five in a row, so the
+    // run must reach the end rather than halting.
+    mockCreate
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(ok)
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"));
+    const files = Array.from({ length: 9 }, (_, i) => file(`n${i}.md`));
+
+    const { results, halted } = await runBulk(makeApp(), files, settings(), {
+      retryDelaysMs: FAST_RETRIES,
+    });
+
+    expect(halted).toBeUndefined();
+    expect(results).toHaveLength(9);
+  });
+
+  test("exhausted rate limits do not count toward the halt streak", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      RateLimitError: new (msg: string) => Error;
+    };
+    mockCreate.mockRejectedValue(new Anthropic.RateLimitError("429"));
+    const files = Array.from({ length: 8 }, (_, i) => file(`n${i}.md`));
+
+    const { results, halted } = await runBulk(makeApp(), files, settings(), {
+      retryDelaysMs: [0],
+    });
+
+    // Throttling is a "try later", not a broken configuration. Every file is
+    // still attempted; the retry loop already backed each one off.
+    expect(halted).toBeUndefined();
+    expect(results).toHaveLength(8);
   });
 
   test("per-file error isolation — one failure does not abort batch", async () => {
@@ -318,7 +401,7 @@ describe("runBulk", () => {
       });
     const files = [file("n1.md"), file("n2.md"), file("n3.md")];
     const app = makeApp();
-    const results = await runBulk(app, files, settings());
+    const { results } = await runBulk(app, files, settings());
     expect(results).toHaveLength(3);
     expect(results[0].kind).toBe("changed");
     expect(results[1].kind).toBe("error");
@@ -343,7 +426,7 @@ describe("runBulk", () => {
     });
     const files = [file("n1.md")];
     const app = makeApp();
-    const results = await runBulk(app, files, settings(), {
+    const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: FAST_RETRIES,
     });
     expect(results[0].kind).toBe("changed");
@@ -359,7 +442,7 @@ describe("runBulk", () => {
     mockCreate.mockRejectedValue(rateLimit);
     const files = [file("n1.md")];
     const app = makeApp();
-    const results = await runBulk(app, files, settings(), {
+    const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: FAST_RETRIES,
     });
     expect(results[0].kind).toBe("error");
@@ -369,7 +452,7 @@ describe("runBulk", () => {
   test("skips files missing API key in settings", async () => {
     const files = [file("n1.md")];
     const app = makeApp();
-    const results = await runBulk(
+    const { results } = await runBulk(
       app,
       files,
       settings({ anthropicApiKey: "" }),
@@ -385,7 +468,7 @@ describe("runBulk", () => {
     const files = [file("n1.md")];
     const app = makeApp();
     let aborted = false;
-    const results = await runBulk(app, files, settings(), {
+    const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: [5_000],
       shouldAbort: () => aborted,
       onProgress: () => {
@@ -421,7 +504,7 @@ describe("runBulk", () => {
     const files = [file("n1.md")];
     const app = makeApp();
     const start = Date.now();
-    const results = await runBulk(app, files, settings(), {
+    const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: [5_000],
       shouldAbort: () => aborted,
     });
@@ -450,7 +533,7 @@ describe("runBulk", () => {
     setTimeout(() => controller.abort("plugin_unloaded"), 0);
 
     const start = Date.now();
-    const results = await run;
+    const { results } = await run;
     const elapsed = Date.now() - start;
 
     expect(results).toHaveLength(1);
@@ -490,7 +573,7 @@ describe("runBulk", () => {
     const controller = new AbortController();
     controller.abort("plugin_unloaded");
 
-    const results = await runBulk(app, files, settings(), {
+    const { results } = await runBulk(app, files, settings(), {
       signal: controller.signal,
     });
 

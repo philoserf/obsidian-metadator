@@ -1,5 +1,5 @@
 import { type App, TFile, TFolder } from "obsidian";
-import { ClaudeApiError } from "./adapters/claude";
+import { ClaudeApiError, type ClaudeErrorKind } from "./adapters/claude";
 import { logDebug } from "./logger";
 import {
   type FileResult,
@@ -68,6 +68,31 @@ export interface RunBulkOptions {
   retryDelaysMs?: readonly number[];
   signal?: AbortSignal;
   random?: () => number;
+}
+
+// A run that fails this many times in a row with the same non-retryable kind
+// is failing systemically, not per-file. Retryable kinds (rate_limit,
+// overloaded) never count toward it — those are expected and already backed off.
+export const CONSECUTIVE_FAILURE_LIMIT = 5;
+
+// Why a run stopped before reaching every file. "auth" is decided on the first
+// occurrence: a rejected key rejects every subsequent file too, so one
+// round-trip is all the evidence needed. Everything else needs
+// CONSECUTIVE_FAILURE_LIMIT in a row, because a single "api" or "unknown" is
+// just as likely to be one bad note as a broken run.
+export interface BulkHalt {
+  kind: ClaudeErrorKind;
+  message: string;
+  consecutive: number;
+}
+
+export interface BulkRunOutcome {
+  results: FileResult[];
+  halted?: BulkHalt;
+}
+
+function errorKindOf(error: unknown): ClaudeErrorKind | undefined {
+  return error instanceof ClaudeApiError ? error.kind : undefined;
 }
 
 function isRateLimitOrOverload(error: unknown): boolean {
@@ -175,10 +200,12 @@ export async function runBulk(
     signal,
     random,
   }: RunBulkOptions = {},
-): Promise<FileResult[]> {
+): Promise<BulkRunOutcome> {
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const results: FileResult[] = [];
   let errors = 0;
+  let streakKind: ClaudeErrorKind | undefined;
+  let streak = 0;
 
   for (let i = 0; i < files.length; i++) {
     if (shouldAbort?.() || signal?.aborted) break;
@@ -194,8 +221,38 @@ export async function runBulk(
       random,
     );
     results.push(result);
-    if (result.kind === "error") errors++;
+    if (result.kind !== "error") {
+      streakKind = undefined;
+      streak = 0;
+      continue;
+    }
+    errors++;
+
+    const kind = errorKindOf(result.error);
+    if (kind === undefined || isRateLimitOrOverload(result.error)) {
+      // Not a systemic signal: a non-Claude error (a frontmatter write that
+      // threw, say) or a throttle the retry loop already exhausted.
+      streakKind = undefined;
+      streak = 0;
+      continue;
+    }
+    streak = kind === streakKind ? streak + 1 : 1;
+    streakKind = kind;
+
+    if (kind === "auth" || streak >= CONSECUTIVE_FAILURE_LIMIT) {
+      return {
+        results,
+        halted: {
+          kind,
+          message:
+            result.error instanceof Error
+              ? result.error.message
+              : String(result.error),
+          consecutive: streak,
+        },
+      };
+    }
   }
 
-  return results;
+  return { results };
 }
