@@ -70,9 +70,11 @@ export interface RunBulkOptions {
   random?: () => number;
 }
 
-// A run that fails this many times in a row with the same non-retryable kind
-// is failing systemically, not per-file. Retryable kinds (rate_limit,
-// overloaded) never count toward it — those are expected and already backed off.
+// A run that fails this many times in a row with the same kind is failing
+// systemically, not per-file. Retryable kinds (rate_limit, overloaded,
+// connection) count toward it too, but only once runFileWithRetry has
+// exhausted the whole backoff schedule for that file — by then they are a
+// proven ceiling, not a blip.
 export const CONSECUTIVE_FAILURE_LIMIT = 5;
 
 // Why a run stopped before reaching every file. "auth" is decided on the first
@@ -100,11 +102,18 @@ function haltKindOf(error: unknown): HaltKind {
   return error instanceof ClaudeApiError ? error.kind : "other";
 }
 
-function isRateLimitOrOverload(error: unknown): boolean {
-  return (
-    error instanceof ClaudeApiError &&
-    (error.kind === "rate_limit" || error.kind === "overloaded")
-  );
+// Kinds worth another attempt: server-side throttling, and the network blips
+// and timeouts that used to fail a file outright on the first hiccup (#180).
+// Typed as the kind union rather than plain strings so renaming a
+// ClaudeErrorKind can't silently drop a kind out of the retry set.
+const RETRYABLE_KINDS: ReadonlySet<ClaudeErrorKind> = new Set<ClaudeErrorKind>([
+  "rate_limit",
+  "overloaded",
+  "connection",
+]);
+
+function isRetryable(error: unknown): boolean {
+  return error instanceof ClaudeApiError && RETRYABLE_KINDS.has(error.kind);
 }
 
 // Cap server-provided Retry-After at this multiple of the scheduled base
@@ -169,7 +178,7 @@ async function runFileWithRetry(
       bulk: true,
       signal,
     });
-    if (r.kind !== "error" || !isRateLimitOrOverload(r.error)) return r;
+    if (r.kind !== "error" || !isRetryable(r.error)) return r;
     if (attempt === retryDelaysMs.length) return r;
     const delayMs = computeDelayMs(retryDelaysMs[attempt], r.error, random);
     if (settings.debugLogging) {

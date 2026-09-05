@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_SETTINGS } from "./settings";
 
 // Mock error classes matching the Anthropic SDK shape
@@ -32,6 +32,11 @@ class MockInternalServerError extends Error {
 class MockAPIError extends Error {
   name = "APIError";
 }
+// Mirrors the SDK: APIConnectionTimeoutError extends APIConnectionError
+// extends APIError, so classifyError must test this one first.
+class MockAPIConnectionError extends MockAPIError {
+  name = "APIConnectionError";
+}
 
 const mockCreate = mock();
 
@@ -42,6 +47,7 @@ mock.module("@anthropic-ai/sdk", () => {
     static RateLimitError = MockRateLimitError;
     static InternalServerError = MockInternalServerError;
     static APIError = MockAPIError;
+    static APIConnectionError = MockAPIConnectionError;
   }
   return { default: Anthropic };
 });
@@ -50,6 +56,7 @@ const {
   callClaudeForMetadata,
   ClaudeApiError,
   parseRetryAfterMs,
+  resetClientCache,
   usesAutoToolChoice,
 } = await import("./adapters/claude");
 
@@ -57,6 +64,13 @@ const settings = {
   ...DEFAULT_SETTINGS,
   anthropicApiKey: "sk-test-key",
 };
+// claude.ts caches one Anthropic client per API key for the whole run, while
+// mock.module is per-file. These suites use colliding keys, so without this a
+// client built under another file's mocked SDK gets served here and its
+// messages.create belongs to that file's mock.
+beforeEach(() => {
+  resetClientCache();
+});
 
 function toolUseResponse(input: Record<string, unknown>) {
   return {
@@ -467,5 +481,151 @@ describe("tool_choice by model family", () => {
     expect(usesAutoToolChoice("claude-opus-5")).toBe(false);
     expect(usesAutoToolChoice("claude-sonnet-5")).toBe(false);
     expect(usesAutoToolChoice("claude-haiku-4-5")).toBe(false);
+  });
+});
+
+describe("truncated responses (#174)", () => {
+  test("rejects a response stopped at the token limit", async () => {
+    // The tool call is otherwise well formed — this is exactly the case that
+    // slipped through, since validateMetadataInput only checks types.
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: "max_tokens",
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: {
+            tags: "ai,testing",
+            description: "A description cut off mid-sen",
+            title: "A Title",
+          },
+        },
+      ],
+    });
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "api" });
+  });
+
+  test("a normal stop_reason passes through", async () => {
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: "tool_use",
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "ai", description: "d", title: "T" },
+        },
+      ],
+    });
+
+    const result = await callClaudeForMetadata("system", "user", settings);
+    expect(result.description).toBe("d");
+  });
+
+  test("an absent stop_reason is not treated as truncation", async () => {
+    // No existing fixture sets stop_reason, so undefined has to stay valid.
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "ai", description: "d", title: "T" },
+        },
+      ],
+    });
+
+    const result = await callClaudeForMetadata("system", "user", settings);
+    expect(result.tags).toBe("ai");
+  });
+});
+
+describe("connection error classification (#180)", () => {
+  test("a connection error is its own kind, not generic api", async () => {
+    // The trap this guards: APIConnectionError extends APIError, so a
+    // classifier that tests APIError first makes this kind unreachable.
+    mockCreate.mockRejectedValueOnce(
+      new MockAPIConnectionError("Connection error."),
+    );
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "connection" });
+  });
+
+  test("a timeout subclass classifies as connection too", async () => {
+    class MockTimeout extends MockAPIConnectionError {
+      name = "APIConnectionTimeoutError";
+    }
+    mockCreate.mockRejectedValueOnce(new MockTimeout("Request timed out."));
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "connection" });
+  });
+
+  test("a plain API error is still api", async () => {
+    mockCreate.mockRejectedValueOnce(new MockAPIError("bad request"));
+
+    await expect(
+      callClaudeForMetadata("system", "user", settings),
+    ).rejects.toMatchObject({ kind: "api" });
+  });
+});
+
+describe("client caching (#207)", () => {
+  test("reuses one client across calls with the same key", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    let constructed = 0;
+    const Counting = new Proxy(Anthropic as never, {
+      construct(target, args) {
+        constructed++;
+        return Reflect.construct(target as never, args);
+      },
+    });
+    mock.module("@anthropic-ai/sdk", () => ({ default: Counting }));
+    resetClientCache();
+
+    // Once-per-call rather than a sticky default, so this queue cannot leak
+    // into any test added after this one.
+    const ok = () =>
+      toolUseResponse({ tags: "a", description: "d", title: "T" });
+    mockCreate
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok());
+    await callClaudeForMetadata("system", "user", settings);
+    await callClaudeForMetadata("system", "user", settings);
+    await callClaudeForMetadata("system", "user", settings);
+
+    expect(constructed).toBe(1);
+  });
+
+  test("rebuilds when the API key changes, so a settings edit takes effect", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const keys: string[] = [];
+    const Recording = new Proxy(Anthropic as never, {
+      construct(target, args) {
+        keys.push((args[0] as { apiKey: string }).apiKey);
+        return Reflect.construct(target as never, args);
+      },
+    });
+    mock.module("@anthropic-ai/sdk", () => ({ default: Recording }));
+    resetClientCache();
+
+    const ok = () =>
+      toolUseResponse({ tags: "a", description: "d", title: "T" });
+    mockCreate.mockResolvedValueOnce(ok()).mockResolvedValueOnce(ok());
+    await callClaudeForMetadata("system", "user", settings);
+    await callClaudeForMetadata("system", "user", {
+      ...settings,
+      anthropicApiKey: "sk-different",
+    });
+
+    expect(keys).toEqual(["sk-test-key", "sk-different"]);
   });
 });

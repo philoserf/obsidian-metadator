@@ -6,12 +6,16 @@ import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 const mockCreate = mock();
 
 mock.module("@anthropic-ai/sdk", () => {
+  class APIError extends Error {}
   class Anthropic {
     messages = { create: mockCreate };
     static AuthenticationError = class extends Error {};
     static RateLimitError = class extends Error {};
     static InternalServerError = class extends Error {};
-    static APIError = class extends Error {};
+    static APIError = APIError;
+    // classifyError checks this before APIError; leaving it undefined makes
+    // `instanceof undefined` throw from inside the adapter.
+    static APIConnectionError = class extends APIError {};
   }
   return { default: Anthropic };
 });
@@ -20,6 +24,14 @@ mock.module("@anthropic-ai/sdk", () => {
 const { generateMetadata, generateMetadataForFile } = await import(
   "./metadata"
 );
+const { resetClientCache } = await import("./adapters/claude");
+// claude.ts caches one Anthropic client per API key for the whole run, while
+// mock.module is per-file. These suites use colliding keys, so without this a
+// client built under another file's mocked SDK gets served here and its
+// messages.create belongs to that file's mock.
+beforeEach(() => {
+  resetClientCache();
+});
 
 function toolUseResponse(input: Record<string, unknown>) {
   return {

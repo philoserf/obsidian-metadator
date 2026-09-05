@@ -12,6 +12,7 @@ mock.module("@anthropic-ai/sdk", () => {
     status = 529;
   }
   class APIError extends Error {}
+  class APIConnectionError extends APIError {}
   class AuthenticationError extends Error {}
   class Anthropic {
     messages = { create: mockCreate };
@@ -19,6 +20,7 @@ mock.module("@anthropic-ai/sdk", () => {
     static RateLimitError = RateLimitError;
     static InternalServerError = InternalServerError;
     static APIError = APIError;
+    static APIConnectionError = APIConnectionError;
   }
   return { default: Anthropic };
 });
@@ -31,7 +33,14 @@ const {
   DEFAULT_RETRY_DELAYS_MS,
   CONSECUTIVE_FAILURE_LIMIT,
 } = await import("./bulkGenerate");
-const { ClaudeApiError } = await import("./adapters/claude");
+const { ClaudeApiError, resetClientCache } = await import("./adapters/claude");
+// claude.ts caches one Anthropic client per API key for the whole run, while
+// mock.module is per-file. These suites use colliding keys, so without this a
+// client built under another file's mocked SDK gets served here and its
+// messages.create belongs to that file's mock.
+beforeEach(() => {
+  resetClientCache();
+});
 
 // Zero delays in tests to keep the suite fast; production uses DEFAULT_RETRY_DELAYS_MS.
 const FAST_RETRIES = [0, 0, 0];
@@ -339,6 +348,59 @@ describe("runBulk", () => {
       retryDelaysMs: FAST_RETRIES,
     });
     expect(isInFlight("n1.md")).toBe(false);
+  });
+
+  test("retries a connection error instead of failing the file outright", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      APIConnectionError: new (msg: string) => Error;
+    };
+    // A Wi-Fi blip used to fail the file permanently with zero retries.
+    mockCreate
+      .mockRejectedValueOnce(
+        new Anthropic.APIConnectionError("Connection error."),
+      )
+      .mockResolvedValueOnce({
+        content: [
+          {
+            type: "tool_use",
+            id: "tu_1",
+            name: "submit_metadata",
+            input: { tags: "a", description: "d", title: "T" },
+          },
+        ],
+      });
+
+    const { results, halted } = await runBulk(
+      makeApp(),
+      [file("n1.md")],
+      settings(),
+      { retryDelaysMs: FAST_RETRIES },
+    );
+
+    expect(results[0].kind).toBe("changed");
+    expect(halted).toBeUndefined();
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  test("a connection error that never clears still halts the run", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      APIConnectionError: new (msg: string) => Error;
+    };
+    mockCreate.mockRejectedValue(
+      new Anthropic.APIConnectionError("Connection error."),
+    );
+    const files = Array.from({ length: 12 }, (_, i) => file(`n${i}.md`));
+
+    const { results, halted } = await runBulk(makeApp(), files, settings(), {
+      retryDelaysMs: FAST_RETRIES,
+    });
+
+    // Same reasoning as an exhausted rate limit: it only reaches the streak
+    // after the whole backoff schedule failed, so five in a row is a verdict.
+    expect(halted?.kind).toBe("connection");
+    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
   });
 
   test("halts the whole run on the first auth error", async () => {

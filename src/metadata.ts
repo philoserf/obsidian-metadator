@@ -34,6 +34,12 @@ function notifyApiError(error: unknown): void {
           8000,
         );
         return;
+      case "connection":
+        new Notice(
+          "Could not reach the API. Check your network connection and try again.",
+          8000,
+        );
+        return;
       case "api":
         new Notice(`API error: ${error.message}`, 8000);
         return;
@@ -268,7 +274,11 @@ async function addMetadataWithClaude(
       )
     : await getContent(app, file, -1, "head_only");
 
-  const { system, userMessage } = buildPrompt(contentStr, settings);
+  const { system, userMessage } = buildPrompt(
+    contentStr,
+    settings,
+    `article-${requestId}`,
+  );
 
   if (settings.debugLogging) {
     logDebug({

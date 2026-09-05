@@ -35,6 +35,7 @@ export type ClaudeErrorKind =
   | "auth"
   | "rate_limit"
   | "overloaded"
+  | "connection"
   | "api"
   | "unknown";
 
@@ -124,6 +125,12 @@ function classifyError(error: unknown): ClaudeApiError {
       parseRetryAfterMs(error.headers),
     );
   }
+  // Above the APIError branch on purpose: APIConnectionTimeoutError extends
+  // APIConnectionError extends APIError, so the generic branch would swallow
+  // both and this kind would be unreachable. One check covers the timeout too.
+  if (error instanceof Anthropic.APIConnectionError) {
+    return new ClaudeApiError("connection", error.message);
+  }
   if (error instanceof Anthropic.APIError) {
     return new ClaudeApiError("api", error.message);
   }
@@ -175,18 +182,43 @@ function validateMetadataInput(
   return out;
 }
 
+// One client per API key. Constructing it per call meant a folder run built one
+// per file, and one more per retry attempt, each starting with an empty
+// connection pool — so a several-hundred-note run paid TLS setup repeatedly and
+// forfeited keep-alive reuse (#207). Keyed on the key so a settings change is
+// never served by a stale client.
+let cachedClient: { apiKey: string; client: Anthropic } | undefined;
+
+function getClient(apiKey: string): Anthropic {
+  if (cachedClient !== undefined && cachedClient.apiKey === apiKey) {
+    return cachedClient.client;
+  }
+  cachedClient = {
+    apiKey,
+    // Allowing browser compatibility mode — safe within Obsidian's Electron-controlled environment under current use cases.
+    client: new Anthropic({
+      apiKey,
+      dangerouslyAllowBrowser: true,
+      maxRetries: SDK_MAX_RETRIES,
+    }),
+  };
+  return cachedClient.client;
+}
+
+// For tests. mock.module is per-file but this module loads once, so a client
+// built under one file's mocked SDK would otherwise be served to another file
+// using the same key.
+export function resetClientCache(): void {
+  cachedClient = undefined;
+}
+
 export async function callClaudeForMetadata(
   system: string,
   userMessage: string,
   settings: MetadataToolSettings,
   options: CallClaudeOptions = {},
 ): Promise<MetadataFields> {
-  // Allowing browser compatibility mode — safe within Obsidian's Electron-controlled environment under current use cases.
-  const anthropic = new Anthropic({
-    apiKey: settings.anthropicApiKey,
-    dangerouslyAllowBrowser: true,
-    maxRetries: SDK_MAX_RETRIES,
-  });
+  const anthropic = getClient(settings.anthropicApiKey);
 
   const tool = buildToolSchema(settings.enableTitle);
   const autoToolChoice = usesAutoToolChoice(settings.anthropicModel);
@@ -223,6 +255,19 @@ export async function callClaudeForMetadata(
   } catch (error) {
     if (isAbortError(error)) throw error;
     throw classifyError(error);
+  }
+
+  // Checked before the content blocks, because a truncated tool call can still
+  // parse. validateMetadataInput only asserts the fields are strings, not that
+  // they are complete, so a description cut off mid-sentence would be written
+  // to frontmatter with nothing to signal it (#174). Not retryable: the same
+  // prompt overflows the same way, and after five in a row the bulk halt tells
+  // the user this is a configuration problem rather than a blip.
+  if (message.stop_reason === "max_tokens") {
+    throw new ClaudeApiError(
+      "api",
+      "Response was truncated at the token limit; the generated metadata would have been incomplete",
+    );
   }
 
   if (!Array.isArray(message.content)) {
