@@ -1,5 +1,73 @@
 # Changelog
 
+## 2.5.0
+
+Six milestones of code-audit work: 44 issues from the 2.4.0 audit, plus the default prompts and two issues found while reviewing the fixes.
+
+### Added
+
+- **Bulk runs now stop when the failure is systemic rather than per-file.** Previously every error was isolated, so an invalid or revoked API key on a 500-note folder run made ~500 doomed round-trips and produced ~500 near-identical summary rows before the user learned the key was bad — the first failure already proved the run could not succeed. A run now halts immediately on an authentication error, and after five consecutive failures of the same kind otherwise. The summary gains a third state, "Stopped early", distinct from both a completed run and a user cancellation, and names what to go and fix. (#172)
+- **Network failures are retried instead of failing a note outright.** A connection drop or request timeout was classified alongside ordinary API errors and got no retry at all, so a momentary Wi-Fi blip permanently failed whatever note was in flight. Connection errors now retry on a shorter schedule than throttling does, and halt the run after two consecutive rather than five — a hung socket burns the full request timeout on each of the SDK's internal attempts, so patience is far more expensive for this kind of failure than for a rate limit. (#180, #221)
+- **Frontmatter field names are checked for collisions**, at both the settings UI and on load. Setting two of the three to the same key silently destroyed data in the user's notes: tags was written as an array, then the description overwrote the same key with a string, and the run reported success. On load, a collision resets all three to their defaults. (#200)
+
+### Changed
+
+- **Default prompts for tags, description and title have been rewritten.** The old ones leaned on adjectives a model cannot check itself against ("concise but useful", "minimal adjectives"). Tags now ask for one note-kind tag from a fixed list plus topical tags, and state the two constraints the plugin depends on — no leading `#`, no comma inside a tag, since tags arrive as one comma-separated string. Titles specify sentence case and no surrounding quotation marks.
+
+  **Existing users are unaffected.** Saved prompts are kept; the new defaults apply to new installs and to any field you clear.
+
+- **YAML frontmatter no longer counts against the content token limit.** A note with many properties or a long existing tag list spent its whole budget on YAML before any prose was considered, and under the `heading` strategy that YAML was handed to the model inside a "Body:" section as though it were prose. (#164)
+
+  **Behavior change:** more of your prose now fits under the same `contentTokenLimit`.
+
+- **The large-batch warning counts differently, and higher.** It triggered on every scanned markdown file rather than on the files that will actually change, so a folder of 500 already-tagged notes with three to generate raised an alarm while 90 notes all needing generation raised none. The quoted call volume now includes retries — both the plugin's and the SDK's — so it states a real ceiling rather than the best case. Expect a number roughly 3× what the old copy showed for the same folder. (#169, #157)
+
+- **Settings fields commit when you leave them, not on every keystroke.** Clearing a numeric field is the first keystroke of almost every edit, and an empty box is invalid — so changing 500 to 300 used to fire a warning and snap the old value back before you typed a digit. Text and prompt fields now debounce their save instead of writing the whole settings file on each character. (#203, #177)
+
+### Fixed
+
+- **`0` and `false` were treated as empty frontmatter values.** Under `preserve_existing` a note with `title: 0` was judged to need generation, sent to the API, and then had that value overwritten by the write-time re-check — the exact outcome that re-check exists to prevent. Silent loss of user data under the policy that promises not to touch populated fields. (#201)
+
+  **Behavior change:** the bulk confirm dialog's "will change" count may drop for vaults containing such notes. That is the correction.
+
+- **The `keep` write method wrote.** It filled the field whenever it was absent at write time — which, since `keep` is only chosen for a field that was populated when the decision was made, can only mean the user deleted it during the request. The plugin restored what they had just removed and counted the file as changed. Keeping a field also no longer opens the file at all, so it no longer bumps the note's modification time or fires a vault change event. (#202, #185)
+
+- **Fenced code blocks were read as document structure.** Under the `heading` truncation strategy, a `#` comment inside a fenced code block was taken for a markdown heading, added to the outline, and flipped paragraph capture so the following line of code was captured as prose. (#166)
+
+- **Soft-wrapped paragraphs were cut at their first line.** The `heading` strategy captured one physical line per section, so every continuation line of a paragraph was dropped from the outline even when the whole paragraph fitted under the cap. (#167)
+
+- **Notes with no headings produced an empty `Outline:` wrapper** around their content instead of a plain truncation. (#168)
+
+- **A model returning only punctuation for tags wrote an empty array** into frontmatter where none existed, and reported success for content that did not exist. (#161)
+
+- **Titles that merely open and close with quoted phrases were mangled.** `"Hello" and "Goodbye"` lost its outer characters and ended up with unbalanced quotes. (#206)
+
+- **Note content could close the prompt's `<article>` wrapper** and have everything after it read as instructions rather than as the article. The wrapper now carries a per-request tag the note cannot guess. The exposure was bounded — the only tool available is metadata submission — but notes are routinely clipped from the web or synced from shared vaults, and folder runs process them unattended. (#204)
+
+- **A response truncated at the output token limit was accepted silently**, writing an incomplete description to frontmatter with no indication anything had been cut. (#174)
+
+- **On older mobile WebViews the token counter merged across script boundaries.** The fallback regex consumed a Latin word run straight through into adjacent CJK characters — `hello你好world` counted as one token instead of four — silently undercounting any bilingual note. (#162)
+
+- **The recursive folder action had no error handling.** Obsidian does not await that handler, so any unexpected failure was an unhandled promise: no notice, no log, and a menu item that appeared to do nothing when clicked. (#171)
+
+- **Overlapping generation on one note is now prevented.** A double-triggered command, or the single-note command used on a file a folder run was already processing, made two separately billed API calls whose final result depended on which write landed last. (#173)
+
+- **Each bulk run leaked an abort listener** onto a signal that lives for the whole plugin session, along with the closure holding that run's state. (#199)
+
+- **The bulk summary's error list is grouped and capped.** It rendered one row per failed file with no limit, synchronously on the UI thread, so a systemic failure over a large batch meant thousands of near-identical DOM nodes and a visible stall. (#183)
+
+- **Whitespace-only frontmatter field names were accepted** by the settings UI, appeared to stick, produced a malformed YAML key, and then reverted on the next plugin load. (#186)
+
+- **`maxBulkFiles` and `contentTokenLimit` had no upper bound**, so an all-digit paste became a precision-lossy number that still passed validation — defeating the purpose of a setting whose entire job is to be a hard limit. The API key field was likewise unbounded and would persist an accidental paste of an entire file. (#184, #158)
+
+### Internal
+
+- One Anthropic client is now cached per API key rather than constructed per request and per retry, so a folder run keeps its connection pool instead of paying TLS setup for every note. (#207)
+- Note content is read through the vault cache rather than from disk. (#205)
+- The test suite is now type-checked. It had been excluded from `tsconfig.json`, which let three genuine typing errors reach a green CI during this work. (#223)
+- Dead code removed: `content/types.ts`, the `metadata.ts` re-export layer, `splitIntoTokens`, `PresentationMode`, `WritePolicy` and its two mapping functions, the `updateFrontMatter` overloads, and a duplicated `isAbortError`. (#208–#215, #159, #160, #163, #210, #211)
+- `walkthrough.md` regenerated for the current source, and a new `THEORY.md` records which mechanisms are load-bearing and why.
+
 ## 2.4.0
 
 ### Fixed
