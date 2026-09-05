@@ -1,27 +1,6 @@
 import type { App, TFile } from "obsidian";
 import { isEmptyValue } from "../emptyValue";
 
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string[],
-  method: "append",
-): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean,
-  method: "update",
-): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean,
-  method: "update_if_empty",
-): Promise<boolean>;
 export async function updateFrontMatter(
   app: App,
   file: TFile,
