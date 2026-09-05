@@ -59,7 +59,6 @@ function stripSurroundingQuotes(str: string): string {
 }
 
 export type WritePolicy = "update_all" | "only_empty";
-export type PresentationMode = "interactive" | "bulk";
 
 function writePolicyFromSettings(settings: MetadataToolSettings): WritePolicy {
   return settings.updateMethod === "always_regenerate"
@@ -101,7 +100,7 @@ export type FileResult =
   | { kind: "error"; file: TFile; reason: string; error: unknown };
 
 export interface GenerateOptions {
-  presentation?: PresentationMode;
+  bulk?: boolean;
   signal?: AbortSignal;
 }
 
@@ -141,7 +140,7 @@ export async function generateMetadataForFile(
       settings,
       frontMatter,
       writePolicyFromSettings(settings),
-      opts.presentation ?? "interactive",
+      opts.bulk ?? false,
       opts.signal,
     );
     if (outcome.failures.length > 0) {
@@ -227,10 +226,9 @@ async function addMetadataWithClaude(
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
   policy: WritePolicy,
-  presentation: PresentationMode,
+  isBulk: boolean,
   signal?: AbortSignal,
 ): Promise<WriteOutcome> {
-  const isBulk = presentation === "bulk";
   const requestId = newRequestId();
 
   const contentStr = settings.truncateContent
