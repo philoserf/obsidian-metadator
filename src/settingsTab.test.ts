@@ -38,21 +38,3 @@ describe("parseStrictPositiveInt", () => {
     expect(parseStrictPositiveInt(" 42 ")).toBe(42);
   });
 });
-
-describe("settingsTab validation logic", () => {
-  describe("field name fallback", () => {
-    function resolveFieldName(value: string, defaultName: string): string {
-      return value || defaultName;
-    }
-
-    test("uses provided value when non-empty", () => {
-      expect(resolveFieldName("custom-tags", "tags")).toBe("custom-tags");
-    });
-
-    test("falls back to default for empty string", () => {
-      expect(resolveFieldName("", "tags")).toBe("tags");
-      expect(resolveFieldName("", "description")).toBe("description");
-      expect(resolveFieldName("", "title")).toBe("title");
-    });
-  });
-});

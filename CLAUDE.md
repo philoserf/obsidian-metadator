@@ -29,7 +29,7 @@ OBSIDIAN_DEPLOY_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
 
 Most of `src/` is self-describing. These three exist in the shape they do for reasons the code cannot state:
 
-- **[src/prompt.ts](src/prompt.ts)** — `buildPrompt` and `parseTags`, pure functions with no Obsidian dependency (unlike `metadata.ts`, which imports `obsidian` at module scope). Kept separate so they can be imported from a plain `bun run` script (e.g. `scripts/compare-models.ts`) without pulling in the Obsidian-runtime-only parts of `metadata.ts`. Re-exported from `metadata.ts` for backward compatibility.
+- **[src/prompt.ts](src/prompt.ts)** — `buildPrompt` and `parseTags`, pure functions with no Obsidian dependency (unlike `metadata.ts`, which imports `obsidian` at module scope). Kept separate so they can be imported from a plain `bun run` script (e.g. `scripts/compare-models.ts`) without pulling in the Obsidian-runtime-only parts of `metadata.ts`.
 - **[src/adapters/frontmatter.ts](src/adapters/frontmatter.ts)** — `updateFrontMatter` adapter over `app.fileManager.processFrontMatter`. Its `update_if_empty` method re-checks emptiness against the live frontmatter inside the callback, so a decision made before a slow API call cannot overwrite what the user typed during it.
 - **[src/emptyValue.ts](src/emptyValue.ts)** — `isEmptyValue`, shared by the write-policy decision in `metadata.ts` and the write-time re-check in the frontmatter adapter. One definition, so the two cannot disagree.
 

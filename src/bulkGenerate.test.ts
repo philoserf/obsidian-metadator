@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import type { App, TFile, TFolder } from "obsidian";
+import { type App, TFile, TFolder } from "obsidian";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 
 const mockCreate = mock();
@@ -35,21 +35,24 @@ const { ClaudeApiError } = await import("./adapters/claude");
 // Zero delays in tests to keep the suite fast; production uses DEFAULT_RETRY_DELAYS_MS.
 const FAST_RETRIES = [0, 0, 0];
 
+// Real instances of the classes test-preload.ts mocks for "obsidian":
+// collectCandidates discriminates with instanceof, which a plain object
+// literal cast to TFile/TFolder would fail.
 function file(name: string, ext = "md"): TFile {
-  return {
+  return Object.assign(new TFile(), {
     path: name,
     name,
     extension: ext,
     basename: name.replace(/\.[^.]+$/, ""),
-  } as unknown as TFile;
+  });
 }
 
 function folder(name: string, children: Array<TFile | TFolder>): TFolder {
-  return {
+  return Object.assign(new TFolder(), {
     path: name,
     name,
     children,
-  } as unknown as TFolder;
+  });
 }
 
 function settings(
@@ -123,6 +126,46 @@ describe("collectCandidates", () => {
 
   test("handles empty folder", () => {
     expect(collectCandidates(folder("empty", []))).toEqual([]);
+  });
+
+  test("returns files in path order regardless of children order", () => {
+    const f = folder("root", [file("c.md"), file("a.md"), file("b.md")]);
+    expect(collectCandidates(f).map((x: TFile) => x.path)).toEqual([
+      "a.md",
+      "b.md",
+      "c.md",
+    ]);
+  });
+
+  test("orders case-insensitively, not by code point", () => {
+    // A code-point sort would put every uppercase path first ("B.md", "a.md").
+    // The pinned "en" collation interleaves them the way the file explorer does.
+    const f = folder("root", [file("c.md"), file("a.md"), file("B.md")]);
+    expect(collectCandidates(f).map((x: TFile) => x.path)).toEqual([
+      "a.md",
+      "B.md",
+      "c.md",
+    ]);
+  });
+
+  test("sorts across subtrees, not just within each folder", () => {
+    // Depth-first order would be b/x.md, b/y.md, a.md — the sort has to run
+    // over the whole collected tree, not per level.
+    const sub = folder("b", [file("b/x.md"), file("b/y.md")]);
+    const root = folder("root", [sub, file("a.md")]);
+    expect(collectCandidates(root).map((x: TFile) => x.path)).toEqual([
+      "a.md",
+      "b/x.md",
+      "b/y.md",
+    ]);
+  });
+
+  test("skips children that are neither TFile nor TFolder", () => {
+    const f = folder("root", [
+      file("keep.md"),
+      { path: "impostor.md", extension: "md" } as unknown as TFile,
+    ]);
+    expect(collectCandidates(f).map((x: TFile) => x.path)).toEqual(["keep.md"]);
   });
 });
 

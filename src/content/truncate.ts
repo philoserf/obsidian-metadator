@@ -1,5 +1,8 @@
 import { sliceTokens, type Token, tokenize } from "./tokens";
 
+// Named for the three strategies implemented below.
+export type TruncateMethod = "head_only" | "head_tail" | "heading";
+
 export function truncateHeadOnly(
   source: string,
   tokens: Token[],

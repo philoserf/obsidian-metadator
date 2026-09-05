@@ -7,7 +7,10 @@ import { MetadataToolSettingTab } from "./settingsTab";
 
 export default class MetadataToolPlugin extends Plugin {
   settings: MetadataToolSettings = DEFAULT_SETTINGS;
-  private runController: AbortController = new AbortController();
+  // Assigned first thing in onload(), which Obsidian always calls before any
+  // command, menu item, or onunload() can run. No field initializer here: it
+  // would construct a controller that onload() discards on the next line.
+  private runController!: AbortController;
   // Set when data.json was written by a newer plugin version. While set,
   // saveSettings() refuses to write so we don't clobber forward-version
   // data with our defaults. Cleared by a successful (in-version) load.

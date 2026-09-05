@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { isAbortError } from "../errors";
 import type { MetadataToolSettings } from "../settings";
 
 // Output budget for the model's tool-use response (tags + description + title).
@@ -123,15 +124,6 @@ function classifyError(error: unknown): ClaudeApiError {
   }
   const message = error instanceof Error ? error.message : String(error);
   return new ClaudeApiError("unknown", message);
-}
-
-function isAbortError(error: unknown): boolean {
-  return (
-    (error instanceof Error && error.name === "AbortError") ||
-    (typeof DOMException !== "undefined" &&
-      error instanceof DOMException &&
-      error.name === "AbortError")
-  );
 }
 
 function validateMetadataInput(

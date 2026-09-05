@@ -1,11 +1,11 @@
 import type { App, TFile } from "obsidian";
 import { tokenize } from "./tokens";
 import {
+  type TruncateMethod,
   truncateHeading,
   truncateHeadOnly,
   truncateHeadTail,
 } from "./truncate";
-import type { TruncateMethod } from "./types";
 
 export async function getContent(
   app: App,
