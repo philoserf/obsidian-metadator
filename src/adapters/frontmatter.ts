@@ -19,6 +19,10 @@ export async function updateFrontMatter(
           ? [String(existing)]
           : [];
       const merged = Array.from(new Set(base.concat(values)));
+      // An empty append against an absent field is not a change: without this
+      // the !Array.isArray(existing) term alone reported one, writing key: []
+      // where nothing existed (#161).
+      if (merged.length === 0 && existing === undefined) return;
       changed =
         !Array.isArray(existing) ||
         base.length !== merged.length ||

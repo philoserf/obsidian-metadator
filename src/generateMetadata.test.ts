@@ -477,6 +477,26 @@ describe("failed frontmatter writes (#187)", () => {
     }
   });
 
+  test("an all-punctuation tags string writes nothing and reports no change", async () => {
+    // "," is a non-empty string, so it passed validateMetadataInput and the
+    // truthiness guard, but parseTags reduces it to []. That empty array was
+    // written as `tags: []` and reported as a change (#161).
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: " , ", description: "", title: "" }),
+    );
+    const { app, fm, writes } = makeApp({});
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
+      makeSettings(),
+    );
+
+    expect("tags" in fm).toBe(false);
+    expect(writes()).toBe(0);
+    expect(result.kind).toBe("skipped");
+  });
+
   test("a genuine no-op is still reported as skipped", async () => {
     // The model returned nothing usable, so no write is even attempted — the
     // case "skipped: no changes" is supposed to describe.

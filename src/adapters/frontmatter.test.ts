@@ -173,3 +173,31 @@ describe("updateFrontMatter", () => {
     expect(fm.description).toBe("generated");
   });
 });
+
+describe("append with no values", () => {
+  test("does not create an empty array where the field was absent", async () => {
+    const { app, fm } = makeApp({});
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "append",
+    );
+    expect("tags" in fm).toBe(false);
+    expect(changed).toBe(false);
+  });
+
+  test("leaves an existing array untouched", async () => {
+    const { app, fm } = makeApp({ tags: ["a", "b"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "append",
+    );
+    expect(fm.tags).toEqual(["a", "b"]);
+    expect(changed).toBe(false);
+  });
+});

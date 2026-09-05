@@ -356,10 +356,16 @@ async function addMetadataWithClaude(
 
   const updates: FieldUpdate[] = [];
 
-  if (metadata.tags) {
+  // Guarded on the parsed result, not the raw string. A model returning ","
+  // or " , " satisfies validateMetadataInput and is truthy, but parseTags
+  // yields [] — which the append path then wrote as an empty tags array and
+  // reported as a change, so the user was told "Metadata updated successfully"
+  // for content that did not exist (#161).
+  const tags = metadata.tags ? parseTags(metadata.tags) : [];
+  if (tags.length > 0) {
     updates.push({
       fieldName: settings.tagsFieldName,
-      value: parseTags(metadata.tags),
+      value: tags,
       updateMethod: "append",
     });
   }
