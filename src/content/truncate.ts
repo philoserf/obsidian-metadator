@@ -166,7 +166,11 @@ export function truncateHeading(
   // (per line, and again here) are what #181 removed.
   const outlineTokens = tokenize(result);
   if (outlineTokens.length > limit) {
-    return sliceTokens(result, outlineTokens.slice(0, limit));
+    // Marked like every sibling path. truncateHeadOnly, truncateHeadTail and
+    // the Body branch below all append "..."; a bare cut here left the model no
+    // signal that the heading list had been severed mid-list (#176). The marker
+    // sits past the limit, exactly as it does in those paths.
+    return `${sliceTokens(result, outlineTokens.slice(0, limit))}...`;
   }
 
   const remainingTokens = limit - outlineTokens.length;

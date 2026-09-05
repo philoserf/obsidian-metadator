@@ -280,9 +280,12 @@ describe("truncateHeading", () => {
     const tokens = tokenize(content);
     // Very small limit to force truncation of the outline itself
     const result = truncateHeading(content, tokens, 2);
-    const resultTokens = splitIntoTokens(result);
-    // Output should be truncated to at most the token limit
-    expect(resultTokens.length).toBeLessThanOrEqual(2);
+    // The "..." marker sits past the limit here, as it does in truncateHeadOnly
+    // and truncateHeadTail — so the budget applies to the sliced outline, not
+    // to the marker (#176).
+    expect(result.endsWith("...")).toBe(true);
+    const outlineTokens = splitIntoTokens(result.slice(0, -3));
+    expect(outlineTokens.length).toBeLessThanOrEqual(2);
     // Should not contain the Outline:/Body: wrapper since outline exceeded limit
     expect(result).not.toContain("Outline:");
     expect(result).not.toContain("Body:");
