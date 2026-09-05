@@ -13,8 +13,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(echo \"$CLAUDE_TOOL_INPUT\" | grep -o '\"file_path\":\"[^\"]*\"' | head -1 | sed 's/\"file_path\":\"//;s/\"//'); if echo \"$f\" | grep -q 'src/.*\\.ts$' && ! echo \"$f\" | grep -q '\\.test\\.ts$'; then t=\"${f%.ts}.test.ts\"; [ -f \"$t\" ] && bun test \"$t\" 2>&1 | tail -5; fi",
-            "timeout": 15
+            "command": "f=$(cat | jq -r '.tool_input.file_path // empty' 2>/dev/null); case \"$f\" in *src/*.test.ts) ;; *src/*.ts) t=\"${f%.ts}.test.ts\"; [ -f \"$t\" ] && bun test \"$t\" 2>&1 | tail -5;; esac; exit 0",
+            "timeout": 15,
+            "async": true
           }
         ]
       }
