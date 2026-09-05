@@ -40,7 +40,10 @@ export class BulkProgressModal extends Modal {
 
   // Orchestrator calls finish() after the run completes normally. Direct
   // close() (or Esc) leaves finishing=false, so onClose treats it as abort.
+  // Idempotent: the orchestrator also calls it from a finally block, which on
+  // the normal path runs after this has already closed the modal.
   finish(): void {
+    if (this.finishing) return;
     this.finishing = true;
     this.close();
   }

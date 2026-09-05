@@ -49,31 +49,42 @@ export async function runBulkForFolder(
 
   const progress = new BulkProgressModal(app);
   const runController = new AbortController();
+  // Named so it can be detached in the finally below. { once: true } only
+  // self-detaches after the event fires, and opts.signal is the plugin-lifetime
+  // controller from onload(), which normally aborts only at onunload(). Without
+  // the removal every bulk run would leave another listener — and the closure
+  // holding that run's AbortController — attached for the rest of the session.
+  const forwardAbort = () => runController.abort(opts.signal?.reason);
   if (opts.signal) {
     if (opts.signal.aborted) {
       runController.abort(opts.signal.reason);
     } else {
-      opts.signal.addEventListener(
-        "abort",
-        () => runController.abort(opts.signal?.reason),
-        { once: true },
-      );
+      opts.signal.addEventListener("abort", forwardAbort, { once: true });
     }
   }
   progress.setAbortHandler(() => runController.abort("cancelled_by_user"));
   progress.open();
 
-  const results = await runBulk(app, willChange, settings, {
-    onProgress: (p) => progress.setProgress(p),
-    shouldAbort: () => (opts.shouldAbort?.() ?? false) || progress.isAborted(),
-    signal: runController.signal,
-  });
+  try {
+    const results = await runBulk(app, willChange, settings, {
+      onProgress: (p) => progress.setProgress(p),
+      shouldAbort: () =>
+        (opts.shouldAbort?.() ?? false) || progress.isAborted(),
+      signal: runController.signal,
+    });
 
-  const aborted =
-    progress.isAborted() ||
-    (opts.shouldAbort?.() ?? false) ||
-    runController.signal.aborted;
-  progress.finish();
+    const aborted =
+      progress.isAborted() ||
+      (opts.shouldAbort?.() ?? false) ||
+      runController.signal.aborted;
+    progress.finish();
 
-  new BulkSummaryModal(app, results, aborted, willChange.length).open();
+    new BulkSummaryModal(app, results, aborted, willChange.length).open();
+  } finally {
+    // Covers the path where runBulk throws, which would otherwise leave the
+    // progress modal open with no summary behind it. finish() is idempotent, so
+    // the normal path above having already closed it is fine.
+    progress.finish();
+    opts.signal?.removeEventListener("abort", forwardAbort);
+  }
 }
