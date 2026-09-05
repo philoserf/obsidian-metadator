@@ -12,21 +12,37 @@
 // undercounted (#179). Whitespace other than `\n` is still uncounted, which
 // matches how real BPE tokenizers absorb spaces into the following word.
 //
-// The v-flag set-subtraction syntax requires Chromium 112+/Safari 17+. The
-// constructor is wrapped in try/catch so older mobile WebViews fall back
-// to a u-flag regex (loses CJK-Latin boundary handling but the plugin
-// still loads and non-CJK scripts still tokenize correctly).
+// The v-flag set-subtraction syntax requires Chromium 112+/Safari 17+, so the
+// constructor is wrapped in try/catch and older mobile WebViews take the
+// u-flag fallback. The fallback reaches the same result a different way: it
+// cannot subtract the CJK ranges from a character class, so it excludes them
+// per character with a negative lookahead.
+//
+// That lookahead is not cosmetic. Without it the greedy word alternative runs
+// straight through a script boundary and swallows the CJK characters too —
+// "hello你好world" tokenized to one token instead of four, an unbounded merge
+// that silently undercounts any bilingual note (#162). The two regexes are
+// held to identical output by the shared suite in content.test.ts.
 const CJK_FAMILY_RANGES = "一-龥぀-ヿ가-힯";
+const NOT_CJK = `(?![${CJK_FAMILY_RANGES}])`;
 
-function buildTokenRegex(): RegExp {
-  try {
-    return new RegExp(
-      `[一-龥]|[぀-ヿ]|[가-힯]|[[\\p{Letter}\\p{Number}]--[${CJK_FAMILY_RANGES}]][[\\p{Letter}\\p{Mark}\\p{Number}]--[${CJK_FAMILY_RANGES}]]*|[.,!?;，。！？；#]|\\n|\\S`,
-      "gv",
-    );
-  } catch {
-    return /[一-龥]|[぀-ヿ]|[가-힯]|[\p{Letter}\p{Number}][\p{Letter}\p{Mark}\p{Number}]*|[.,!?;，。！？；#]|\n|\S/gu;
+// Exported for tests: bun and every current desktop runtime support the
+// v-flag, so the fallback branch would otherwise never execute in CI.
+export function buildTokenRegex(forceFallback = false): RegExp {
+  if (!forceFallback) {
+    try {
+      return new RegExp(
+        `[一-龥]|[぀-ヿ]|[가-힯]|[[\\p{Letter}\\p{Number}]--[${CJK_FAMILY_RANGES}]][[\\p{Letter}\\p{Mark}\\p{Number}]--[${CJK_FAMILY_RANGES}]]*|[.,!?;，。！？；#]|\\n|\\S`,
+        "gv",
+      );
+    } catch {
+      // Fall through to the u-flag build below.
+    }
   }
+  return new RegExp(
+    `[一-龥]|[぀-ヿ]|[가-힯]|${NOT_CJK}[\\p{Letter}\\p{Number}](?:${NOT_CJK}[\\p{Letter}\\p{Mark}\\p{Number}])*|[.,!?;，。！？；#]|\\n|\\S`,
+    "gu",
+  );
 }
 
 const TOKEN_REGEX = buildTokenRegex();
@@ -41,9 +57,9 @@ export interface Token {
   end: number;
 }
 
-export function tokenize(str: string): Token[] {
+export function tokenize(str: string, regex: RegExp = TOKEN_REGEX): Token[] {
   const out: Token[] = [];
-  for (const m of str.matchAll(TOKEN_REGEX)) {
+  for (const m of str.matchAll(regex)) {
     out.push({ text: m[0], start: m.index, end: m.index + m[0].length });
   }
   return out;
