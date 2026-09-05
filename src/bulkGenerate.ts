@@ -1,4 +1,4 @@
-import type { App, TFile, TFolder } from "obsidian";
+import { type App, TFile, TFolder } from "obsidian";
 import { ClaudeApiError } from "./adapters/claude";
 import { logDebug } from "./logger";
 import {
@@ -14,15 +14,22 @@ export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [
 
 export function collectCandidates(folder: TFolder): TFile[] {
   const out: TFile[] = [];
+  collectInto(folder, out);
+  // Sorted once over the whole tree, not per level, which would order each
+  // folder's children but still interleave subtrees. folder.children order is
+  // not guaranteed, so without this the progress display and the summary's
+  // error list come out differently from run to run and across platforms.
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function collectInto(folder: TFolder, out: TFile[]): void {
   for (const child of folder.children) {
-    if ("children" in child) {
-      out.push(...collectCandidates(child as TFolder));
-    } else {
-      const file = child as TFile;
-      if (file.extension === "md") out.push(file);
+    if (child instanceof TFolder) {
+      collectInto(child, out);
+    } else if (child instanceof TFile && child.extension === "md") {
+      out.push(child);
     }
   }
-  return out;
 }
 
 export function classifyCandidates(
