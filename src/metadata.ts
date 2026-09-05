@@ -324,14 +324,8 @@ async function addMetadataWithClaude(
     | { fieldName: string; value: string[]; updateMethod: "append" }
     | { fieldName: string; value: string; updateMethod: "update" };
 
-  async function writeField(
-    u: FieldUpdate,
-    resolved: "update" | "keep",
-  ): Promise<boolean> {
+  async function writeField(u: FieldUpdate): Promise<boolean> {
     try {
-      if (resolved === "keep") {
-        return await updateFrontMatter(app, file, u.fieldName, u.value, "keep");
-      }
       if (u.updateMethod === "append") {
         return await updateFrontMatter(
           app,
@@ -404,8 +398,14 @@ async function addMetadataWithClaude(
     if (signal?.aborted) {
       return { changed: hasChanges, failures };
     }
-    const resolved = resolveUpdateMethod(policy, frontMatter[u.fieldName]);
-    if (await writeField(u, resolved)) {
+    // Nothing to write, so do not open the file. processFrontMatter serializes
+    // and writes back on every call regardless of whether the callback mutated
+    // anything, so calling it here cost an mtime bump, a vault modify event and
+    // disk I/O per skipped field, per file, across a whole bulk run (#185).
+    if (resolveUpdateMethod(policy, frontMatter[u.fieldName]) === "keep") {
+      continue;
+    }
+    if (await writeField(u)) {
       hasChanges = true;
     }
   }

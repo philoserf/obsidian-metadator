@@ -30,37 +30,6 @@ function makeApp(
 }
 
 describe("updateFrontMatter", () => {
-  test("keep: preserves an existing value", async () => {
-    const { app, fm } = makeApp({ description: "existing" });
-    await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect(fm.description).toBe("existing");
-  });
-
-  test("keep: leaves a field the user deleted mid-request deleted", async () => {
-    // keep is only chosen when the field was populated in the pre-request
-    // snapshot, so the only way it is absent by the time the callback runs is
-    // that the user removed it during the call. Filling it back in restored
-    // something they had just deleted, and reported the file as changed (#202).
-    const { app, fm } = makeApp({ description: "existing" }, (live) => {
-      delete live.description;
-    });
-    const changed = await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect("description" in fm).toBe(false);
-    expect(changed).toBe(false);
-  });
-
   test("update: overwrites an existing value", async () => {
     const { app, fm } = makeApp({ description: "old" });
     await updateFrontMatter(
@@ -151,18 +120,6 @@ describe("updateFrontMatter", () => {
       "update",
     );
     expect(changed).toBe(true);
-  });
-
-  test("keep: returns false when field already exists", async () => {
-    const { app } = makeApp({ description: "existing" });
-    const changed = await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect(changed).toBe(false);
   });
 
   test("update_if_empty: writes when the live value is empty", async () => {

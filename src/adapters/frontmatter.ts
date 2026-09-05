@@ -22,19 +22,12 @@ export function updateFrontMatter(
   value: string | boolean,
   method: "update_if_empty",
 ): Promise<boolean>;
-export function updateFrontMatter(
-  app: App,
-  file: TFile,
-  key: string,
-  value: string | boolean | string[],
-  method: "keep",
-): Promise<boolean>;
 export async function updateFrontMatter(
   app: App,
   file: TFile,
   key: string,
   value: string | boolean | string[],
-  method: "append" | "update" | "update_if_empty" | "keep",
+  method: "append" | "update" | "update_if_empty",
 ): Promise<boolean> {
   let changed = false;
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
@@ -66,11 +59,6 @@ export async function updateFrontMatter(
         frontmatter[key] = value;
       }
     }
-    // method === "keep": the field was populated when the decision was made,
-    // so leave it alone. This branch used to fill the key when it was
-    // undefined — which, given keep is only chosen for a non-empty field, can
-    // only mean the user deleted it during the request. Restoring it undid
-    // their edit and reported the file as changed (#202).
   });
   return changed;
 }

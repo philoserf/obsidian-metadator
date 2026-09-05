@@ -79,7 +79,7 @@ function makeApp(opts: {
     },
   } as unknown as App;
 
-  return { app, fm };
+  return { app, fm, writes: () => writeCalls };
 }
 
 function makeFile(path = "note.md"): { path: string; extension: string } {
@@ -348,6 +348,36 @@ describe("concurrent edits during the API call (#178)", () => {
     // Fields the user did not touch are still filled in.
     expect(fm.title).toBe("Generated Title");
     expect(fm.tags).toEqual(["ai", "testing"]);
+  });
+
+  test("preserve_existing does not open the file for a field it is keeping", async () => {
+    // processFrontMatter serializes and writes the file back on every call,
+    // whether or not the callback mutates anything. Calling it for a field we
+    // have already decided to leave alone cost an mtime bump and a vault
+    // modify event per skipped field, per file (#185).
+    //
+    // tags is empty so generation still runs; description and title are
+    // populated, so under preserve_existing they resolve to keep. Exactly one
+    // write should reach the file — before the fix there were three.
+    const { app, writes } = makeApp({
+      frontmatter: {
+        description: "existing description",
+        title: "Existing Title",
+      },
+      snapshotCache: true,
+    });
+
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: "ai,testing",
+        description: "generated",
+        title: "Generated",
+      }),
+    );
+
+    await generateMetadata(app, makeSettings());
+
+    expect(writes()).toBe(1);
   });
 
   test("preserve_existing keeps a field whose value is 0 or false", async () => {
