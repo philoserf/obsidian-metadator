@@ -590,9 +590,14 @@ describe("client caching (#207)", () => {
     mock.module("@anthropic-ai/sdk", () => ({ default: Counting }));
     resetClientCache();
 
-    mockCreate.mockResolvedValue(
-      toolUseResponse({ tags: "a", description: "d", title: "T" }),
-    );
+    // Once-per-call rather than a sticky default, so this queue cannot leak
+    // into any test added after this one.
+    const ok = () =>
+      toolUseResponse({ tags: "a", description: "d", title: "T" });
+    mockCreate
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok());
     await callClaudeForMetadata("system", "user", settings);
     await callClaudeForMetadata("system", "user", settings);
     await callClaudeForMetadata("system", "user", settings);
@@ -612,9 +617,9 @@ describe("client caching (#207)", () => {
     mock.module("@anthropic-ai/sdk", () => ({ default: Recording }));
     resetClientCache();
 
-    mockCreate.mockResolvedValue(
-      toolUseResponse({ tags: "a", description: "d", title: "T" }),
-    );
+    const ok = () =>
+      toolUseResponse({ tags: "a", description: "d", title: "T" });
+    mockCreate.mockResolvedValueOnce(ok()).mockResolvedValueOnce(ok());
     await callClaudeForMetadata("system", "user", settings);
     await callClaudeForMetadata("system", "user", {
       ...settings,

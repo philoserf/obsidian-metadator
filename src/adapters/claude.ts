@@ -190,7 +190,9 @@ function validateMetadataInput(
 let cachedClient: { apiKey: string; client: Anthropic } | undefined;
 
 function getClient(apiKey: string): Anthropic {
-  if (cachedClient?.apiKey === apiKey) return cachedClient.client;
+  if (cachedClient !== undefined && cachedClient.apiKey === apiKey) {
+    return cachedClient.client;
+  }
   cachedClient = {
     apiKey,
     // Allowing browser compatibility mode — safe within Obsidian's Electron-controlled environment under current use cases.
