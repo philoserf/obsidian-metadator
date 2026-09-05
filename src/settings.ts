@@ -66,6 +66,26 @@ export const VALID_MODEL_OPTIONS = [
 const MODEL_ID_PATTERN = /^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MODEL_ID_MAX_LENGTH = 100;
 
+// The three frontmatter field names must differ. If two collide, the writes
+// clobber each other in the user's note rather than in plugin state: tags is
+// written as an array and then the description overwrites the same key with a
+// string, the run reports success, and nothing surfaces the loss (#200).
+//
+// Shared so the load-time and edit-time rules cannot drift apart, the same
+// reason isEmptyValue lives on its own.
+export function areFieldNamesDistinct(names: {
+  tagsFieldName: string;
+  descriptionFieldName: string;
+  titleFieldName: string;
+}): boolean {
+  const seen = new Set([
+    names.tagsFieldName,
+    names.descriptionFieldName,
+    names.titleFieldName,
+  ]);
+  return seen.size === 3;
+}
+
 export function isModelId(value: string): boolean {
   return value.length <= MODEL_ID_MAX_LENGTH && MODEL_ID_PATTERN.test(value);
 }

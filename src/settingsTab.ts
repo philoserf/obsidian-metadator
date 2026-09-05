@@ -1,6 +1,7 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MetadataToolPlugin from "./main";
 import {
+  areFieldNamesDistinct,
   DEFAULT_SETTINGS,
   isModelId,
   MAX_BULK_FILES,
@@ -329,6 +330,18 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             const name =
               text.getValue().trim() || DEFAULT_SETTINGS.tagsFieldName;
             if (name === this.plugin.settings.tagsFieldName) return;
+            if (
+              !areFieldNamesDistinct({
+                ...this.plugin.settings,
+                tagsFieldName: name,
+              })
+            ) {
+              new Notice(
+                "Tags field name must differ from the other frontmatter field names",
+              );
+              text.setValue(this.plugin.settings.tagsFieldName);
+              return;
+            }
             this.plugin.settings.tagsFieldName = name;
             text.setValue(name);
             await this.plugin.saveSettings();
@@ -372,6 +385,18 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             const name =
               text.getValue().trim() || DEFAULT_SETTINGS.descriptionFieldName;
             if (name === this.plugin.settings.descriptionFieldName) return;
+            if (
+              !areFieldNamesDistinct({
+                ...this.plugin.settings,
+                descriptionFieldName: name,
+              })
+            ) {
+              new Notice(
+                "Description field name must differ from the other frontmatter field names",
+              );
+              text.setValue(this.plugin.settings.descriptionFieldName);
+              return;
+            }
             this.plugin.settings.descriptionFieldName = name;
             text.setValue(name);
             await this.plugin.saveSettings();
@@ -431,6 +456,18 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             const name =
               text.getValue().trim() || DEFAULT_SETTINGS.titleFieldName;
             if (name === this.plugin.settings.titleFieldName) return;
+            if (
+              !areFieldNamesDistinct({
+                ...this.plugin.settings,
+                titleFieldName: name,
+              })
+            ) {
+              new Notice(
+                "Title field name must differ from the other frontmatter field names",
+              );
+              text.setValue(this.plugin.settings.titleFieldName);
+              return;
+            }
             this.plugin.settings.titleFieldName = name;
             text.setValue(name);
             await this.plugin.saveSettings();

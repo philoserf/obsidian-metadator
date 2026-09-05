@@ -1,4 +1,5 @@
 import {
+  areFieldNamesDistinct,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   isModelId,
@@ -236,6 +237,15 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       },
     ),
   };
+
+  // All three reset together, not just the colliding pair. It is the only rule
+  // that is order-independent and cannot itself produce a new collision, since
+  // the defaults are distinct by construction.
+  if (!areFieldNamesDistinct(normalized)) {
+    normalized.tagsFieldName = DEFAULT_SETTINGS.tagsFieldName;
+    normalized.descriptionFieldName = DEFAULT_SETTINGS.descriptionFieldName;
+    normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
+  }
 
   return { kind: "ok", settings: normalized };
 }
