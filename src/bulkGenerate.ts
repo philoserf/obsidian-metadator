@@ -19,10 +19,12 @@ export function collectCandidates(folder: TFolder): TFile[] {
   // folder's children but still interleave subtrees. folder.children order is
   // not guaranteed, so without this the progress display and the summary's
   // error list come out differently from run to run and across platforms.
-  // Compared by code point rather than localeCompare: bare localeCompare uses
-  // the host's default locale and ICU collation, so the same vault would order
-  // differently on another machine — the exact thing this sort exists to stop.
-  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  // The locale is pinned rather than left to the host: bare localeCompare()
+  // inherits the machine's default, so the same vault would order differently
+  // elsewhere — the exact thing this sort exists to stop. "en" collation is
+  // what Obsidian's file explorer shows, which is the list a user comparing
+  // against the progress display actually has in front of them.
+  return out.sort((a, b) => a.path.localeCompare(b.path, "en"));
 }
 
 function collectInto(folder: TFolder, out: TFile[]): void {

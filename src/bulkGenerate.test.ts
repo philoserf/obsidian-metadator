@@ -137,13 +137,14 @@ describe("collectCandidates", () => {
     ]);
   });
 
-  test("orders by code point, not by locale collation", () => {
-    // localeCompare would put "a.md" before "B.md"; a code-point sort is the
-    // only ordering that cannot shift with the host's locale.
-    const f = folder("root", [file("a.md"), file("B.md")]);
+  test("orders case-insensitively, not by code point", () => {
+    // A code-point sort would put every uppercase path first ("B.md", "a.md").
+    // The pinned "en" collation interleaves them the way the file explorer does.
+    const f = folder("root", [file("c.md"), file("a.md"), file("B.md")]);
     expect(collectCandidates(f).map((x: TFile) => x.path)).toEqual([
-      "B.md",
       "a.md",
+      "B.md",
+      "c.md",
     ]);
   });
 
