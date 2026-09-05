@@ -1,17 +1,19 @@
 import { type App, Modal } from "obsidian";
+import { REQUESTS_PER_ATTEMPT } from "./adapters/claude";
 import { DEFAULT_RETRY_DELAYS_MS } from "./bulkGenerate";
 import type { MetadataToolSettings } from "./settings";
 
 const LARGE_BATCH_THRESHOLD = 100;
 
-// Worst case, not best: every file can be requested once and then retried on
-// the full schedule under sustained rate limiting. Derived from the schedule
-// rather than hard-coded so the two cannot drift.
+// Worst case, not best: every file can be attempted once and then retried on
+// the full bulk schedule, and each of those attempts is itself several HTTP
+// requests because the SDK retries underneath us. Both figures are imported
+// rather than hard-coded so the copy cannot drift from the real policy.
 export function worstCaseApiCalls(
   willChange: number,
   retryDelaysMs: readonly number[] = DEFAULT_RETRY_DELAYS_MS,
 ): number {
-  return willChange * (retryDelaysMs.length + 1);
+  return willChange * (retryDelaysMs.length + 1) * REQUESTS_PER_ATTEMPT;
 }
 
 export interface ConfirmModalInfo {

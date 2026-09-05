@@ -142,7 +142,12 @@ export async function generateMetadataForFile(
   // double-triggered hotkey — or the single-note command run on a file a
   // folder pass is already working through — makes two billed calls whose
   // writes both derive from equally stale pre-call snapshots.
-  if (!acquire(file.path)) {
+  // Captured once: Obsidian mutates TFile.path in place on rename (which is
+  // why its rename event has to hand you oldPath separately), so releasing
+  // file.path after a multi-second call could release a different key than the
+  // one acquired and leak the original for the rest of the session.
+  const lockPath = file.path;
+  if (!acquire(lockPath)) {
     return { kind: "skipped", file, reason: ALREADY_IN_PROGRESS };
   }
 
@@ -184,7 +189,7 @@ export async function generateMetadataForFile(
       error,
     };
   } finally {
-    release(file.path);
+    release(lockPath);
   }
 }
 

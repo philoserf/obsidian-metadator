@@ -42,6 +42,8 @@ function haltExplanation(halt: BulkHalt): string {
       return "Rate limited repeatedly, even after retries. Try again later.";
     case "overloaded":
       return "The API stayed overloaded across retries. Try again later.";
+    case "other":
+      return `${halt.consecutive} notes in a row failed before reaching the API: ${halt.message}. A read-only vault or a permissions problem will do this.`;
     default:
       return `${halt.consecutive} notes in a row failed the same way: ${halt.message}`;
   }
@@ -97,9 +99,14 @@ export class BulkSummaryModal extends Modal {
             : `${g.paths.length} notes: ${g.reason}`;
         errList.createEl("li", { text });
       }
-      const hidden = groups.length - MAX_ERROR_ROWS;
+      // Counted in notes, not groups: a hidden group can stand for hundreds of
+      // files, and "…and 5 more" under 500 unlisted failures reads as a much
+      // smaller problem than it is.
+      const hidden = groups
+        .slice(MAX_ERROR_ROWS)
+        .reduce((n, g) => n + g.paths.length, 0);
       if (hidden > 0) {
-        errList.createEl("li", { text: `…and ${hidden} more` });
+        errList.createEl("li", { text: `…and ${hidden} more notes` });
       }
     }
 

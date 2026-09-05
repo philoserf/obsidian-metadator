@@ -1,22 +1,16 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { App, TFile } from "obsidian";
+import { BulkConfirmModal, worstCaseApiCalls } from "./bulkConfirmModal";
+import { BulkProgressModal } from "./bulkProgressModal";
+import { BulkSummaryModal } from "./bulkSummaryModal";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
-import { type FakeEl, FakeModal } from "./testDom";
+import type { FakeEl } from "./testDom";
 
-// Overrides the preload's Modal, whose open()/close() do not chain into
-// onOpen()/onClose() and whose createEl() returns a bare object.
-mock.module("obsidian", () => ({
-  Modal: FakeModal,
-  Notice: class Notice {
-    hide() {}
-  },
-  TFile: class TFile {},
-  TFolder: class TFolder {},
-}));
-
-const { BulkConfirmModal } = await import("./bulkConfirmModal");
-const { BulkProgressModal } = await import("./bulkProgressModal");
-const { BulkSummaryModal } = await import("./bulkSummaryModal");
+// No mock.module("obsidian") here on purpose. test-preload.ts already installs
+// obsidianDoubles, whose Modal is FakeModal — the chaining open()/close() these
+// tests need. Re-mocking with fresh TFile/TFolder classes would swap the global
+// class identities out from under every test file that loads later, breaking
+// their instanceof checks.
 
 const app = {} as App;
 
@@ -103,8 +97,8 @@ describe("BulkConfirmModal", () => {
     const real = open({ total: 200, willChange: 150, willSkip: 50 });
     const warning = real.el.allText().find((t) => t.includes("Large batch"));
     expect(warning).toBeDefined();
-    // 150 files x (3 retries + 1 initial)
-    expect(warning).toContain("600 API calls");
+    // 150 files x (3 bulk retries + 1) x the SDK's own requests per attempt
+    expect(warning).toContain(`${worstCaseApiCalls(150)} API calls`);
     real.modal.close();
     await real.promise;
   });

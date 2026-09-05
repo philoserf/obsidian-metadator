@@ -404,22 +404,81 @@ describe("runBulk", () => {
     expect(results).toHaveLength(9);
   });
 
-  test("exhausted rate limits do not count toward the halt streak", async () => {
+  test("a rate limit still counts once the retry schedule is exhausted", async () => {
     const Anthropic = (await import("@anthropic-ai/sdk"))
       .default as unknown as {
       RateLimitError: new (msg: string) => Error;
     };
     mockCreate.mockRejectedValue(new Anthropic.RateLimitError("429"));
-    const files = Array.from({ length: 8 }, (_, i) => file(`n${i}.md`));
+    const files = Array.from({ length: 20 }, (_, i) => file(`n${i}.md`));
 
     const { results, halted } = await runBulk(makeApp(), files, settings(), {
-      retryDelaysMs: [0],
+      retryDelaysMs: FAST_RETRIES,
     });
 
-    // Throttling is a "try later", not a broken configuration. Every file is
-    // still attempted; the retry loop already backed each one off.
+    // A throttle only reaches the streak after its whole backoff schedule has
+    // failed, so five in a row is a proven ceiling, not a blip. Continuing
+    // would spend 15 more files x 4 calls proving the same thing.
+    expect(halted?.kind).toBe("rate_limit");
+    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+  });
+
+  test("a rate limit that clears before the limit does not halt", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      RateLimitError: new (msg: string) => Error;
+    };
+    const ok = {
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d", title: "T" },
+        },
+      ],
+    };
+    // Each file exhausts its retries, but a success lands before the fifth.
+    mockCreate.mockImplementation(() => {
+      const call = mockCreate.mock.calls.length;
+      return call === 13
+        ? Promise.resolve(ok)
+        : Promise.reject(new Anthropic.RateLimitError("429"));
+    });
+    const files = Array.from({ length: 6 }, (_, i) => file(`n${i}.md`));
+
+    const { halted } = await runBulk(makeApp(), files, settings(), {
+      retryDelaysMs: FAST_RETRIES,
+    });
+
     expect(halted).toBeUndefined();
-    expect(results).toHaveLength(8);
+  });
+
+  test("halts when every file fails before reaching the API", async () => {
+    // A read-only vault: the request succeeds, the frontmatter write throws.
+    // The most systemic failure there is, and not a ClaudeApiError.
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "submit_metadata",
+          input: { tags: "a", description: "d", title: "T" },
+        },
+      ],
+    });
+    const app = makeApp();
+    app.fileManager.processFrontMatter = async () => {
+      throw new Error("vault is read-only");
+    };
+    const files = Array.from({ length: 12 }, (_, i) => file(`n${i}.md`));
+
+    const { results, halted } = await runBulk(app, files, settings(), {
+      retryDelaysMs: FAST_RETRIES,
+    });
+
+    expect(halted?.kind).toBe("other");
+    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
   });
 
   test("per-file error isolation — one failure does not abort batch", async () => {

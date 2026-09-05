@@ -80,8 +80,13 @@ export const CONSECUTIVE_FAILURE_LIMIT = 5;
 // round-trip is all the evidence needed. Everything else needs
 // CONSECUTIVE_FAILURE_LIMIT in a row, because a single "api" or "unknown" is
 // just as likely to be one bad note as a broken run.
+// "other" covers failures that never reached the API — a frontmatter write
+// against a read-only vault, say. Those are as systemic as any auth failure:
+// every file fails identically.
+export type HaltKind = ClaudeErrorKind | "other";
+
 export interface BulkHalt {
-  kind: ClaudeErrorKind;
+  kind: HaltKind;
   message: string;
   consecutive: number;
 }
@@ -91,8 +96,8 @@ export interface BulkRunOutcome {
   halted?: BulkHalt;
 }
 
-function errorKindOf(error: unknown): ClaudeErrorKind | undefined {
-  return error instanceof ClaudeApiError ? error.kind : undefined;
+function haltKindOf(error: unknown): HaltKind {
+  return error instanceof ClaudeApiError ? error.kind : "other";
 }
 
 function isRateLimitOrOverload(error: unknown): boolean {
@@ -204,7 +209,7 @@ export async function runBulk(
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const results: FileResult[] = [];
   let errors = 0;
-  let streakKind: ClaudeErrorKind | undefined;
+  let streakKind: HaltKind | undefined;
   let streak = 0;
 
   for (let i = 0; i < files.length; i++) {
@@ -228,14 +233,10 @@ export async function runBulk(
     }
     errors++;
 
-    const kind = errorKindOf(result.error);
-    if (kind === undefined || isRateLimitOrOverload(result.error)) {
-      // Not a systemic signal: a non-Claude error (a frontmatter write that
-      // threw, say) or a throttle the retry loop already exhausted.
-      streakKind = undefined;
-      streak = 0;
-      continue;
-    }
+    // Every error kind counts, including rate_limit and overloaded: those only
+    // reach here once runFileWithRetry has exhausted the whole backoff
+    // schedule, so by this point they are a proven ceiling rather than a blip.
+    const kind = haltKindOf(result.error);
     streak = kind === streakKind ? streak + 1 : 1;
     streakKind = kind;
 
