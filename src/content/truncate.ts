@@ -31,42 +31,77 @@ export function truncateHeadTail(
   return `${sliceTokens(source, leftTokens)}\n...\n${sliceTokens(source, rightTokens)}`;
 }
 
+// One line of the source plus the slice of the already-computed token array
+// that covers it. Building this once removes the per-line tokenize() calls and
+// the separate pass over the assembled outline (#181), and gives the heading
+// walk somewhere to hang line state.
+interface LineInfo {
+  text: string;
+  tokenStart: number;
+  tokenEnd: number;
+}
+
+// Both the lines and the tokens are in source order, so one forward walk pairs
+// them up. Newline tokens land in whichever line they terminate, which is why
+// the old manual "+1 for the newline" cursor arithmetic is gone rather than
+// carried over — a line's tokenEnd is now simply where the next line starts.
+function indexLines(source: string, tokens: Token[]): LineInfo[] {
+  const lines: LineInfo[] = [];
+  let cursor = 0;
+  let t = 0;
+  for (const text of source.split("\n")) {
+    const lineEnd = cursor + text.length;
+    const tokenStart = t;
+    while (t < tokens.length && tokens[t].start < lineEnd) t++;
+    // The newline itself terminates this line.
+    if (
+      t < tokens.length &&
+      tokens[t].text === "\n" &&
+      tokens[t].start === lineEnd
+    ) {
+      t++;
+    }
+    lines.push({ text, tokenStart, tokenEnd: t });
+    cursor = lineEnd + 1;
+  }
+  return lines;
+}
+
+const PARAGRAPH_TOKEN_CAP = 30;
+
 export function truncateHeading(
   contentStr: string,
   tokens: Token[],
   limit: number,
 ): string {
-  const rawLines = contentStr.split("\n");
+  const lines = indexLines(contentStr, tokens);
   const newLines: string[] = [];
   let captureNextParagraph = false;
-  let tokenCursor = 0;
-  // Exclusive index into `tokens` just past the last line the outline consumed.
-  // Used as the body start so body never overlaps or misaligns with the
-  // reconstructed outline's own token count. The +1 accounts for the newline
-  // token between lines; `\S` never matches a newline, so the catch-all above
-  // leaves this arithmetic intact.
+  // Exclusive index into `tokens` just past the last line the outline consumed,
+  // so the body never overlaps the reconstructed outline.
   let bodyStart = 0;
 
-  for (const line of rawLines) {
-    const lineTokens = tokenize(line);
-    const nextCursor = tokenCursor + lineTokens.length + 1;
-
-    if (line.startsWith("#")) {
-      newLines.push(line);
+  for (const line of lines) {
+    if (line.text.startsWith("#")) {
+      newLines.push(line.text);
       captureNextParagraph = true;
-      bodyStart = nextCursor;
-    } else if (captureNextParagraph && line.trim() !== "") {
-      const truncated = lineTokens.slice(0, 30);
+      bodyStart = line.tokenEnd;
+    } else if (captureNextParagraph && line.text.trim() !== "") {
+      const lineTokens = tokens.slice(line.tokenStart, line.tokenEnd);
+      const truncated = lineTokens.slice(0, PARAGRAPH_TOKEN_CAP);
       const suffix = truncated.length < lineTokens.length ? "..." : "";
-      newLines.push(`${sliceTokens(line, truncated)}${suffix}`);
+      newLines.push(`${sliceTokens(contentStr, truncated)}${suffix}`);
       captureNextParagraph = false;
-      bodyStart = nextCursor;
+      bodyStart = line.tokenEnd;
     }
-
-    tokenCursor = nextCursor;
   }
 
   const result = newLines.join("\n");
+  // The outline is a constructed string — reordered lines, some with an
+  // ellipsis appended — so its tokens are not a contiguous slice of `tokens`
+  // and have to be counted directly. This is the one remaining pass, and it is
+  // over the outline rather than the document; the two full-document passes
+  // (per line, and again here) are what #181 removed.
   const outlineTokens = tokenize(result);
   if (outlineTokens.length > limit) {
     return sliceTokens(result, outlineTokens.slice(0, limit));
