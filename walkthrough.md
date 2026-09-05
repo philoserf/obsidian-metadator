@@ -31,11 +31,11 @@ find src -name '*.ts' ! -name '*.test.ts' | sort | xargs wc -l | sort -rn | head
 ```
 
 ```output
-    3118 total
+    3153 total
      458 src/settingsTab.ts
      441 src/metadata.ts
+     303 src/bulkGenerate.ts
      294 src/adapters/claude.ts
-     268 src/bulkGenerate.ts
      253 src/settingsMigrate.ts
      197 src/content/truncate.ts
      178 src/settings.ts
@@ -1408,9 +1408,12 @@ invalid key on a 500-note run would make 500 doomed round-trips and produce 500
 near-identical error rows before the user learned the key was bad — the first
 failure already proved the run could not succeed.
 
-Two rules. `auth` halts on the first occurrence. Everything else needs five in a row
-of the same kind, because one `api` or `unknown` failure is as likely to be one bad
-note as a broken run.
+Two rules. `auth` halts on the first occurrence. Everything else needs a streak of
+the same kind, because one `api` or `unknown` failure is as likely to be one bad note
+as a broken run.
+
+Connection failures get a shorter streak than the rest, for a timing reason rather
+than a semantic one — see below.
 
 ```bash
 sed -n '/^export const CONSECUTIVE_FAILURE_LIMIT/,/^export interface BulkRunOutcome/p' src/bulkGenerate.ts
@@ -1443,34 +1446,59 @@ grep -n -A22 'if (result.kind !== "error")' src/bulkGenerate.ts
 ```
 
 ```output
-238:    if (result.kind !== "error") {
-239-      streakKind = undefined;
-240-      streak = 0;
-241-      continue;
-242-    }
-243-    errors++;
-244-
-245-    // Every error kind counts, including rate_limit and overloaded: those only
-246-    // reach here once runFileWithRetry has exhausted the whole backoff
-247-    // schedule, so by this point they are a proven ceiling rather than a blip.
-248-    const kind = haltKindOf(result.error);
-249-    streak = kind === streakKind ? streak + 1 : 1;
-250-    streakKind = kind;
-251-
-252-    if (kind === "auth" || streak >= CONSECUTIVE_FAILURE_LIMIT) {
-253-      return {
-254-        results,
-255-        halted: {
-256-          kind,
-257-          message:
-258-            result.error instanceof Error
-259-              ? result.error.message
-260-              : String(result.error),
+273:    if (result.kind !== "error") {
+274-      streakKind = undefined;
+275-      streak = 0;
+276-      continue;
+277-    }
+278-    errors++;
+279-
+280-    // Every error kind counts, including rate_limit and overloaded: those only
+281-    // reach here once runFileWithRetry has exhausted the whole backoff
+282-    // schedule, so by this point they are a proven ceiling rather than a blip.
+283-    const kind = haltKindOf(result.error);
+284-    streak = kind === streakKind ? streak + 1 : 1;
+285-    streakKind = kind;
+286-
+287-    if (kind === "auth" || streak >= haltStreakFor(kind)) {
+288-      return {
+289-        results,
+290-        halted: {
+291-          kind,
+292-          message:
+293-            result.error instanceof Error
+294-              ? result.error.message
+295-              : String(result.error),
 ```
 
 Retryable kinds count toward the streak too — but only once `runFileWithRetry` has
 exhausted the whole backoff schedule for that file, by which point they are a proven
 ceiling rather than a blip.
+
+Connection failures are the exception on both counts: they take only the first two
+delays of the schedule, and they halt after two consecutive rather than five. The
+reason is arithmetic. A *hung* socket — established but silent, unlike a refused
+connection, which fails fast — burns the full request timeout on each of the SDK's
+three internal attempts, so the full policy would spend the better part of an hour
+proving a dead network is dead.
+
+```bash
+sed -n '/^export const CONNECTION_MAX_RETRIES/,/^}/p;/^function haltStreakFor/,/^}/p' src/bulkGenerate.ts
+```
+
+```output
+export const CONNECTION_MAX_RETRIES = 2;
+export const CONNECTION_HALT_STREAK = 2;
+
+function isConnectionError(error: unknown): boolean {
+  return error instanceof ClaudeApiError && error.kind === "connection";
+}
+function haltStreakFor(kind: HaltKind): number {
+  return kind === "connection"
+    ? CONNECTION_HALT_STREAK
+    : CONSECUTIVE_FAILURE_LIMIT;
+}
+```
 
 ## 8. The bulk modals
 
@@ -1955,7 +1983,7 @@ find src -name '*.test.ts' | sort | xargs grep -c '  test(' | awk -F: '{n+=$2; p
 ```output
 src/adapters/frontmatter.test.ts     19
 src/bulkConfirmModal.test.ts         3
-src/bulkGenerate.test.ts             44
+src/bulkGenerate.test.ts             46
 src/bulkModals.test.ts               18
 src/bulkOrchestrator.test.ts         8
 src/bulkSummaryModal.test.ts         5
@@ -1972,5 +2000,5 @@ src/settingsMigrate.test.ts          36
 src/settingsTab.test.ts              14
 src/stripSurroundingQuotes.test.ts   11
 ---
-total test() calls: 334
+total test() calls: 336
 ```
