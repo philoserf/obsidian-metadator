@@ -497,6 +497,28 @@ describe("failed frontmatter writes (#187)", () => {
     expect(result.kind).toBe("skipped");
   });
 
+  test("a quoted-empty title and a blank description write nothing", async () => {
+    // `""` is truthy and survives validateMetadataInput, but
+    // stripSurroundingQuotes unwraps it to "". Guarding on the raw string wrote
+    // an empty title and reported "Metadata updated successfully"; the same
+    // holds for a whitespace-only description.
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: "", description: "   ", title: '""' }),
+    );
+    const { app, fm, writes } = makeApp({});
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
+      makeSettings(),
+    );
+
+    expect("title" in fm).toBe(false);
+    expect("description" in fm).toBe(false);
+    expect(writes()).toBe(0);
+    expect(result.kind).toBe("skipped");
+  });
+
   test("a genuine no-op is still reported as skipped", async () => {
     // The model returned nothing usable, so no write is even attempted — the
     // case "skipped: no changes" is supposed to describe.

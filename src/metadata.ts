@@ -56,6 +56,14 @@ function notifyApiError(error: unknown): void {
 // The interior check is what separates the two cases. A genuinely wrapped
 // title has no further copy of its own delimiter inside it, so `"It's here"`
 // still unwraps — the delimiter is `"` and the interior only holds `'`.
+//
+// An apostrophe inside a word is not a delimiter, so it does not count: that
+// keeps `'It's a Wonderful Life'` unwrapping.
+//
+// What is left is genuinely ambiguous. `"The "Great" Gatsby"` is wrapped and
+// `"Hello" and "Goodbye"` is not, and nothing about their shape distinguishes
+// them. Both are left alone, because a stray pair of quotes is cosmetic while
+// slicing characters off a title the user then has to repair is not.
 export function stripSurroundingQuotes(str: string): string {
   const trimmed = str.trim();
   if (trimmed.length < 2) return trimmed;
@@ -63,7 +71,9 @@ export function stripSurroundingQuotes(str: string): string {
   const last = trimmed[trimmed.length - 1];
   if ((first === '"' || first === "'") && first === last) {
     const inner = trimmed.slice(1, -1);
-    if (!inner.includes(first)) return inner;
+    const significant =
+      first === "'" ? inner.replace(/(\p{L})'(\p{L})/gu, "$1$2") : inner;
+    if (!significant.includes(first)) return inner;
   }
   return trimmed;
 }
@@ -378,17 +388,24 @@ async function addMetadataWithClaude(
       updateMethod: "append",
     });
   }
-  if (metadata.description) {
+  // Same shape as the tags guard: judge the value that would actually be
+  // written, not the raw string. validateMetadataInput only checks that these
+  // are strings, so "   " reaches here as truthy and wrote a blank description.
+  if (metadata.description.trim() !== "") {
     updates.push({
       fieldName: settings.descriptionFieldName,
       value: metadata.description,
       updateMethod: "update",
     });
   }
-  if (settings.enableTitle && metadata.title) {
+  // stripSurroundingQuotes trims and can empty the string outright — `""`
+  // unwraps to "". Guarding on metadata.title instead let that through and
+  // wrote an empty title while reporting "Metadata updated successfully".
+  const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
+  if (settings.enableTitle && title !== "") {
     updates.push({
       fieldName: settings.titleFieldName,
-      value: stripSurroundingQuotes(metadata.title),
+      value: title,
       updateMethod: "update",
     });
   }

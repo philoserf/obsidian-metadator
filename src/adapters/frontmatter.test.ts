@@ -2,31 +2,22 @@ import { describe, expect, test } from "bun:test";
 import type { App, TFile } from "obsidian";
 import { updateFrontMatter } from "./frontmatter";
 
-function makeApp(
-  initial: Record<string, unknown> = {},
-  // Runs just before the callback, standing in for an edit the user makes
-  // while the API request is still in flight.
-  beforeCallback?: (fm: Record<string, unknown>) => void,
-): {
+function makeApp(initial: Record<string, unknown> = {}): {
   app: App;
   fm: Record<string, unknown>;
-  calls: () => number;
 } {
   const fm = { ...initial };
-  let calls = 0;
   const app = {
     fileManager: {
       processFrontMatter: async (
         _file: unknown,
         fn: (fm: Record<string, unknown>) => void,
       ) => {
-        calls++;
-        beforeCallback?.(fm);
         fn(fm);
       },
     },
   } as unknown as App;
-  return { app, fm, calls: () => calls };
+  return { app, fm };
 }
 
 describe("updateFrontMatter", () => {
@@ -199,5 +190,61 @@ describe("append with no values", () => {
     );
     expect(fm.tags).toEqual(["a", "b"]);
     expect(changed).toBe(false);
+  });
+
+  test("does not create an empty array where the field is blank", async () => {
+    const { app, fm } = makeApp({ tags: "" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "append",
+    );
+    expect(fm.tags).toBe("");
+    expect(changed).toBe(false);
+  });
+});
+
+describe("append onto a blank existing value", () => {
+  // `existing != null` used to count these as content, so String(existing)
+  // seeded a blank entry into the merge and the note kept an empty tag.
+  test("an empty string is not merged in as a tag", async () => {
+    const { app, fm } = makeApp({ tags: "" });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["ai", "testing"],
+      "append",
+    );
+    expect(fm.tags).toEqual(["ai", "testing"]);
+    expect(changed).toBe(true);
+  });
+
+  test("an array of blanks is not merged in as tags", async () => {
+    const { app, fm } = makeApp({ tags: ["", "  "] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["ai"],
+      "append",
+    );
+    expect(fm.tags).toEqual(["ai"]);
+    expect(changed).toBe(true);
+  });
+
+  test("a null value is not merged in as a tag", async () => {
+    const { app, fm } = makeApp({ tags: null });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["ai"],
+      "append",
+    );
+    expect(fm.tags).toEqual(["ai"]);
+    expect(changed).toBe(true);
   });
 });

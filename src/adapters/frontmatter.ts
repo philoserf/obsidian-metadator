@@ -13,16 +13,21 @@ export async function updateFrontMatter(
     if (method === "append") {
       const values = value as string[];
       const existing = frontmatter[key];
-      const base = Array.isArray(existing)
-        ? existing
-        : existing != null
-          ? [String(existing)]
-          : [];
+      // "Has something to merge with" is isEmptyValue, the same predicate
+      // update_if_empty uses below — a second definition here diverged from it:
+      // `existing != null` treated `tags: ""` and `tags: [""]` as content, so
+      // String("") was seeded into the merge and the note ended up with a blank
+      // tag alongside the generated ones.
+      const base = isEmptyValue(existing)
+        ? []
+        : Array.isArray(existing)
+          ? existing
+          : [String(existing)];
       const merged = Array.from(new Set(base.concat(values)));
-      // An empty append against an absent field is not a change: without this
+      // An empty append against an empty field is not a change: without this
       // the !Array.isArray(existing) term alone reported one, writing key: []
       // where nothing existed (#161).
-      if (merged.length === 0 && existing === undefined) return;
+      if (merged.length === 0 && isEmptyValue(existing)) return;
       changed =
         !Array.isArray(existing) ||
         base.length !== merged.length ||

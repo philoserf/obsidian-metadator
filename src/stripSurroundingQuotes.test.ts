@@ -23,6 +23,32 @@ describe("stripSurroundingQuotes", () => {
     expect(stripSurroundingQuotes(`'He said "hi"'`)).toBe('He said "hi"');
   });
 
+  test("an apostrophe inside a word does not block unwrapping", () => {
+    expect(stripSurroundingQuotes("'It's a Wonderful Life'")).toBe(
+      "It's a Wonderful Life",
+    );
+    expect(stripSurroundingQuotes("'Don't Look Up'")).toBe("Don't Look Up");
+  });
+
+  test("a quote-shaped apostrophe still blocks it", () => {
+    // 'Bob' opens after a space, so this is the ambiguous shape, not a
+    // contraction.
+    expect(stripSurroundingQuotes("'Tis the season, said 'Bob'")).toBe(
+      "'Tis the season, said 'Bob'",
+    );
+  });
+
+  test("genuinely ambiguous nesting is left alone in both directions", () => {
+    // Wrapped, but indistinguishable in shape from the unwrapped case below.
+    // Leaving a stray pair of quotes beats slicing characters off a title.
+    expect(stripSurroundingQuotes('"The "Great" Gatsby"')).toBe(
+      '"The "Great" Gatsby"',
+    );
+    expect(stripSurroundingQuotes('"Hello" and "Goodbye"')).toBe(
+      '"Hello" and "Goodbye"',
+    );
+  });
+
   test("mismatched outer quotes are not a wrapper", () => {
     expect(stripSurroundingQuotes(`"Mixed'`)).toBe(`"Mixed'`);
   });
