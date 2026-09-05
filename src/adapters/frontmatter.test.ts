@@ -2,22 +2,31 @@ import { describe, expect, test } from "bun:test";
 import type { App, TFile } from "obsidian";
 import { updateFrontMatter } from "./frontmatter";
 
-function makeApp(initial: Record<string, unknown> = {}): {
+function makeApp(
+  initial: Record<string, unknown> = {},
+  // Runs just before the callback, standing in for an edit the user makes
+  // while the API request is still in flight.
+  beforeCallback?: (fm: Record<string, unknown>) => void,
+): {
   app: App;
   fm: Record<string, unknown>;
+  calls: () => number;
 } {
   const fm = { ...initial };
+  let calls = 0;
   const app = {
     fileManager: {
       processFrontMatter: async (
         _file: unknown,
         fn: (fm: Record<string, unknown>) => void,
       ) => {
+        calls++;
+        beforeCallback?.(fm);
         fn(fm);
       },
     },
   } as unknown as App;
-  return { app, fm };
+  return { app, fm, calls: () => calls };
 }
 
 describe("updateFrontMatter", () => {
@@ -33,16 +42,23 @@ describe("updateFrontMatter", () => {
     expect(fm.description).toBe("existing");
   });
 
-  test("keep: sets the value when field is absent", async () => {
-    const { app, fm } = makeApp({});
-    await updateFrontMatter(
+  test("keep: leaves a field the user deleted mid-request deleted", async () => {
+    // keep is only chosen when the field was populated in the pre-request
+    // snapshot, so the only way it is absent by the time the callback runs is
+    // that the user removed it during the call. Filling it back in restored
+    // something they had just deleted, and reported the file as changed (#202).
+    const { app, fm } = makeApp({ description: "existing" }, (live) => {
+      delete live.description;
+    });
+    const changed = await updateFrontMatter(
       app,
       {} as TFile,
       "description",
       "new value",
       "keep",
     );
-    expect(fm.description).toBe("new value");
+    expect("description" in fm).toBe(false);
+    expect(changed).toBe(false);
   });
 
   test("update: overwrites an existing value", async () => {
@@ -147,18 +163,6 @@ describe("updateFrontMatter", () => {
       "keep",
     );
     expect(changed).toBe(false);
-  });
-
-  test("keep: returns true when field is absent", async () => {
-    const { app } = makeApp({});
-    const changed = await updateFrontMatter(
-      app,
-      {} as TFile,
-      "description",
-      "new value",
-      "keep",
-    );
-    expect(changed).toBe(true);
   });
 
   test("update_if_empty: writes when the live value is empty", async () => {

@@ -65,10 +65,12 @@ export async function updateFrontMatter(
         if (frontmatter[key] !== value) changed = true;
         frontmatter[key] = value;
       }
-    } else if (frontmatter[key] === undefined) {
-      frontmatter[key] = value;
-      changed = true;
     }
+    // method === "keep": the field was populated when the decision was made,
+    // so leave it alone. This branch used to fill the key when it was
+    // undefined — which, given keep is only chosen for a non-empty field, can
+    // only mean the user deleted it during the request. Restoring it undid
+    // their edit and reported the file as changed (#202).
   });
   return changed;
 }
