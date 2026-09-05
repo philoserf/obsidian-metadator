@@ -424,3 +424,82 @@ describe("getContent frontmatter handling", () => {
     expect(result).toBe("");
   });
 });
+
+describe("truncateHeading fenced code blocks", () => {
+  // Only the outline is under test. The "Body:" section is the verbatim tail of
+  // the document, so fenced code legitimately appears there — the bug was fence
+  // content being promoted into the outline as headings and prose.
+  function outline(content: string, limit = 1000) {
+    const result = truncateHeading(content, tokenize(content), limit);
+    return result.split("\n\nBody:")[0];
+  }
+
+  test("a # comment inside a fence is not a heading", () => {
+    const content = [
+      "# Real Heading",
+      "Real paragraph.",
+      "",
+      "```python",
+      "# this is a python comment, not a heading",
+      "def foo():",
+      "    pass",
+      "```",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real Heading");
+    expect(result).toContain("Real paragraph.");
+    expect(result).not.toContain("python comment");
+    expect(result).not.toContain("def foo");
+  });
+
+  test("a heading after the fence closes is still a heading", () => {
+    const content = [
+      "```",
+      "# not a heading",
+      "```",
+      "",
+      "# After The Fence",
+      "Its paragraph.",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# After The Fence");
+    expect(result).not.toContain("# not a heading");
+  });
+
+  test("a tilde fence works the same as a backtick fence", () => {
+    const content = ["~~~", "# not a heading", "~~~", "# Real"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# not a heading");
+  });
+
+  test("a backtick run inside a tilde fence does not close it", () => {
+    const content = ["~~~", "```", "# still inside", "~~~", "# Real"].join(
+      "\n",
+    );
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# still inside");
+  });
+
+  test("a longer closing marker still closes the fence", () => {
+    const content = ["```", "# inside", "````", "# Real"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# inside");
+  });
+
+  test("an unterminated fence swallows the rest, as a markdown parser would", () => {
+    const content = ["# Before", "```", "# inside", "# also inside"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Before");
+    expect(result).not.toContain("# also inside");
+  });
+
+  test("an indented fence is still a fence", () => {
+    const content = ["  ```", "# inside", "  ```", "# Real"].join("\n");
+    const result = outline(content);
+    expect(result).toContain("# Real");
+    expect(result).not.toContain("# inside");
+  });
+});

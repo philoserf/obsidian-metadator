@@ -69,6 +69,19 @@ function indexLines(source: string, tokens: Token[]): LineInfo[] {
 
 const PARAGRAPH_TOKEN_CAP = 30;
 
+// A fence opens and closes on a line whose first non-space characters are three
+// or more backticks or tildes. Only a fence of the same character and at least
+// the same length closes one, so a ``` inside a ~~~ block does not end it.
+const FENCE = /^\s*(`{3,}|~{3,})/;
+
+function fenceMarker(line: string): string | undefined {
+  return FENCE.exec(line)?.[1];
+}
+
+function closesFence(open: string, marker: string): boolean {
+  return marker[0] === open[0] && marker.length >= open.length;
+}
+
 export function truncateHeading(
   contentStr: string,
   tokens: Token[],
@@ -80,8 +93,26 @@ export function truncateHeading(
   // Exclusive index into `tokens` just past the last line the outline consumed,
   // so the body never overlaps the reconstructed outline.
   let bodyStart = 0;
+  // The marker that opened the current fence, or undefined outside one. Without
+  // this a shell or Python comment inside a fence reads as a markdown heading,
+  // gets added to the outline, and flips paragraph capture so the next line of
+  // code is captured as prose (#166).
+  let openFence: string | undefined;
 
   for (const line of lines) {
+    const marker = fenceMarker(line.text);
+    if (marker) {
+      if (openFence === undefined) {
+        openFence = marker;
+      } else if (closesFence(openFence, marker)) {
+        openFence = undefined;
+      }
+      // A fence line is never a heading and never prose.
+      captureNextParagraph = false;
+      continue;
+    }
+    if (openFence !== undefined) continue;
+
     if (line.text.startsWith("#")) {
       newLines.push(line.text);
       captureNextParagraph = true;
