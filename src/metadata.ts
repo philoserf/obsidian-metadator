@@ -7,6 +7,7 @@ import {
 import { updateFrontMatter } from "./adapters/frontmatter";
 import { getContent } from "./content/getContent";
 import { isEmptyValue } from "./emptyValue";
+import { isAbortError } from "./errors";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, parseTags } from "./prompt";
 import type { MetadataToolSettings } from "./settings";
@@ -106,15 +107,6 @@ export interface GenerateOptions {
 
 export interface InteractiveGenerateOptions {
   signal?: AbortSignal;
-}
-
-function isAbortError(error: unknown): boolean {
-  return (
-    (error instanceof Error && error.name === "AbortError") ||
-    (typeof DOMException !== "undefined" &&
-      error instanceof DOMException &&
-      error.name === "AbortError")
-  );
 }
 
 export async function generateMetadataForFile(
