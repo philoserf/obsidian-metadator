@@ -57,7 +57,3 @@ export function sliceTokens(source: string, tokens: Token[]): string {
   if (!first || !last) return "";
   return source.slice(first.start, last.end);
 }
-
-export function splitIntoTokens(str: string): string[] {
-  return tokenize(str).map((t) => t.text);
-}
