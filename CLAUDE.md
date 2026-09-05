@@ -38,7 +38,7 @@ Most of `src/` is self-describing. These three exist in the shape they do for re
 - **Frontmatter updates** use `app.fileManager.processFrontMatter()` — not `parseYaml`/`stringifyYaml`
 - **Token counting** uses a regex (`src/content/tokens.ts`) with per-character CJK/kana/hangul alternatives, Unicode word runs, nine punctuation marks, `\n`, and a trailing `\S` catch-all. The catch-all is load-bearing: without it emoji and markdown syntax match nothing and vanish from the count. Spaces and tabs stay uncounted on purpose, approximating how BPE tokenizers absorb whitespace into the following word.
 - **Truncation reconstructs by slicing the source string**, never by re-joining token text. `tokenize` returns `{text, start, end}` and `sliceTokens(source, run)` returns the span. Re-joining would drop or re-space every character the counting regex sees individually — counting and reconstruction want opposite things from the same token array (#179, #182).
-- **Truncation methods**: `head_only` (first N tokens), `head_tail` (80% start + 20% end), `heading` (outline + first paragraph per section)
+- **Truncation methods**: `head_only` (first N tokens), `head_tail` (80% start + 20% end), `heading` (outline + first paragraph per section, soft-wrapped continuations included)
 - **Anthropic client** is initialized with `dangerouslyAllowBrowser: true` since it runs inside Obsidian's Electron renderer
 - **Tags, description, and title** all respect `updateMethod` — preserve_existing keeps populated fields, always_regenerate updates all
 - **API calls** use a system message for instructions and wrap article content in `<article>` XML tags in the user message

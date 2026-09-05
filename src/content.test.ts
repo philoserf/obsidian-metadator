@@ -361,10 +361,14 @@ describe("truncateHeading", () => {
     // 31-word paragraph triggers the "..." suffix (3 extra tokens in outline).
     // Buggy offset overshoots the original stream and skips FINALWORD; fix
     // advances by source lines consumed, so body begins at FINALWORD.
+    //
+    // The blank line matters: without it FINALWORD is a soft-wrapped
+    // continuation of the same paragraph and belongs to the outline, not the
+    // body (#167).
     const paragraph = Array.from({ length: 31 }, (_, i) => `W${i + 1}`).join(
       " ",
     );
-    const content = `# H\n${paragraph}\nFINALWORD`;
+    const content = `# H\n${paragraph}\n\nFINALWORD`;
     const tokens = tokenize(content);
     const result = truncateHeading(content, tokens, 40);
     expect(result).toContain("Body:");
@@ -501,5 +505,74 @@ describe("truncateHeading fenced code blocks", () => {
     const result = outline(content);
     expect(result).toContain("# Real");
     expect(result).not.toContain("# inside");
+  });
+});
+
+describe("truncateHeading paragraph accumulation", () => {
+  function outline(content: string, limit = 1000) {
+    return truncateHeading(content, tokenize(content), limit).split(
+      "\n\nBody:",
+    )[0];
+  }
+
+  test("a soft-wrapped paragraph is captured whole", () => {
+    const content = [
+      "# Heading",
+      "First physical line of the paragraph",
+      "second line that soft-wrapped",
+      "and a third.",
+      "",
+      "Later content.",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("First physical line");
+    expect(result).toContain("second line that soft-wrapped");
+    expect(result).toContain("and a third.");
+  });
+
+  test("a blank line ends the paragraph", () => {
+    const content = [
+      "# Heading",
+      "The paragraph.",
+      "",
+      "A second paragraph that should not be captured.",
+    ].join("\n");
+    const result = outline(content);
+    expect(result).toContain("The paragraph.");
+    expect(result).not.toContain("second paragraph");
+  });
+
+  test("the next heading ends the paragraph", () => {
+    const content = ["# One", "Para one.", "# Two", "Para two."].join("\n");
+    const result = outline(content);
+    expect(result).toContain("Para one.");
+    expect(result).toContain("# Two");
+    expect(result).toContain("Para two.");
+  });
+
+  test("a fence ends the paragraph", () => {
+    const content = ["# Heading", "The prose.", "```", "code()", "```"].join(
+      "\n",
+    );
+    const result = outline(content);
+    expect(result).toContain("The prose.");
+    expect(result).not.toContain("code()");
+  });
+
+  test("the 30-token cap applies to the whole paragraph, not per line", () => {
+    // Two lines of 20 words: under the old per-line rule the second line was
+    // dropped entirely and neither hit the cap. Together they exceed it.
+    const line = Array.from({ length: 20 }, (_, i) => `w${i}`).join(" ");
+    const content = `# H\n${line}\n${line}`;
+    const result = outline(content);
+    expect(result).toContain("...");
+    expect(result).toContain("w19");
+  });
+
+  test("a paragraph under the cap gets no ellipsis", () => {
+    const content = "# H\nShort first line\nand a short second.";
+    const result = outline(content);
+    expect(result).toContain("and a short second.");
+    expect(result).not.toContain("...");
   });
 });

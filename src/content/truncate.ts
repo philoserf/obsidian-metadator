@@ -98,6 +98,21 @@ export function truncateHeading(
   // gets added to the outline, and flips paragraph capture so the next line of
   // code is captured as prose (#166).
   let openFence: string | undefined;
+  // Token span of the paragraph being accumulated, if any.
+  let paragraphStart: number | undefined;
+  let paragraphEnd = 0;
+
+  // The cap applies to the whole logical paragraph, not to each physical line,
+  // so the ellipsis lands where the paragraph was actually cut.
+  function flushParagraph(): void {
+    if (paragraphStart === undefined) return;
+    const paragraphTokens = tokens.slice(paragraphStart, paragraphEnd);
+    const truncated = paragraphTokens.slice(0, PARAGRAPH_TOKEN_CAP);
+    const suffix = truncated.length < paragraphTokens.length ? "..." : "";
+    newLines.push(`${sliceTokens(contentStr, truncated)}${suffix}`);
+    paragraphStart = undefined;
+    captureNextParagraph = false;
+  }
 
   for (const line of lines) {
     const marker = fenceMarker(line.text);
@@ -107,25 +122,33 @@ export function truncateHeading(
       } else if (closesFence(openFence, marker)) {
         openFence = undefined;
       }
-      // A fence line is never a heading and never prose.
+      // A fence line is never a heading and never prose, and it ends any
+      // paragraph that was being accumulated.
+      flushParagraph();
       captureNextParagraph = false;
       continue;
     }
     if (openFence !== undefined) continue;
 
     if (line.text.startsWith("#")) {
+      flushParagraph();
       newLines.push(line.text);
       captureNextParagraph = true;
       bodyStart = line.tokenEnd;
     } else if (captureNextParagraph && line.text.trim() !== "") {
-      const lineTokens = tokens.slice(line.tokenStart, line.tokenEnd);
-      const truncated = lineTokens.slice(0, PARAGRAPH_TOKEN_CAP);
-      const suffix = truncated.length < lineTokens.length ? "..." : "";
-      newLines.push(`${sliceTokens(contentStr, truncated)}${suffix}`);
-      captureNextParagraph = false;
+      // A paragraph runs until a blank line, the next heading, or a fence.
+      // Capturing only the first physical line dropped every soft-wrapped
+      // continuation, which is most of a paragraph in a note that is not
+      // hard-wrapped (#167).
+      if (paragraphStart === undefined) paragraphStart = line.tokenStart;
+      paragraphEnd = line.tokenEnd;
       bodyStart = line.tokenEnd;
+    } else if (captureNextParagraph) {
+      flushParagraph();
+      captureNextParagraph = false;
     }
   }
+  flushParagraph();
 
   const result = newLines.join("\n");
   // The outline is a constructed string — reordered lines, some with an
