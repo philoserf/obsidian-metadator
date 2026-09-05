@@ -97,8 +97,9 @@ export function createDebouncer(
 
 export class MetadataToolSettingTab extends PluginSettingTab {
   plugin: MetadataToolPlugin;
-  // Cleared by display(), which empties containerEl — otherwise a re-render
-  // would leave flushes pointing at inputs that no longer exist.
+  // Flushed and cleared by hide(), and cleared again by display() before it
+  // re-renders — otherwise a flush would point at an input that no longer
+  // exists.
   private pending: PendingCommit[] = [];
 
   constructor(app: App, plugin: MetadataToolPlugin) {
@@ -110,6 +111,112 @@ export class MetadataToolSettingTab extends PluginSettingTab {
   hide(): void {
     for (const p of this.pending) p.flush();
     this.pending = [];
+    super.hide();
+  }
+
+  // The three field-name settings differ only in which key they write and what
+  // the collision Notice calls the field, so they share one builder. Returns
+  // the Setting because the caller needs it for setDisabled().
+  private addFieldNameSetting(
+    containerEl: HTMLElement,
+    label: string,
+    key: "tagsFieldName" | "descriptionFieldName" | "titleFieldName",
+  ): Setting {
+    return new Setting(containerEl)
+      .setName(`${label} Field Name`)
+      .setDesc(`Frontmatter field name for ${label.toLowerCase()}`)
+      .addText((text) => {
+        text.setValue(this.plugin.settings[key]);
+        this.pending.push(
+          commitOnBlur(text, async () => {
+            // Trimmed to match settingsMigrate's readString(nonEmpty), which
+            // treats a whitespace-only name as absent. Without it " " was
+            // truthy, appeared to stick, wrote a malformed YAML key, then
+            // silently reverted on the next plugin load (#186).
+            const name = text.getValue().trim() || DEFAULT_SETTINGS[key];
+            if (name === this.plugin.settings[key]) {
+              // Still normalize the box, so " tags " does not sit there
+              // looking like an uncommitted edit.
+              text.setValue(name);
+              return;
+            }
+            const candidate = { ...this.plugin.settings };
+            candidate[key] = name;
+            if (!areFieldNamesDistinct(candidate)) {
+              new Notice(
+                `${label} field name must differ from the other frontmatter field names`,
+              );
+              text.setValue(this.plugin.settings[key]);
+              return;
+            }
+            this.plugin.settings[key] = name;
+            text.setValue(name);
+            await this.plugin.saveSettings();
+          }),
+        );
+      });
+  }
+
+  private addBoundedIntSetting(
+    containerEl: HTMLElement,
+    name: string,
+    desc: string,
+    noticeLabel: string,
+    key: "maxBulkFiles" | "contentTokenLimit",
+    max: number,
+  ): Setting {
+    return new Setting(containerEl)
+      .setName(name)
+      .setDesc(desc)
+      .addText((text) => {
+        text.setValue(this.plugin.settings[key].toString());
+        this.pending.push(
+          commitOnBlur(text, async () => {
+            const parsed = parseBoundedPositiveInt(text.getValue(), max);
+            if (parsed === null) {
+              new Notice(
+                `${noticeLabel} must be a positive integer up to ${max}`,
+              );
+              text.setValue(this.plugin.settings[key].toString());
+              return;
+            }
+            // Normalize before the equality check, so "0500" tidies itself
+            // even though it commits nothing.
+            text.setValue(parsed.toString());
+            if (parsed === this.plugin.settings[key]) return;
+            this.plugin.settings[key] = parsed;
+            await this.plugin.saveSettings();
+          }),
+        );
+      });
+  }
+
+  private addPromptSetting(
+    containerEl: HTMLElement,
+    label: string,
+    desc: string,
+    key: "tagsPrompt" | "descriptionPrompt" | "titlePrompt",
+    save: PendingCommit & { schedule: () => void },
+  ): Setting {
+    return new Setting(containerEl)
+      .setName(`${label} Prompt`)
+      .setDesc(desc)
+      .addTextArea((text) => {
+        text.setValue(this.plugin.settings[key]).onChange((value) => {
+          // The length check stays immediate — it can judge a partial value,
+          // unlike the blur-committed fields. Only the disk write is deferred.
+          if (value.length > PROMPT_MAX_LENGTH) {
+            new Notice(
+              `${label} prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
+            );
+            text.setValue(this.plugin.settings[key]);
+            return;
+          }
+          this.plugin.settings[key] = value;
+          save.schedule();
+        });
+        text.inputEl.setAttr("rows", "3");
+      });
   }
 
   display(): void {
@@ -117,13 +224,14 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     containerEl.empty();
     this.pending = [];
 
-    const saveLater = () => {
-      const d = createDebouncer(() => {
-        void this.plugin.saveSettings();
-      });
-      this.pending.push(d);
-      return d;
-    };
+    // One debouncer for every free-text field, not one each: they all run the
+    // same commit, so a burst that crosses fields collapses into a single
+    // write and hide() flushes one timer instead of racing four saveData
+    // calls against each other.
+    const save = createDebouncer(() => {
+      void this.plugin.saveSettings();
+    });
+    this.pending.push(save);
 
     // Anthropic API Settings
     new Setting(containerEl).setName("Anthropic API Settings").setHeading();
@@ -139,7 +247,6 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         "Your Anthropic API key. Get one at console.anthropic.com (requires an account with billing enabled)",
       )
       .addText((text) => {
-        const save = saveLater();
         text
           .setPlaceholder("sk-ant-...")
           .setValue(this.plugin.settings.anthropicApiKey)
@@ -234,32 +341,14 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(containerEl)
-      .setName("Max Bulk Files")
-      .setDesc(
-        "Hard limit on files-that-will-change in a single bulk run. Above this, the confirm dialog requires explicit override.",
-      )
-      .addText((text) => {
-        text.setValue(this.plugin.settings.maxBulkFiles.toString());
-        this.pending.push(
-          commitOnBlur(text, async () => {
-            const parsed = parseBoundedPositiveInt(
-              text.getValue(),
-              MAX_BULK_FILES,
-            );
-            if (parsed === null) {
-              new Notice(
-                `Max bulk files must be a positive integer up to ${MAX_BULK_FILES}`,
-              );
-              text.setValue(this.plugin.settings.maxBulkFiles.toString());
-              return;
-            }
-            if (parsed === this.plugin.settings.maxBulkFiles) return;
-            this.plugin.settings.maxBulkFiles = parsed;
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
+    this.addBoundedIntSetting(
+      containerEl,
+      "Max Bulk Files",
+      "Hard limit on files-that-will-change in a single bulk run. Above this, the confirm dialog requires explicit override.",
+      "Max bulk files",
+      "maxBulkFiles",
+      MAX_BULK_FILES,
+    );
 
     new Setting(containerEl)
       .setName("Truncate Content")
@@ -275,30 +364,14 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           }),
       );
 
-    const contentTokenLimitSetting = new Setting(containerEl)
-      .setName("Content Token Limit")
-      .setDesc("Maximum number of tokens of note content sent to the API")
-      .addText((text) => {
-        text.setValue(this.plugin.settings.contentTokenLimit.toString());
-        this.pending.push(
-          commitOnBlur(text, async () => {
-            const parsed = parseBoundedPositiveInt(
-              text.getValue(),
-              MAX_CONTENT_TOKEN_LIMIT,
-            );
-            if (parsed === null) {
-              new Notice(
-                `Content token limit must be a positive integer up to ${MAX_CONTENT_TOKEN_LIMIT}`,
-              );
-              text.setValue(this.plugin.settings.contentTokenLimit.toString());
-              return;
-            }
-            if (parsed === this.plugin.settings.contentTokenLimit) return;
-            this.plugin.settings.contentTokenLimit = parsed;
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
+    const contentTokenLimitSetting = this.addBoundedIntSetting(
+      containerEl,
+      "Content Token Limit",
+      "Maximum number of tokens of note content sent to the API",
+      "Content token limit",
+      "contentTokenLimit",
+      MAX_CONTENT_TOKEN_LIMIT,
+    );
 
     const truncateMethodSetting = new Setting(containerEl)
       .setName("Truncate Method")
@@ -324,118 +397,30 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     // Tags Settings
     new Setting(containerEl).setName("Tags Settings").setHeading();
 
-    new Setting(containerEl)
-      .setName("Tags Field Name")
-      .setDesc("Frontmatter field name for tags")
-      .addText((text) => {
-        text.setValue(this.plugin.settings.tagsFieldName);
-        this.pending.push(
-          commitOnBlur(text, async () => {
-            // Trimmed to match settingsMigrate's readString(nonEmpty), which
-            // treats a whitespace-only name as absent. Without it " " was
-            // truthy, appeared to stick, wrote a malformed YAML key, then
-            // silently reverted on the next plugin load (#186).
-            const name =
-              text.getValue().trim() || DEFAULT_SETTINGS.tagsFieldName;
-            if (name === this.plugin.settings.tagsFieldName) return;
-            if (
-              !areFieldNamesDistinct({
-                ...this.plugin.settings,
-                tagsFieldName: name,
-              })
-            ) {
-              new Notice(
-                "Tags field name must differ from the other frontmatter field names",
-              );
-              text.setValue(this.plugin.settings.tagsFieldName);
-              return;
-            }
-            this.plugin.settings.tagsFieldName = name;
-            text.setValue(name);
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
-
-    new Setting(containerEl)
-      .setName("Tags Prompt")
-      .setDesc(
-        `Instructions for tag generation (max ${PROMPT_MAX_LENGTH} chars)`,
-      )
-      .addTextArea((text) => {
-        const save = saveLater();
-        text.setValue(this.plugin.settings.tagsPrompt).onChange((value) => {
-          // The length check stays immediate — it can judge a partial value,
-          // unlike the blur-committed fields. Only the disk write is deferred.
-          if (value.length > PROMPT_MAX_LENGTH) {
-            new Notice(
-              `Tags prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
-            );
-            text.setValue(this.plugin.settings.tagsPrompt);
-            return;
-          }
-          this.plugin.settings.tagsPrompt = value;
-          save.schedule();
-        });
-        text.inputEl.setAttr("rows", "3");
-      });
+    this.addFieldNameSetting(containerEl, "Tags", "tagsFieldName");
+    this.addPromptSetting(
+      containerEl,
+      "Tags",
+      `Instructions for tag generation (max ${PROMPT_MAX_LENGTH} chars)`,
+      "tagsPrompt",
+      save,
+    );
 
     // Description Settings
     new Setting(containerEl).setName("Description Settings").setHeading();
 
-    new Setting(containerEl)
-      .setName("Description Field Name")
-      .setDesc("Frontmatter field name for description")
-      .addText((text) => {
-        text.setValue(this.plugin.settings.descriptionFieldName);
-        this.pending.push(
-          commitOnBlur(text, async () => {
-            const name =
-              text.getValue().trim() || DEFAULT_SETTINGS.descriptionFieldName;
-            if (name === this.plugin.settings.descriptionFieldName) return;
-            if (
-              !areFieldNamesDistinct({
-                ...this.plugin.settings,
-                descriptionFieldName: name,
-              })
-            ) {
-              new Notice(
-                "Description field name must differ from the other frontmatter field names",
-              );
-              text.setValue(this.plugin.settings.descriptionFieldName);
-              return;
-            }
-            this.plugin.settings.descriptionFieldName = name;
-            text.setValue(name);
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
-
-    new Setting(containerEl)
-      .setName("Description Prompt")
-      .setDesc(
-        `Instructions for description generation (max ${PROMPT_MAX_LENGTH} chars)`,
-      )
-      .addTextArea((text) => {
-        const save = saveLater();
-        text
-          .setValue(this.plugin.settings.descriptionPrompt)
-          .onChange((value) => {
-            // The length check stays immediate — it can judge a partial value,
-            // unlike the blur-committed fields. Only the disk write is deferred.
-            if (value.length > PROMPT_MAX_LENGTH) {
-              new Notice(
-                `Description prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
-              );
-              text.setValue(this.plugin.settings.descriptionPrompt);
-              return;
-            }
-            this.plugin.settings.descriptionPrompt = value;
-            save.schedule();
-          });
-        text.inputEl.setAttr("rows", "3");
-      });
+    this.addFieldNameSetting(
+      containerEl,
+      "Description",
+      "descriptionFieldName",
+    );
+    this.addPromptSetting(
+      containerEl,
+      "Description",
+      `Instructions for description generation (max ${PROMPT_MAX_LENGTH} chars)`,
+      "descriptionPrompt",
+      save,
+    );
 
     // Title Settings
     new Setting(containerEl).setName("Title Settings").setHeading();
@@ -454,57 +439,18 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           }),
       );
 
-    const titleFieldNameSetting = new Setting(containerEl)
-      .setName("Title Field Name")
-      .setDesc("Frontmatter field name for title")
-      .addText((text) => {
-        text.setValue(this.plugin.settings.titleFieldName);
-        this.pending.push(
-          commitOnBlur(text, async () => {
-            const name =
-              text.getValue().trim() || DEFAULT_SETTINGS.titleFieldName;
-            if (name === this.plugin.settings.titleFieldName) return;
-            if (
-              !areFieldNamesDistinct({
-                ...this.plugin.settings,
-                titleFieldName: name,
-              })
-            ) {
-              new Notice(
-                "Title field name must differ from the other frontmatter field names",
-              );
-              text.setValue(this.plugin.settings.titleFieldName);
-              return;
-            }
-            this.plugin.settings.titleFieldName = name;
-            text.setValue(name);
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
-
-    const titlePromptSetting = new Setting(containerEl)
-      .setName("Title Prompt")
-      .setDesc(
-        `Instructions for title generation (max ${PROMPT_MAX_LENGTH} chars)`,
-      )
-      .addTextArea((text) => {
-        const save = saveLater();
-        text.setValue(this.plugin.settings.titlePrompt).onChange((value) => {
-          // The length check stays immediate — it can judge a partial value,
-          // unlike the blur-committed fields. Only the disk write is deferred.
-          if (value.length > PROMPT_MAX_LENGTH) {
-            new Notice(
-              `Title prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
-            );
-            text.setValue(this.plugin.settings.titlePrompt);
-            return;
-          }
-          this.plugin.settings.titlePrompt = value;
-          save.schedule();
-        });
-        text.inputEl.setAttr("rows", "3");
-      });
+    const titleFieldNameSetting = this.addFieldNameSetting(
+      containerEl,
+      "Title",
+      "titleFieldName",
+    );
+    const titlePromptSetting = this.addPromptSetting(
+      containerEl,
+      "Title",
+      `Instructions for title generation (max ${PROMPT_MAX_LENGTH} chars)`,
+      "titlePrompt",
+      save,
+    );
 
     titleFieldNameSetting.setDisabled(!this.plugin.settings.enableTitle);
     titlePromptSetting.setDisabled(!this.plugin.settings.enableTitle);

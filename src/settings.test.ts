@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { areFieldNamesDistinct, DEFAULT_SETTINGS } from "./settings";
 
-const names = (over: Partial<Record<string, string>> = {}) => ({
+type FieldNames = Parameters<typeof areFieldNamesDistinct>[0];
+
+// Typed to the function's own parameter, so a typo'd override key is a compile
+// error rather than a test that passes without exercising anything.
+const names = (over: Partial<FieldNames> = {}): FieldNames => ({
   tagsFieldName: "tags",
   descriptionFieldName: "description",
   titleFieldName: "title",
