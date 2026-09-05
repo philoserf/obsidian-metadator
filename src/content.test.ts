@@ -363,7 +363,7 @@ describe("truncateHeading", () => {
 describe("getContent", () => {
   function makeVaultApp(content: string) {
     return {
-      vault: { read: async () => content },
+      vault: { read: async () => content, cachedRead: async () => content },
     } as unknown as App;
   }
 

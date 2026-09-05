@@ -13,7 +13,12 @@ export async function getContent(
   limit: number = 1000,
   method: TruncateMethod = "head_only",
 ): Promise<string> {
-  let contentStr = await app.vault.read(file);
+  // cachedRead, not read: this is pure extraction — the string is tokenized,
+  // truncated and embedded in a prompt, and nothing derives a write from it
+  // (frontmatter writes go through processFrontMatter, which reads its own
+  // copy). Obsidian reserves read() for the read side of a modification, and
+  // a bulk run calls this once per note across a whole folder tree.
+  let contentStr = await app.vault.cachedRead(file);
 
   if (contentStr.length === 0) {
     return "";

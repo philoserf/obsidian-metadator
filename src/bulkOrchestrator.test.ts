@@ -94,7 +94,10 @@ function makeApp(): App {
     metadataCache: {
       getFileCache: (f: TFile) => ({ frontmatter: store.get(f.path) ?? {} }),
     },
-    vault: { read: async () => "note body content" },
+    vault: {
+      read: async () => "note body content",
+      cachedRead: async () => "note body content",
+    },
     fileManager: {
       processFrontMatter: async (
         f: TFile,
