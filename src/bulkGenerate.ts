@@ -116,6 +116,40 @@ function isRetryable(error: unknown): boolean {
   return error instanceof ClaudeApiError && RETRYABLE_KINDS.has(error.kind);
 }
 
+// A connection failure is not a throttle. A rate limit means the server heard us
+// and said no, so waiting is meaningful and later files may still succeed; a
+// connection failure means we never reached it, and each attempt burns the full
+// request timeout three times over because the SDK retries underneath us.
+//
+// So connection errors get a shorter schedule and a shorter streak. On a hung
+// socket — established but silent, unlike a refused connection, which fails fast
+// — the full policy took about an hour to give up on a dead network. This brings
+// that back to roughly the pre-retry figure while still absorbing the Wi-Fi blip
+// the retry exists for.
+export const CONNECTION_MAX_RETRIES = 2;
+export const CONNECTION_HALT_STREAK = 2;
+
+function isConnectionError(error: unknown): boolean {
+  return error instanceof ClaudeApiError && error.kind === "connection";
+}
+
+// A prefix of the caller's schedule rather than its own constant, so a test
+// passing zero delays gets zero delays here too.
+function scheduleFor(
+  error: unknown,
+  delays: readonly number[],
+): readonly number[] {
+  return isConnectionError(error)
+    ? delays.slice(0, CONNECTION_MAX_RETRIES)
+    : delays;
+}
+
+function haltStreakFor(kind: HaltKind): number {
+  return kind === "connection"
+    ? CONNECTION_HALT_STREAK
+    : CONSECUTIVE_FAILURE_LIMIT;
+}
+
 // Cap server-provided Retry-After at this multiple of the scheduled base
 // delay so a misbehaving header can't stall a long bulk run indefinitely.
 const RETRY_AFTER_CAP_MULTIPLIER = 2;
@@ -179,8 +213,9 @@ async function runFileWithRetry(
       signal,
     });
     if (r.kind !== "error" || !isRetryable(r.error)) return r;
-    if (attempt === retryDelaysMs.length) return r;
-    const delayMs = computeDelayMs(retryDelaysMs[attempt], r.error, random);
+    const delays = scheduleFor(r.error, retryDelaysMs);
+    if (attempt >= delays.length) return r;
+    const delayMs = computeDelayMs(delays[attempt], r.error, random);
     if (settings.debugLogging) {
       logDebug({
         event: "claude_retry_scheduled",
@@ -249,7 +284,7 @@ export async function runBulk(
     streak = kind === streakKind ? streak + 1 : 1;
     streakKind = kind;
 
-    if (kind === "auth" || streak >= CONSECUTIVE_FAILURE_LIMIT) {
+    if (kind === "auth" || streak >= haltStreakFor(kind)) {
       return {
         results,
         halted: {

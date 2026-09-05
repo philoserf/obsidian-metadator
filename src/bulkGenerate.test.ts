@@ -32,6 +32,8 @@ const {
   runBulk,
   DEFAULT_RETRY_DELAYS_MS,
   CONSECUTIVE_FAILURE_LIMIT,
+  CONNECTION_HALT_STREAK,
+  CONNECTION_MAX_RETRIES,
 } = await import("./bulkGenerate");
 const { ClaudeApiError, resetClientCache } = await import("./adapters/claude");
 // claude.ts caches one Anthropic client per API key for the whole run, while
@@ -397,10 +399,46 @@ describe("runBulk", () => {
       retryDelaysMs: FAST_RETRIES,
     });
 
-    // Same reasoning as an exhausted rate limit: it only reaches the streak
-    // after the whole backoff schedule failed, so five in a row is a verdict.
+    // Connection failures halt on a shorter streak than the other kinds: each
+    // attempt burns the request timeout three times over because the SDK
+    // retries underneath us, so waiting for five would spend most of an hour
+    // proving a dead network is dead (#221).
     expect(halted?.kind).toBe("connection");
-    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+    expect(results).toHaveLength(CONNECTION_HALT_STREAK);
+    expect(CONNECTION_HALT_STREAK).toBeLessThan(CONSECUTIVE_FAILURE_LIMIT);
+  });
+
+  test("a connection error retries on the shorter schedule", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      APIConnectionError: new (msg: string) => Error;
+    };
+    mockCreate.mockRejectedValue(
+      new Anthropic.APIConnectionError("Connection error."),
+    );
+
+    // Four delays available; a connection error must stop after
+    // CONNECTION_MAX_RETRIES of them, not consume the lot.
+    await runBulk(makeApp(), [file("n1.md")], settings(), {
+      retryDelaysMs: [0, 0, 0, 0],
+    });
+
+    expect(mockCreate).toHaveBeenCalledTimes(CONNECTION_MAX_RETRIES + 1);
+  });
+
+  test("a rate limit still uses the full schedule", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk"))
+      .default as unknown as {
+      RateLimitError: new (msg: string) => Error;
+    };
+    mockCreate.mockRejectedValue(new Anthropic.RateLimitError("429"));
+
+    await runBulk(makeApp(), [file("n1.md")], settings(), {
+      retryDelaysMs: [0, 0, 0, 0],
+    });
+
+    // The shorter schedule is scoped to connection errors only.
+    expect(mockCreate).toHaveBeenCalledTimes(5);
   });
 
   test("halts the whole run on the first auth error", async () => {

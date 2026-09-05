@@ -59,7 +59,7 @@ function makeApp(opts: {
   // processFrontMatter will later mutate. Needed to reproduce #178, where a
   // write decision made from the cached copy is applied to live data.
   snapshotCache?: boolean;
-}): { app: App; fm: Record<string, unknown> } {
+}): { app: App; fm: Record<string, unknown>; writes: () => number } {
   const fm = { ...(opts.frontmatter ?? {}) };
   const file = "file" in opts ? opts.file : { extension: "md" };
   let writeCalls = 0;

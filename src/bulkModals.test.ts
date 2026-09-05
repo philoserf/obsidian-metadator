@@ -25,7 +25,8 @@ function contentOf(modal: unknown): FakeEl {
 }
 
 describe("BulkConfirmModal", () => {
-  function open(info: Partial<Parameters<typeof BulkConfirmModal>[1]> = {}) {
+  type ConfirmInfo = ConstructorParameters<typeof BulkConfirmModal>[1];
+  function open(info: Partial<ConfirmInfo> = {}) {
     const modal = new BulkConfirmModal(app, {
       folderPath: "notes",
       total: 10,

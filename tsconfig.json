@@ -15,6 +15,5 @@
     "deploy.ts",
     "version-bump.ts",
     "scripts/**/*.ts"
-  ],
-  "exclude": ["src/**/*.test.ts"]
+  ]
 }

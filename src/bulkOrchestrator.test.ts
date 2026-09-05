@@ -131,14 +131,26 @@ function trackedSignal() {
   const realRemove = controller.signal.removeEventListener.bind(
     controller.signal,
   );
-  controller.signal.addEventListener = (type: string, ...rest: never[]) => {
+  controller.signal.addEventListener = ((
+    type: string,
+    ...rest: [
+      EventListenerOrEventListenerObject,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ) => {
     added.push(type);
     return realAdd(type, ...rest);
-  };
-  controller.signal.removeEventListener = (type: string, ...rest: never[]) => {
+  }) as typeof controller.signal.addEventListener;
+  controller.signal.removeEventListener = ((
+    type: string,
+    ...rest: [
+      EventListenerOrEventListenerObject,
+      (boolean | EventListenerOptions)?,
+    ]
+  ) => {
     removed.push(type);
     return realRemove(type, ...rest);
-  };
+  }) as typeof controller.signal.removeEventListener;
   return { controller, added, removed };
 }
 
