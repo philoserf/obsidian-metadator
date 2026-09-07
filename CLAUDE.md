@@ -53,13 +53,9 @@ Most of `src/` is self-describing. These three exist in the shape they do for re
 
 ## Release Process
 
-1. Update `package.json` version
-2. Run `bun run version` to sync manifest.json and versions.json
-3. Run `bun run build` and commit the rebuilt `main.js` — Obsidian distributes the committed bundle
-4. Open PR and merge to `main` before tagging (tags must point at the merged commit)
-5. Tag `X.Y.Z` on the merged commit and push tags — GitHub Actions creates the release
+Use the `obsidian-release-gate` then `obsidian-release-ship` skills — do not tag by hand.
 
-Pre-release: run `bun run check` and `bun run build`.
+`main.js` is committed on purpose: Obsidian distributes the committed bundle, so any change to `src/` or to dependencies needs a rebuild committed alongside it.
 
 ## Code Style
 
