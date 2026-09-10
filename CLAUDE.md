@@ -6,16 +6,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Metadator is an Obsidian plugin that generates metadata (tags, description, title) for notes using the Anthropic Claude API. The user runs a command, the plugin sends note content to Claude with a forced `submit_metadata` tool call, validates the tool's structured input, and writes the results into the note's YAML frontmatter. A "Generate metadata (recursive)" folder action runs the same flow over a folder with confirm / progress / summary modals and a configurable hard cap on files-that-will-change.
 
+This is single-user personal tooling, not a general-purpose community plugin — the README says so out loud: the only known installation is the maintainer's, breaking changes ship without migration paths, and feature requests from other users are out of scope.
+
 The current next step for this repo is tracked in the workspace backlog at `../NEXT.md` (the `obsidian-metadator` row). Read it when starting work; update it when that step ships.
 
 ## Development Commands
 
-Standard scripts are in `package.json`. The two with non-obvious effects:
-
 ```bash
+bun run dev              # Bundle in watch mode: unminified, linked sourcemap
+bun run build            # check + bundle (this is what CI runs); minified, no sourcemap
+bun run check            # tsc --noEmit, then biome check .
+bun run lint:fix         # biome check --write .
+bun test                 # whole suite
+bun test src/bulkGenerate.test.ts        # one file
+bun test -t "retry"                      # one test / describe by name pattern
 bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_DEPLOY_DEST
 bun run compare-models   # Send the same note to the live API once per configurable model
 ```
+
+`compare-models` hits the live API and bills real tokens; it is not part of any check.
 
 The `deploy` script reads `OBSIDIAN_DEPLOY_DEST` from `.env.local` (gitignored). Set it to the target plugin directory, e.g.:
 
@@ -43,20 +52,39 @@ Most of `src/` is self-describing. These three exist in the shape they do for re
 - **Tags, description, and title** all respect `updateMethod` — preserve_existing keeps populated fields, always_regenerate updates all
 - **API calls** use a system message for instructions and wrap article content in XML tags in the user message. The tag name carries a per-request suffix (`<article-{requestId}>`) so note content cannot close the wrapper and have the remainder read as instructions (#204); `buildPrompt`'s third parameter defaults to plain `article` for scripts
 - **Bulk retry policy**: rate-limit, overload, and connection errors (network blips and request timeouts) retry on the schedule `[2s, 8s, 30s]` (`DEFAULT_RETRY_DELAYS_MS`). Each delay is jittered to `[0.5x, 1.5x]` to avoid synchronized retry storms across parallel clients. If the SDK error carries a `Retry-After` header, that value is honored, capped at 2x the scheduled base delay so a misbehaving header can't stall a long bulk run. The SDK also performs its own internal retries — the outer policy applies on top of that. Connection errors are the exception in two ways: they take only the first `CONNECTION_MAX_RETRIES` (2) delays of that schedule, and they halt a bulk run after `CONNECTION_HALT_STREAK` (2) consecutive failures rather than `CONSECUTIVE_FAILURE_LIMIT` (5). A hung socket burns the full request timeout on every one of the SDK's three attempts, so the full policy spent about an hour proving a dead network was dead (#221).
+- **One run controller per plugin lifetime**: `onload` creates a single `AbortController` and `onunload` aborts it with reason `"plugin_unloaded"`; both entry points pass its signal down. `runBulkForFolder` does not reuse that signal directly — it makes a per-run controller, forwards the plugin signal into it, and *removes* the forwarding listener in a `finally`, because the plugin signal outlives the run and would otherwise accumulate one listener (and one retained controller) per bulk run. `isAbortError` (`src/errors.ts`) is the single answer to "was this an abort?", because Electron's fetch rejects with a `DOMException` while the SDK throws a plain `Error` of the same name.
+- **Per-file in-flight lock**: `src/inFlight.ts` is a module-level `Set` of paths, shared by the single-note command and the folder run — the one place they meet. Both snapshot frontmatter before a multi-second call and decide update-vs-keep from that snapshot, so an overlap means two billed calls whose result depends on write ordering. `generateMetadataForFile` captures `file.path` into `lockPath` *before* the call and releases that: Obsidian mutates `TFile.path` in place on rename, so releasing `file.path` afterwards could free a different key and leak the original for the session.
+- **Bulk split**: `bulkOrchestrator.ts` is the UI shell — key check, candidate collection, confirm modal, progress modal, abort wiring, summary modal. `bulkGenerate.ts` is the headless part — `collectCandidates` / `classifyCandidates` / `runBulk` plus the retry and halt policy, with no modal imports. Tests drive `bulkGenerate` directly; the orchestrator test only checks the wiring.
 - **Settings schema migrations**: `MetadataToolSettings.schemaVersion` is stamped onto every saved file. Migrations live in the `MIGRATIONS` map in `src/settingsMigrate.ts`, keyed by the version they produce. To add a migration, append the next version key + mutator and bump `CURRENT_SCHEMA_VERSION` in `settings.ts` — `applyMigrations` throws if a target version is missing its entry, so the bump-without-migration bug is caught at plugin-load time. `migrateSettings` returns a discriminated `MigrationResult` (`kind: "ok" | "missing" | "future"`); when `kind === "future"`, the plugin loads defaults but sets `futureSchemaBlocked` and `saveSettings()` refuses to write, surfacing a Notice instead of clobbering forward-version data.
 - **SDK boundary**: `@anthropic-ai/sdk` may only be imported from `src/adapters/claude.ts`. This is enforced by Biome's `noRestrictedImports` rule in `biome.json`; other modules consume the adapter's typed wrapper (`callClaudeForMetadata`, `ClaudeApiError`) so SDK types do not leak into application or domain code. Test files are excluded from the rule because they reference the SDK module name for mocking — both `mock.module("@anthropic-ai/sdk", ...)` setups and dynamic `import()` calls used to access mocked SDK error constructors.
 - **Structured logging**: when `debugLogging` is on, the request path emits structured records via `src/logger.ts` instead of prose. `logDebug` writes `console.log("[Metadator]", payload)` and `logError` writes `console.error("[Metadator]", payload)`. The payload always includes an `event` plus event-specific context drawn from `LogFields` — `file`, `model`, `requestId`, `attempt`, `durationMs`, `errorKind`, `errorMessage`, `errorName`, `errorStack`, `field`, `promptLength`, `contentLength` — rather than a single fixed set. A short hex `requestId` (`newRequestId`, 8 chars from `crypto.randomUUID` with `getRandomValues` and `Math.random` fallbacks for older WebViews) is minted per `addMetadataWithClaude` invocation, so a bulk retry produces a fresh requestId for each attempt; the file path is the cross-attempt joiner. Write-failure logs ride the same requestId so they correlate to the API call that produced the data. Vocabulary: `claude_request_start` / `claude_request_completed` / `claude_request_failed` (per call), `claude_retry_scheduled` (bulk retry loop), `frontmatter_write_failed`, `generation_failed`.
 
-## Build System
+## Build System and CI
 
-`main.js` is committed to the repo — Obsidian distributes the committed bundle, so a build that isn't committed doesn't ship.
+`main.js` is committed on purpose — Obsidian distributes the committed bundle, so any change to `src/` or to dependencies needs a rebuilt `main.js` committed alongside it.
+
+CI (`.github/workflows/main.yml`) enforces that: it runs `bun run build` and then `git diff --exit-code main.js`, so a stale bundle fails the PR. Bun is deliberately unpinned (`bun-version: latest`), so a bun release that shifts bundler output trips the same check. The fix is identical either way — rebuild and commit `main.js`.
 
 ## Release Process
 
-Use the `obsidian-release-gate` then `obsidian-release-ship` skills — do not tag by hand.
+Use the `obsidian-gate` then `obsidian-ship` skills — do not tag by hand. Pushing any tag triggers `.github/workflows/release.yml`, which builds and attaches `main.js` + `manifest.json` to a GitHub release. Version numbers live in three files: `version-bump.ts` (wired to the `version` package script) is what propagates `package.json`'s version into `manifest.json` and adds the `version → minAppVersion` row to `versions.json`.
 
-`main.js` is committed on purpose: Obsidian distributes the committed bundle, so any change to `src/` or to dependencies needs a rebuild committed alongside it.
+## Tests and Code Style
 
-## Code Style
+Style is enforced by Biome (`biome.json`).
 
-Enforced by Biome (`biome.json`). Tests are colocated with their source files in `src/`.
+Tests live in `src/`, mostly flat (`adapters/` and `content/` each hold one colocated test), and are named for the **subject under test, not the source file**, so several do not sit beside the code they cover:
+
+| Test file | Covers |
+| --- | --- |
+| `metadata.test.ts` | `prompt.ts` (`buildPrompt`, `parseTags`) |
+| `generateMetadata.test.ts`, `stripSurroundingQuotes.test.ts` | `metadata.ts` |
+| `callClaude.test.ts` | `adapters/claude.ts` |
+| `content.test.ts` | `content/getContent.ts`, `content/tokens.ts`, `content/truncate.ts` |
+| `bulkModals.test.ts` | modal *rendering* for all three of `bulkConfirmModal.ts`, `bulkProgressModal.ts`, `bulkSummaryModal.ts` — while `bulkConfirmModal.test.ts` / `bulkSummaryModal.test.ts` cover only those files' pure helpers (`worstCaseApiCalls`, `groupErrors`) |
+
+Look for coverage by grepping the import, not by guessing the filename — and when adding a test, extend the existing file for that subject rather than starting a parallel one.
+
+The `.claude/settings.json` `PostToolUse` hook auto-runs only `${file%.ts}.test.ts`, which this naming defeats twice over. Editing `prompt.ts`, `adapters/claude.ts`, `content/getContent.ts`, `content/tokens.ts` or `content/truncate.ts` runs **nothing**. Worse, editing `metadata.ts` *does* fire the hook — and runs `metadata.test.ts`, which tests `prompt.ts`, so a green result says nothing about the edit. Run the right file by hand after touching any of these.
+
+**Mocking contract**: `bunfig.toml` preloads `src/test-preload.ts`, which installs `mock.module("obsidian", () => obsidianDoubles)` for every test file. A test needing a richer `Modal` must re-mock `"obsidian"` while spreading `obsidianDoubles`, or the class identities `instanceof` depends on diverge for the rest of the run. `src/testDom.ts`'s `FakeEl` is a deliberate ~130-line stand-in for the slice of Obsidian's DOM helpers the modals use — chosen over happy-dom to keep the modal tests dependency-free.
