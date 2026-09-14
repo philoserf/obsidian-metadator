@@ -370,7 +370,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     this.addBoundedIntSetting(
       containerEl,
       "Max Bulk Files",
-      "Hard limit on files-that-will-change in a single bulk run. Above this, the confirm dialog requires explicit override.",
+      "Confirmation gate on files-that-will-change in a single bulk run. Above this, the run is refused unless you tick the override in the confirm dialog.",
       "Max bulk files",
       "maxBulkFiles",
       MAX_BULK_FILES,

@@ -25,9 +25,8 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const { collectCandidates, classifyCandidates, runBulk } = await import(
-  "./bulkGenerate"
-);
+const { collectCandidates, classifyCandidates, exceedsBulkCap, runBulk } =
+  await import("./bulkGenerate");
 const { DEFAULT_RETRY_DELAYS_MS, DEFAULT_HALT_STREAK, RETRY_POLICY } =
   await import("./retryPolicy");
 
@@ -818,5 +817,21 @@ describe("runBulk", () => {
 
     expect(results).toHaveLength(0);
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+// The cap used to exist only as a disabled button inside BulkConfirmModal, so
+// the headless suite could not reach it at all (#238).
+describe("exceedsBulkCap", () => {
+  test("is false at the cap and true above it", () => {
+    const s = settings({ maxBulkFiles: 10 });
+    expect(exceedsBulkCap(9, s)).toBe(false);
+    expect(exceedsBulkCap(10, s)).toBe(false);
+    expect(exceedsBulkCap(11, s)).toBe(true);
+  });
+
+  test("follows the setting rather than a constant", () => {
+    expect(exceedsBulkCap(600, settings({ maxBulkFiles: 500 }))).toBe(true);
+    expect(exceedsBulkCap(600, settings({ maxBulkFiles: 1000 }))).toBe(false);
   });
 });

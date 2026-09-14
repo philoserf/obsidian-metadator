@@ -1,5 +1,6 @@
 import { type App, Modal } from "obsidian";
 import { REQUESTS_PER_ATTEMPT } from "./adapters/claude";
+import { exceedsBulkCap } from "./bulkGenerate";
 import { DEFAULT_RETRY_DELAYS_MS } from "./retryPolicy";
 import type { MetadataToolSettings } from "./settings";
 
@@ -16,6 +17,12 @@ export function worstCaseApiCalls(
   return willChange * (retryDelaysMs.length + 1) * REQUESTS_PER_ATTEMPT;
 }
 
+export interface BulkConfirmResult {
+  confirmed: boolean;
+  // True only if the user ticked the over-cap override for this run.
+  capOverridden: boolean;
+}
+
 export interface ConfirmModalInfo {
   folderPath: string;
   total: number;
@@ -25,7 +32,7 @@ export interface ConfirmModalInfo {
 }
 
 export class BulkConfirmModal extends Modal {
-  private resolver?: (confirmed: boolean) => void;
+  private resolver?: (result: BulkConfirmResult) => void;
   private resolved = false;
   private info: ConfirmModalInfo;
 
@@ -34,7 +41,10 @@ export class BulkConfirmModal extends Modal {
     this.info = info;
   }
 
-  openAndAwait(): Promise<boolean> {
+  // Reports the override rather than keeping it: a disabled button is a UI
+  // affordance, not a gate, so runBulkForFolder re-checks the cap itself and
+  // needs to know whether the user actually ticked the box (#238).
+  openAndAwait(): Promise<BulkConfirmResult> {
     return new Promise((resolve) => {
       this.resolver = resolve;
       this.open();
@@ -78,7 +88,7 @@ export class BulkConfirmModal extends Modal {
       warn.style.fontWeight = "bold";
     }
 
-    const exceedsCap = willChange > settings.maxBulkFiles;
+    const exceedsCap = exceedsBulkCap(willChange, settings);
     let overrideEl: HTMLInputElement | undefined;
     if (exceedsCap) {
       const cap = contentEl.createEl("p", {
@@ -115,7 +125,7 @@ export class BulkConfirmModal extends Modal {
       });
     }
     confirmBtn.addEventListener("click", () => {
-      this.resolve(true);
+      this.resolve(true, overrideEl?.checked ?? false);
       this.close();
     });
   }
@@ -127,9 +137,9 @@ export class BulkConfirmModal extends Modal {
     this.contentEl.empty();
   }
 
-  private resolve(value: boolean): void {
+  private resolve(confirmed: boolean, capOverridden = false): void {
     if (this.resolved) return;
     this.resolved = true;
-    this.resolver?.(value);
+    this.resolver?.({ confirmed, capOverridden });
   }
 }

@@ -13,8 +13,8 @@ export const API_KEY_MAX_LENGTH = 256;
 
 // Ceilings for the two numeric settings. Without them "positive integer" was
 // the only rule, so an all-digit paste became a precision-lossy double that
-// still satisfied n > 0 — and maxBulkFiles, whose whole job is to be a hard
-// limit, could be set to a value that defeats it (#184).
+// still satisfied n > 0 — and maxBulkFiles, whose whole job is to gate a
+// bulk run, could be set to a value that defeats it (#184).
 export const MAX_BULK_FILES = 100_000;
 // Context windows currently run 200k-1M tokens, so a content limit above that
 // is meaningless rather than dangerous. Rounded generously so this does not

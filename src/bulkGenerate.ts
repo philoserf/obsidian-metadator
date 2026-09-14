@@ -17,6 +17,22 @@ import {
 } from "./retryPolicy";
 import type { MetadataToolSettings } from "./settings";
 
+// The cap is policy, and policy lives in this layer. It used to exist only as
+// a computed boolean inside BulkConfirmModal — a red paragraph and a disabled
+// button — which put a data-and-money safety limit in the one layer this
+// codebase otherwise keeps free of decisions, and left it untestable from the
+// headless suite that covers retry, halt and abort in detail.
+//
+// Gauged on files-that-will-change rather than files scanned: a folder of 500
+// already-populated notes with three to generate is not a large run, and 90
+// that all need generating is.
+export function exceedsBulkCap(
+  willChange: number,
+  settings: MetadataToolSettings,
+): boolean {
+  return willChange > settings.maxBulkFiles;
+}
+
 export function collectCandidates(folder: TFolder): TFile[] {
   const out: TFile[] = [];
   collectInto(folder, out);
