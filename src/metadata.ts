@@ -351,25 +351,34 @@ async function addMetadataWithClaude(
   let hasChanges = false;
 
   // Each field carries its own policy, so the write method is decided per
-  // field rather than from one global flag (#252).
+  // field rather than from one global flag (#252). `kind` is what separates a
+  // list from a scalar: the three policies are spelled identically across the
+  // fields on purpose, so `regenerate` alone cannot say which write to use.
   type FieldUpdate =
-    | { fieldName: string; value: string[]; policy: TagsPolicy }
-    | { fieldName: string; value: string; policy: ScalarPolicy };
+    | { kind: "list"; fieldName: string; value: string[]; policy: TagsPolicy }
+    | {
+        kind: "scalar";
+        fieldName: string;
+        value: string;
+        policy: ScalarPolicy;
+      };
 
   // `preserve` re-checks emptiness against the live frontmatter inside
   // processFrontMatter rather than the `frontMatter` snapshot, which was taken
   // before a request that can run for REQUEST_TIMEOUT_MS — otherwise a value
   // the user typed during the call gets overwritten (#178). `merge` needs no
   // such guard because it unions with the live value, so a concurrent edit
-  // survives either way; `reconcile` and `overwrite` are asked for explicitly.
+  // survives either way; `regenerate` is asked for explicitly.
   function methodFor(
     u: FieldUpdate,
   ): "append" | "replace" | "update" | "update_if_empty" {
     if (u.policy === "preserve") return "update_if_empty";
     if (u.policy === "merge") return "append";
-    // reconcile writes the model's reconciled list in place of the old one;
-    // "replace" is the array-typed counterpart of "update" (#230).
-    return u.policy === "reconcile" ? "replace" : "update";
+    // One policy, two writes. A list is replaced wholesale — "replace" is the
+    // array-typed counterpart of "update", because "update" is typed for a
+    // scalar and would write the list as a comma-joined string, after which
+    // Obsidian stops indexing the field (#230).
+    return u.kind === "list" ? "replace" : "update";
   }
 
   async function writeField(u: FieldUpdate): Promise<boolean> {
@@ -411,6 +420,7 @@ async function addMetadataWithClaude(
   const tags = normalizeTags(metadata.tags);
   if (tags.length > 0) {
     updates.push({
+      kind: "list",
       fieldName: settings.tagsFieldName,
       value: tags,
       policy: settings.tagsPolicy,
@@ -421,6 +431,7 @@ async function addMetadataWithClaude(
   // are strings, so "   " reaches here as truthy and wrote a blank description.
   if (metadata.description.trim() !== "") {
     updates.push({
+      kind: "scalar",
       fieldName: settings.descriptionFieldName,
       value: metadata.description,
       policy: settings.descriptionPolicy,
@@ -432,6 +443,7 @@ async function addMetadataWithClaude(
   const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
   if (settings.enableTitle && title !== "") {
     updates.push({
+      kind: "scalar",
       fieldName: settings.titleFieldName,
       value: title,
       policy: settings.titlePolicy,

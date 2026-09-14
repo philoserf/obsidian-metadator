@@ -350,7 +350,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     this.addPolicySetting(
       containerEl,
       "Tags",
-      "Reconcile: replace the list with a reconciled set, keeping the tags that still fit; Merge: add to what is there and never remove; Preserve: only write when the field is empty.",
+      "Always Regenerate: replace the list with the reconciled set the model returns, keeping the tags that still fit and dropping those that no longer do; Merge: add to what is there and never remove; Preserve Existing: only write when the field is empty.",
       "tagsPolicy",
       TAGS_POLICY_LABELS,
     );
@@ -358,7 +358,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     this.addPolicySetting(
       containerEl,
       "Description",
-      "Overwrite: replace on every run; Preserve: only write when the field is empty.",
+      "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty.",
       "descriptionPolicy",
       SCALAR_POLICY_LABELS,
     );
@@ -366,7 +366,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     this.addPolicySetting(
       containerEl,
       "Title",
-      "Overwrite: replace on every run; Preserve: only write when the field is empty. Preserve is the default because a title is often kept in sync by another plugin or relied on by a publisher.",
+      "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty. Preserve is the default because a title is often kept in sync by another plugin or relied on by a publisher.",
       "titlePolicy",
       SCALAR_POLICY_LABELS,
     );

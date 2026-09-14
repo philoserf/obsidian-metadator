@@ -252,7 +252,7 @@ describe("runBulkForFolder", () => {
       >;
 
     // All three policies must be `preserve` for a populated note to count as
-    // needing nothing: under `overwrite` or `reconcile` the field is rewritten
+    // needing nothing: under `regenerate` the field is rewritten
     // whatever is already there, so there is still work to do.
     await runBulkForFolder(
       app,

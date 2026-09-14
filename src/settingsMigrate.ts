@@ -110,18 +110,19 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
         // changes.
         //
         // always_regenerate mapped to: tags appended (never replaced —
-        // the #230 bug), description and title overwritten. Its tags become
-        // `reconcile` rather than `merge`, which is a deliberate behavior
-        // change on upgrade: append could never remove a tag, so the sprawl it
-        // produced was unfixable from the settings tab. `merge` remains
-        // available for anyone who wants the old behavior back.
+        // the #230 bug), description and title overwritten. All three become
+        // `regenerate`. For tags that is a deliberate behavior change on
+        // upgrade rather than a rename of the old append: append could never
+        // remove a tag, so the sprawl it produced was unfixable from the
+        // settings tab. `merge` remains available for anyone who wants the old
+        // behavior back.
         //
         // An absent updateMethod means the bag predates the setting or never
         // set it, in which case preserve_existing was its effective default.
         const regenerate = s.updateMethod === "always_regenerate";
-        s.tagsPolicy = regenerate ? "reconcile" : "preserve";
-        s.descriptionPolicy = regenerate ? "overwrite" : "preserve";
-        s.titlePolicy = regenerate ? "overwrite" : "preserve";
+        s.tagsPolicy = regenerate ? "regenerate" : "preserve";
+        s.descriptionPolicy = regenerate ? "regenerate" : "preserve";
+        s.titlePolicy = regenerate ? "regenerate" : "preserve";
         delete s.updateMethod;
       },
     ],

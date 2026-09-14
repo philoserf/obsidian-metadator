@@ -96,7 +96,7 @@ describe("migrateSettings", () => {
       contentTokenLimit: -10,
       truncateMethod: "bogus",
       tagsPolicy: "bogus",
-      descriptionPolicy: "reconcile",
+      descriptionPolicy: "regenerate",
       titlePolicy: 7,
       tagsPrompt: 123,
       descriptionPrompt: false,
@@ -145,7 +145,7 @@ describe("migrateSettings", () => {
       truncateMethod: "heading",
       tagsPolicy: "merge",
       descriptionPolicy: "preserve",
-      titlePolicy: "overwrite",
+      titlePolicy: "regenerate",
       maxBulkFiles: 250,
       tagsPrompt: "t",
       descriptionPrompt: "d",
@@ -461,15 +461,15 @@ describe("migration 2 → 3: updateMethod becomes a policy per field (#252)", ()
   // Deliberately not `merge`. Append could never remove a tag, so the sprawl it
   // produced was unfixable from the settings tab; this is the upgrade applying
   // the fix. `merge` stays available for anyone who wants the old behavior.
-  test("always_regenerate moves tags to reconcile, not merge", () => {
+  test("always_regenerate moves tags to regenerate, not merge", () => {
     const settings = ok({
       schemaVersion: 2,
       updateMethod: "always_regenerate",
     });
 
-    expect(settings.tagsPolicy).toBe("reconcile");
-    expect(settings.descriptionPolicy).toBe("overwrite");
-    expect(settings.titlePolicy).toBe("overwrite");
+    expect(settings.tagsPolicy).toBe("regenerate");
+    expect(settings.descriptionPolicy).toBe("regenerate");
+    expect(settings.titlePolicy).toBe("regenerate");
   });
 
   test("an absent updateMethod is treated as preserve_existing, its old default", () => {
@@ -495,8 +495,8 @@ describe("migration 2 → 3: updateMethod becomes a policy per field (#252)", ()
   // what decides a new user's policies.
   test("a brand-new install gets the defaults, not the migration's output", () => {
     expect(migrateSettings(null)).toEqual({ kind: "missing" });
-    expect(DEFAULT_SETTINGS.tagsPolicy).toBe("reconcile");
-    expect(DEFAULT_SETTINGS.descriptionPolicy).toBe("overwrite");
+    expect(DEFAULT_SETTINGS.tagsPolicy).toBe("regenerate");
+    expect(DEFAULT_SETTINGS.descriptionPolicy).toBe("regenerate");
     expect(DEFAULT_SETTINGS.titlePolicy).toBe("preserve");
   });
 });
