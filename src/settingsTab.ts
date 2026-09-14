@@ -48,20 +48,19 @@ interface PendingCommit {
   flush: () => void;
 }
 
-interface EditableText {
-  getValue(): string;
-  setValue(value: string): void;
-  inputEl: HTMLInputElement | HTMLTextAreaElement;
-}
-
+// Takes the element, not the Setting's text component. The body only ever
+// listened on it; getValue/setValue were used by the commit callbacks, which
+// close over `text` from their own scope and never received it through this
+// parameter — so declaring them here constrained nothing and rejected no
+// invalid program.
 function commitOnBlur(
-  text: EditableText,
+  inputEl: HTMLElement,
   commit: () => void | Promise<void>,
 ): PendingCommit {
   const run = () => {
     void commit();
   };
-  text.inputEl.addEventListener("blur", run);
+  inputEl.addEventListener("blur", run);
   return { flush: run };
 }
 
@@ -71,7 +70,7 @@ export const SETTINGS_SAVE_DEBOUNCE_MS = 400;
 export function createDebouncer(
   commit: () => void,
   delayMs: number = SETTINGS_SAVE_DEBOUNCE_MS,
-): { schedule: () => void; flush: () => void; pending: () => boolean } {
+): { schedule: () => void; flush: () => void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return {
     schedule() {
@@ -88,9 +87,6 @@ export function createDebouncer(
       clearTimeout(timer);
       timer = undefined;
       commit();
-    },
-    pending() {
-      return timer !== undefined;
     },
   };
 }
@@ -128,7 +124,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       .addText((text) => {
         text.setValue(this.plugin.settings[key]);
         this.pending.push(
-          commitOnBlur(text, async () => {
+          commitOnBlur(text.inputEl, async () => {
             // Trimmed to match settingsMigrate's readString(nonEmpty), which
             // treats a whitespace-only name as absent. Without it " " was
             // truthy, appeared to stick, wrote a malformed YAML key, then
@@ -196,7 +192,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       .addText((text) => {
         text.setValue(this.plugin.settings[key].toString());
         this.pending.push(
-          commitOnBlur(text, async () => {
+          commitOnBlur(text.inputEl, async () => {
             const parsed = parseBoundedPositiveInt(text.getValue(), max);
             if (parsed === null) {
               new Notice(
@@ -314,7 +310,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         // Every prefix of a model id ("claude-fable-5-") is itself malformed,
         // which is why this field has always committed on blur.
         this.pending.push(
-          commitOnBlur(text, async () => {
+          commitOnBlur(text.inputEl, async () => {
             const model = text.getValue().trim();
             if (model === this.plugin.settings.anthropicModel) return;
             if (!isModelId(model)) {

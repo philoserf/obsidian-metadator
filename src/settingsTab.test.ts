@@ -72,11 +72,19 @@ describe("createDebouncer (#177)", () => {
     const d = createDebouncer(() => commits++, 1_000);
 
     d.schedule();
-    expect(d.pending()).toBe(true);
+    // Well inside the 1s window, so nothing has fired on its own yet.
+    expect(commits).toBe(0);
+
     d.flush();
 
+    // Observable without waiting out the delay, which is what "immediately"
+    // means. Asserted on the commit counter rather than a pending() accessor:
+    // that would check the implementation kept a timer variable, not that the
+    // commit ran.
     expect(commits).toBe(1);
-    expect(d.pending()).toBe(false);
+
+    await tick(20);
+    expect(commits).toBe(1);
   });
 
   test("flush with nothing pending writes nothing", () => {
