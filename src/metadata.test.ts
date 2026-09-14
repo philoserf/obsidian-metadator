@@ -24,8 +24,13 @@ mock.module("@anthropic-ai/sdk", () => {
 // than as a static import: a static one hoists above the mock.module call
 // above, loading metadata.ts -> adapters/claude.ts -> the real SDK before the
 // mock is installed.
-const { generateMetadata, generateMetadataForFile, stripSurroundingQuotes } =
-  await import("./metadata");
+const { generateMetadataForFile, stripSurroundingQuotes } = await import(
+  "./metadata"
+);
+// The interactive wrapper is singleNote.ts's, but these suites assert on
+// frontmatter outcomes rather than on notices, so they reach metadata.ts
+// through it. The notice behavior itself is covered in singleNote.test.ts.
+const { generateMetadata } = await import("./singleNote");
 const { resetClientCache } = await import("./adapters/claude");
 // claude.ts caches one Anthropic client per API key for the whole run, while
 // mock.module is per-file. These suites use colliding keys, so without this a
@@ -630,7 +635,7 @@ describe("failed frontmatter writes (#187)", () => {
 
     expect(result.kind).toBe("skipped");
     if (result.kind === "skipped") {
-      expect(result.reason).toBe("no changes");
+      expect(result.reason).toBe("nothing_written");
     }
   });
 });
