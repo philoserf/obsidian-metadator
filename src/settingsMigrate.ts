@@ -288,9 +288,31 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
   // All three reset together, not just the colliding pair. It is the only rule
   // that is order-independent and cannot itself produce a new collision, since
   // the defaults are distinct by construction.
+  //
+  // Both branches warn. This path used to be silent, unlike the forward-schema
+  // path above — so a user whose field names were reset saw their notes acquire
+  // `tags` and `description` keys alongside the `keywords` and `summary` they
+  // had been using, with nothing anywhere saying why (#248).
   if (!areFieldNamesDistinct(normalized)) {
+    console.warn(
+      "[Metadator] Frontmatter field names collide; resetting all three to their defaults.",
+    );
     normalized.tagsFieldName = DEFAULT_SETTINGS.tagsFieldName;
     normalized.descriptionFieldName = DEFAULT_SETTINGS.descriptionFieldName;
+    normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
+  } else if (
+    !normalized.enableTitle &&
+    (normalized.titleFieldName === normalized.tagsFieldName ||
+      normalized.titleFieldName === normalized.descriptionFieldName)
+  ) {
+    // The in-use names are fine and only the inert one collides. Resetting all
+    // three here would destroy two valid settings to fix a value nothing reads
+    // — the bug this replaces. Normalizing it anyway, rather than leaving it,
+    // so that turning title generation back on later does not then trip the
+    // branch above and take the other two down with it.
+    console.warn(
+      `[Metadator] titleFieldName "${normalized.titleFieldName}" collides with another field name; resetting it to "${DEFAULT_SETTINGS.titleFieldName}". Title generation is off, so the other names are unaffected.`,
+    );
     normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
   }
 

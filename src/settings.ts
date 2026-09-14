@@ -77,13 +77,16 @@ export function areFieldNamesDistinct(names: {
   tagsFieldName: string;
   descriptionFieldName: string;
   titleFieldName: string;
+  enableTitle: boolean;
 }): boolean {
-  const seen = new Set([
-    names.tagsFieldName,
-    names.descriptionFieldName,
-    names.titleFieldName,
-  ]);
-  return seen.size === 3;
+  // Only the names actually in use. When enableTitle is false, titleFieldName
+  // is inert — shouldGenerate does not consult it, buildPrompt omits the title
+  // instruction, and the write loop never queues a title update — so a stale
+  // value there cannot clobber anything and must not be treated as if it
+  // could (#248).
+  const inUse = [names.tagsFieldName, names.descriptionFieldName];
+  if (names.enableTitle) inUse.push(names.titleFieldName);
+  return new Set(inUse).size === inUse.length;
 }
 
 export function isModelId(value: string): boolean {
