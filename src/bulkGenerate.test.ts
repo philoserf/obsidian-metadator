@@ -31,10 +31,24 @@ const {
   computeDelayMs,
   runBulk,
   DEFAULT_RETRY_DELAYS_MS,
-  CONSECUTIVE_FAILURE_LIMIT,
-  CONNECTION_HALT_STREAK,
-  CONNECTION_MAX_RETRIES,
+  DEFAULT_HALT_STREAK,
+  RETRY_POLICY,
 } = await import("./bulkGenerate");
+
+// Read off the policy table rather than re-stated, so these cannot drift from
+// it — and fail loudly rather than silently defaulting if the connection row
+// ever loses the overrides that make it the special case.
+const connectionPolicy = RETRY_POLICY.connection;
+if (
+  connectionPolicy?.maxRetries === undefined ||
+  connectionPolicy.haltStreak === undefined
+) {
+  throw new Error(
+    "RETRY_POLICY.connection must carry both maxRetries and haltStreak",
+  );
+}
+const CONNECTION_MAX_RETRIES = connectionPolicy.maxRetries;
+const CONNECTION_HALT_STREAK = connectionPolicy.haltStreak;
 const { ClaudeApiError, resetClientCache } = await import("./adapters/claude");
 // claude.ts caches one Anthropic client per API key for the whole run, while
 // mock.module is per-file. These suites use colliding keys, so without this a
@@ -429,7 +443,7 @@ describe("runBulk", () => {
     // proving a dead network is dead (#221).
     expect(halted?.kind).toBe("connection");
     expect(results).toHaveLength(CONNECTION_HALT_STREAK);
-    expect(CONNECTION_HALT_STREAK).toBeLessThan(CONSECUTIVE_FAILURE_LIMIT);
+    expect(CONNECTION_HALT_STREAK).toBeLessThan(DEFAULT_HALT_STREAK);
   });
 
   test("a connection error retries on the shorter schedule", async () => {
@@ -484,7 +498,7 @@ describe("runBulk", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  test("halts after CONSECUTIVE_FAILURE_LIMIT identical non-retryable errors", async () => {
+  test("halts after DEFAULT_HALT_STREAK identical non-retryable errors", async () => {
     mockCreate.mockRejectedValue(new Error("boom"));
     const files = Array.from({ length: 10 }, (_, i) => file(`n${i}.md`));
 
@@ -492,8 +506,8 @@ describe("runBulk", () => {
       retryDelaysMs: FAST_RETRIES,
     });
 
-    expect(halted?.consecutive).toBe(CONSECUTIVE_FAILURE_LIMIT);
-    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+    expect(halted?.consecutive).toBe(DEFAULT_HALT_STREAK);
+    expect(results).toHaveLength(DEFAULT_HALT_STREAK);
   });
 
   test("a success resets the consecutive-failure streak", async () => {
@@ -545,7 +559,7 @@ describe("runBulk", () => {
     // failed, so five in a row is a proven ceiling, not a blip. Continuing
     // would spend 15 more files x 4 calls proving the same thing.
     expect(halted?.kind).toBe("rate_limit");
-    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+    expect(results).toHaveLength(DEFAULT_HALT_STREAK);
   });
 
   test("a rate limit that clears before the limit does not halt", async () => {
@@ -603,7 +617,7 @@ describe("runBulk", () => {
     });
 
     expect(halted?.kind).toBe("other");
-    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+    expect(results).toHaveLength(DEFAULT_HALT_STREAK);
   });
 
   test("per-file error isolation — one failure does not abort batch", async () => {

@@ -74,12 +74,12 @@ export interface RunBulkOptions {
 // connection) count toward it too, but only once runFileWithRetry has
 // exhausted the whole backoff schedule for that file — by then they are a
 // proven ceiling, not a blip.
-export const CONSECUTIVE_FAILURE_LIMIT = 5;
+export const DEFAULT_HALT_STREAK = 5;
 
 // Why a run stopped before reaching every file. "auth" is decided on the first
 // occurrence: a rejected key rejects every subsequent file too, so one
 // round-trip is all the evidence needed. Everything else needs
-// CONSECUTIVE_FAILURE_LIMIT in a row, because a single "api" or "unknown" is
+// DEFAULT_HALT_STREAK in a row, because a single "api" or "unknown" is
 // just as likely to be one bad note as a broken run.
 // "other" covers failures that never reached the API — a frontmatter write
 // against a read-only vault, say. Those are as systemic as any auth failure:
@@ -101,35 +101,37 @@ function haltKindOf(error: unknown): HaltKind {
   return error instanceof ClaudeApiError ? error.kind : "other";
 }
 
-// Kinds worth another attempt: server-side throttling, and the network blips
-// and timeouts that used to fail a file outright on the first hiccup (#180).
-// Typed as the kind union rather than plain strings so renaming a
-// ClaudeErrorKind can't silently drop a kind out of the retry set.
-const RETRYABLE_KINDS: ReadonlySet<ClaudeErrorKind> = new Set<ClaudeErrorKind>([
-  "rate_limit",
-  "overloaded",
-  "connection",
-]);
-
-function isRetryable(error: unknown): boolean {
-  return error instanceof ClaudeApiError && RETRYABLE_KINDS.has(error.kind);
-}
-
-// A connection failure is not a throttle. A rate limit means the server heard us
-// and said no, so waiting is meaningful and later files may still succeed; a
-// connection failure means we never reached it, and each attempt burns the full
-// request timeout three times over because the SDK retries underneath us.
+// The retry policy, as the two-row table it is. A kind present here is
+// retryable; absent means fail on the first error. `maxRetries` caps how much
+// of the caller's delay schedule the kind takes — omitted means the whole
+// schedule, so a test passing a custom schedule gets exactly that schedule.
+// `haltStreak` overrides DEFAULT_HALT_STREAK.
 //
-// So connection errors get a shorter schedule and a shorter streak. On a hung
-// socket — established but silent, unlike a refused connection, which fails fast
-// — the full policy took about an hour to give up on a dead network. This brings
-// that back to roughly the pre-retry figure while still absorbing the Wi-Fi blip
-// the retry exists for.
-export const CONNECTION_MAX_RETRIES = 2;
-export const CONNECTION_HALT_STREAK = 2;
+// Keyed on HaltKind, not ClaudeErrorKind: haltStreakFor is called with
+// haltKindOf's output, which returns "other" for anything that is not a
+// ClaudeApiError, and "other" is not a member of ClaudeErrorKind.
+//
+// A connection failure is not a throttle. A rate limit means the server heard
+// us and said no, so waiting is meaningful and later files may still succeed;
+// a connection failure means we never reached it, and each attempt burns the
+// full request timeout three times over because the SDK retries underneath us.
+// So it gets a shorter schedule and a shorter streak. On a hung socket —
+// established but silent, unlike a refused connection, which fails fast — the
+// full policy took about an hour to give up on a dead network (#221).
+export const RETRY_POLICY: Partial<
+  Record<HaltKind, { maxRetries?: number; haltStreak?: number }>
+> = {
+  rate_limit: {},
+  overloaded: {},
+  connection: { maxRetries: 2, haltStreak: 2 },
+};
 
-function isConnectionError(error: unknown): boolean {
-  return error instanceof ClaudeApiError && error.kind === "connection";
+// Object.hasOwn, not `in`: a Partial<Record<...>> lookup on a prototype key
+// would otherwise pass.
+function isRetryable(error: unknown): boolean {
+  return (
+    error instanceof ClaudeApiError && Object.hasOwn(RETRY_POLICY, error.kind)
+  );
 }
 
 // A prefix of the caller's schedule rather than its own constant, so a test
@@ -138,15 +140,12 @@ function scheduleFor(
   error: unknown,
   delays: readonly number[],
 ): readonly number[] {
-  return isConnectionError(error)
-    ? delays.slice(0, CONNECTION_MAX_RETRIES)
-    : delays;
+  const kind = haltKindOf(error);
+  return delays.slice(0, RETRY_POLICY[kind]?.maxRetries ?? delays.length);
 }
 
 function haltStreakFor(kind: HaltKind): number {
-  return kind === "connection"
-    ? CONNECTION_HALT_STREAK
-    : CONSECUTIVE_FAILURE_LIMIT;
+  return RETRY_POLICY[kind]?.haltStreak ?? DEFAULT_HALT_STREAK;
 }
 
 // Cap server-provided Retry-After at this multiple of the scheduled base
@@ -247,12 +246,7 @@ export async function runBulk(
   app: App,
   files: TFile[],
   settings: MetadataToolSettings,
-  {
-    onProgress,
-    retryDelaysMs,
-    signal,
-    random,
-  }: RunBulkOptions = {},
+  { onProgress, retryDelaysMs, signal, random }: RunBulkOptions = {},
 ): Promise<BulkRunOutcome> {
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const results: FileResult[] = [];
