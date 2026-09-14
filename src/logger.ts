@@ -35,27 +35,20 @@ export function logError(fields: LogFields & { errorMessage: string }): void {
 // path and event still disambiguate, and short ids stay readable in
 // console output.
 //
-// Feature-detect the Web Crypto API: Obsidian Desktop and modern
-// mobile WebViews ship `crypto.randomUUID`, but older mobile WebViews
-// may only expose `crypto.getRandomValues`. Fall back to Math.random
-// as a last resort so a missing API can never throw on the request
-// path (newRequestId is called for every metadata generation, not
-// only when debug logging is on).
+// That first sentence is why there is no Web Crypto ladder here. If
+// collisions are acceptable, cryptographic randomness is not a
+// requirement, and feature-detecting two APIs to reach it bought
+// something this function had already declared it does not need.
+//
+// The id is also interpolated into the prompt delimiter as
+// `article-${requestId}`, which is the one use that could want
+// unpredictability — but that delimiter defends against a note
+// *accidentally* closing the wrapper (#204), not against an adversary
+// who can read the plugin's source and watch its output, and the note
+// is the user's own in a single-user plugin.
+//
+// padEnd covers the rare short mantissa: Math.random() can yield fewer
+// than 8 hex digits after the "0.".
 export function newRequestId(): string {
-  const cryptoApi = globalThis.crypto;
-  if (cryptoApi?.randomUUID) {
-    return cryptoApi.randomUUID().slice(0, 8);
-  }
-  if (cryptoApi?.getRandomValues) {
-    const bytes = new Uint8Array(4);
-    cryptoApi.getRandomValues(bytes);
-    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
-      "",
-    );
-  }
-  let fallback = "";
-  for (let i = 0; i < 8; i++) {
-    fallback += Math.floor(Math.random() * 16).toString(16);
-  }
-  return fallback;
+  return Math.random().toString(16).slice(2, 10).padEnd(8, "0");
 }
