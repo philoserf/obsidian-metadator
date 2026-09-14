@@ -50,7 +50,7 @@ const TOOL_RESPONSE = {
       type: "tool_use",
       id: "tu_1",
       name: "submit_metadata",
-      input: { tags: "a", description: "d", title: "T" },
+      input: { tags: ["a"], description: "d", title: "T" },
     },
   ],
 };

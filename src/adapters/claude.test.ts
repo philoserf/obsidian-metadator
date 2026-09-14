@@ -55,6 +55,7 @@ mock.module("@anthropic-ai/sdk", () => {
 const {
   callClaudeForMetadata,
   ClaudeApiError,
+  MAX_TAGS_PER_RESPONSE,
   parseRetryAfterMs,
   resetClientCache,
   usesAutoToolChoice,
@@ -89,7 +90,7 @@ describe("callClaudeForMetadata", () => {
   test("returns parsed tool input from successful response", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "a,b",
+        tags: ["a", "b"],
         description: "summary",
         title: "Test",
       }),
@@ -101,7 +102,7 @@ describe("callClaudeForMetadata", () => {
       settings,
     );
     expect(result).toEqual({
-      tags: "a,b",
+      tags: ["a", "b"],
       description: "summary",
       title: "Test",
     });
@@ -138,7 +139,7 @@ describe("callClaudeForMetadata", () => {
   });
 
   test("rejects tool input that omits a required field", async () => {
-    mockCreate.mockResolvedValueOnce(toolUseResponse({ tags: "a,b" }));
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ tags: ["a", "b"] }));
 
     let caught: unknown;
     try {
@@ -153,7 +154,7 @@ describe("callClaudeForMetadata", () => {
 
   test("rejects tool input that omits title when enableTitle is true", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a", description: "d" }),
+      toolUseResponse({ tags: ["a"], description: "d" }),
     );
 
     let caught: unknown;
@@ -316,9 +317,45 @@ describe("callClaudeForMetadata", () => {
     expect(caught).not.toBeInstanceOf(ClaudeApiError);
   });
 
+  test("declares tags as a bounded array of strings (#251)", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
+    );
+
+    await callClaudeForMetadata("system", "user", settings);
+
+    const body = mockCreate.mock.calls[0]?.[0] as {
+      tools: { input_schema: { properties: Record<string, unknown> } }[];
+    };
+    // A bare comma-separated string let one tag containing a comma become two,
+    // and put no ceiling at all on how many came back.
+    expect(body.tools[0].input_schema.properties.tags).toEqual({
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+      maxItems: MAX_TAGS_PER_RESPONSE,
+      description: expect.any(String),
+    });
+  });
+
+  test("rejects a tags array holding a non-string", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["ok", 7], description: "d", title: "t" }),
+    );
+
+    let caught: unknown;
+    try {
+      await callClaudeForMetadata("s", "u", settings);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ClaudeApiError);
+    expect((caught as Error).message).toContain("array of strings");
+  });
+
   test("forces the submit_metadata tool and includes a title field when enabled", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
     );
 
     await callClaudeForMetadata("system", "user", settings);
@@ -349,7 +386,7 @@ describe("callClaudeForMetadata", () => {
 
   test("omits title from required when enableTitle is false", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a", description: "d" }),
+      toolUseResponse({ tags: ["a"], description: "d" }),
     );
 
     await callClaudeForMetadata("system", "user", {
@@ -369,7 +406,7 @@ describe("callClaudeForMetadata", () => {
 
   test("sets an explicit request timeout", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
     );
 
     await callClaudeForMetadata("system", "user", settings);
@@ -382,7 +419,7 @@ describe("callClaudeForMetadata", () => {
 
   test("passes abort signal when provided", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
     );
     const controller = new AbortController();
 
@@ -443,7 +480,7 @@ describe("tool_choice by model family", () => {
 
   test("forces the metadata tool on models that support it", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
     );
     await callClaudeForMetadata("system prompt", "u", {
       ...settings,
@@ -458,7 +495,7 @@ describe("tool_choice by model family", () => {
 
   test("uses auto tool_choice plus an instruction on the fable family", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a", description: "d", title: "t" }),
+      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
     );
     await callClaudeForMetadata("system prompt", "u", {
       ...settings,
@@ -496,7 +533,7 @@ describe("truncated responses (#174)", () => {
           id: "tu_1",
           name: "submit_metadata",
           input: {
-            tags: "ai,testing",
+            tags: ["ai", "testing"],
             description: "A description cut off mid-sen",
             title: "A Title",
           },
@@ -517,7 +554,7 @@ describe("truncated responses (#174)", () => {
           type: "tool_use",
           id: "tu_1",
           name: "submit_metadata",
-          input: { tags: "ai", description: "d", title: "T" },
+          input: { tags: ["ai"], description: "d", title: "T" },
         },
       ],
     });
@@ -534,13 +571,13 @@ describe("truncated responses (#174)", () => {
           type: "tool_use",
           id: "tu_1",
           name: "submit_metadata",
-          input: { tags: "ai", description: "d", title: "T" },
+          input: { tags: ["ai"], description: "d", title: "T" },
         },
       ],
     });
 
     const result = await callClaudeForMetadata("system", "user", settings);
-    expect(result.tags).toBe("ai");
+    expect(result.tags).toEqual(["ai"]);
   });
 });
 
@@ -593,7 +630,7 @@ describe("client caching (#207)", () => {
     // Once-per-call rather than a sticky default, so this queue cannot leak
     // into any test added after this one.
     const ok = () =>
-      toolUseResponse({ tags: "a", description: "d", title: "T" });
+      toolUseResponse({ tags: ["a"], description: "d", title: "T" });
     mockCreate
       .mockResolvedValueOnce(ok())
       .mockResolvedValueOnce(ok())
@@ -618,7 +655,7 @@ describe("client caching (#207)", () => {
     resetClientCache();
 
     const ok = () =>
-      toolUseResponse({ tags: "a", description: "d", title: "T" });
+      toolUseResponse({ tags: ["a"], description: "d", title: "T" });
     mockCreate.mockResolvedValueOnce(ok()).mockResolvedValueOnce(ok());
     await callClaudeForMetadata("system", "user", settings);
     await callClaudeForMetadata("system", "user", {

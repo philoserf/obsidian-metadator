@@ -10,7 +10,7 @@ import { isEmptyValue } from "./emptyValue";
 import { isAbortError } from "./errors";
 import { acquire, release } from "./inFlight";
 import { logDebug, logError, newRequestId } from "./logger";
-import { buildPrompt, parseTags } from "./prompt";
+import { buildPrompt, normalizeTags, readExistingTags } from "./prompt";
 import type { MetadataToolSettings } from "./settings";
 
 function notifyApiError(error: unknown): void {
@@ -278,6 +278,7 @@ async function addMetadataWithClaude(
     contentStr,
     settings,
     `article-${requestId}`,
+    readExistingTags(frontMatter[settings.tagsFieldName]),
   );
 
   if (settings.debugLogging) {
@@ -385,12 +386,12 @@ async function addMetadataWithClaude(
 
   const updates: FieldUpdate[] = [];
 
-  // Guarded on the parsed result, not the raw string. A model returning ","
-  // or " , " satisfies validateMetadataInput and is truthy, but parseTags
-  // yields [] — which the append path then wrote as an empty tags array and
-  // reported as a change, so the user was told "Metadata updated successfully"
-  // for content that did not exist (#161).
-  const tags = metadata.tags ? parseTags(metadata.tags) : [];
+  // Guarded on the normalized result, not the raw field. A model returning
+  // ["", "  "] satisfies validateMetadataInput but normalizeTags yields [] —
+  // which the append path then wrote as an empty tags array and reported as a
+  // change, so the user was told "Metadata updated successfully" for content
+  // that did not exist (#161).
+  const tags = normalizeTags(metadata.tags);
   if (tags.length > 0) {
     updates.push({
       fieldName: settings.tagsFieldName,

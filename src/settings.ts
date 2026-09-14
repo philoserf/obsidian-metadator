@@ -149,14 +149,13 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   // ("concise but useful") that it cannot. Each one also closes a failure this
   // codebase has had to handle downstream:
   //
-  // - tags are returned as one comma-separated string and split on commas, so a
-  //   tag containing a comma silently becomes two (parseTags);
-  //   Obsidian frontmatter tags carry no leading "#";
+  // - Obsidian frontmatter tags carry no leading "#". Tags arrive as an array,
+  //   so a comma inside one is no longer a hazard worth spending prompt on;
   // - titles came back wrapped in quotation marks often enough that
   //   stripSurroundingQuotes exists to unwrap them. Saying so here is a fix at
   //   the source; that function stays as a backstop.
   tagsPrompt:
-    "Select 3-5 tags. Exactly one names the kind of note — choose from reference, howto, journal, meeting, idea, project. The rest name what the note is about. Use lowercase with hyphens instead of spaces (e.g. knowledge-management). Do not prefix a tag with #, and never put a comma inside a tag. Skip terms too generic to narrow a search, such as notes, general, or misc.",
+    "Select 3-5 tags. Exactly one names the kind of note — choose from reference, howto, journal, meeting, idea, project. The rest name what the note is about. Use lowercase with hyphens instead of spaces (e.g. knowledge-management). Do not prefix a tag with #. Skip terms too generic to narrow a search, such as notes, general, or misc.",
   descriptionPrompt:
     'Write 1-2 sentences, at most 40 words, saying what the note covers and its most useful specifics. Begin with the subject itself — no "This note...", "This article..." or similar preamble. Do not restate the title. Use plain present-tense prose.',
   titlePrompt:

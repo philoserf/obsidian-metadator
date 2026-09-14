@@ -65,7 +65,7 @@ export function parseRetryAfterMs(
 }
 
 export interface MetadataFields {
-  tags: string;
+  tags: string[];
   description: string;
   title?: string;
 }
@@ -74,12 +74,35 @@ export interface CallClaudeOptions {
   signal?: AbortSignal;
 }
 
+// A sanity ceiling on one response, not the target count — that lives in the
+// user's editable tagsPrompt, which defaults to 3-5 but is theirs to change.
+// A schema bound tight enough to match the default would silently block a user
+// who edits the prompt to ask for eight; this one only catches a runaway.
+export const MAX_TAGS_PER_RESPONSE = 12;
+
+type JsonSchemaProperty =
+  | { type: "string"; description: string }
+  | {
+      type: "array";
+      items: { type: "string" };
+      minItems: number;
+      maxItems: number;
+      description: string;
+    };
+
 function buildToolSchema(includeTitle: boolean) {
-  const properties: Record<string, { type: "string"; description: string }> = {
+  const properties: Record<string, JsonSchemaProperty> = {
+    // An array rather than one comma-separated string: splitting on commas
+    // meant a tag containing a comma silently became two, which the default
+    // tagsPrompt had to instruct around. The bounds cap what a single
+    // regeneration can contribute to a note's tag list.
     tags: {
-      type: "string",
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+      maxItems: MAX_TAGS_PER_RESPONSE,
       description:
-        "Comma-separated tags describing the article. Follow the user's tag instructions.",
+        "Tags describing the article, one per array element. Follow the user's tag instructions.",
     },
     description: {
       type: "string",
@@ -146,10 +169,13 @@ function validateMetadataInput(
     throw new ClaudeApiError("api", "Tool input was not an object");
   }
   const obj = input as Record<string, unknown>;
-  if (typeof obj.tags !== "string") {
+  if (
+    !Array.isArray(obj.tags) ||
+    obj.tags.some((tag) => typeof tag !== "string")
+  ) {
     throw new ClaudeApiError(
       "api",
-      "Tool input field 'tags' is missing or not a string",
+      "Tool input field 'tags' is missing or not an array of strings",
     );
   }
   if (typeof obj.description !== "string") {

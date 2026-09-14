@@ -118,7 +118,7 @@ describe("generateMetadata integration", () => {
   test("full flow: generates and writes tags, description, and title", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "ai,testing",
+        tags: ["ai", "testing"],
         description: "A test article",
         title: "Test Title",
       }),
@@ -162,7 +162,7 @@ describe("generateMetadata integration", () => {
   test("preserve_existing skips populated fields", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "new-tag",
+        tags: ["new-tag"],
         description: "new desc",
         title: "New Title",
       }),
@@ -189,7 +189,7 @@ describe("generateMetadata integration", () => {
   test("always_regenerate updates all fields", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "new-tag",
+        tags: ["new-tag"],
         description: "new desc",
         title: "New Title",
       }),
@@ -214,7 +214,7 @@ describe("generateMetadata integration", () => {
   test("strips surrounding quotes from generated title before writing", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "a,b",
+        tags: ["a", "b"],
         description: "desc",
         title: '"Quoted Title"',
       }),
@@ -228,7 +228,7 @@ describe("generateMetadata integration", () => {
 
   test("does not generate title when enableTitle is false", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a,b", description: "desc" }),
+      toolUseResponse({ tags: ["a", "b"], description: "desc" }),
     );
 
     const { app, fm } = makeApp({});
@@ -243,7 +243,7 @@ describe("generateMetadata integration", () => {
 
   test("passes abort signal to API call when provided", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "a,b", description: "desc", title: "T" }),
+      toolUseResponse({ tags: ["a", "b"], description: "desc", title: "T" }),
     );
     const controller = new AbortController();
     const { app } = makeApp({});
@@ -350,7 +350,7 @@ describe("concurrent edits during the API call (#178)", () => {
     mockCreate.mockImplementationOnce(async () => {
       fm.description = "what the user typed";
       return toolUseResponse({
-        tags: "ai,testing",
+        tags: ["ai", "testing"],
         description: "what Claude generated",
         title: "Generated Title",
       });
@@ -383,7 +383,7 @@ describe("concurrent edits during the API call (#178)", () => {
 
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "ai,testing",
+        tags: ["ai", "testing"],
         description: "generated",
         title: "Generated",
       }),
@@ -405,7 +405,7 @@ describe("concurrent edits during the API call (#178)", () => {
 
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "ai,testing",
+        tags: ["ai", "testing"],
         description: "what Claude generated",
         title: "Generated Title",
       }),
@@ -423,7 +423,7 @@ describe("concurrent edits during the API call (#178)", () => {
     mockCreate.mockImplementationOnce(async () => {
       fm.description = "what the user typed";
       return toolUseResponse({
-        tags: "ai",
+        tags: ["ai"],
         description: "what Claude generated",
         title: "Generated Title",
       });
@@ -446,7 +446,7 @@ describe("failed frontmatter writes (#187)", () => {
   test("all writes failing reports an error, not a skip", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "ai",
+        tags: ["ai"],
         description: "A test article",
         title: "Test Title",
       }),
@@ -471,7 +471,7 @@ describe("failed frontmatter writes (#187)", () => {
   test("a partial write failure is still reported as an error", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: "ai",
+        tags: ["ai"],
         description: "A test article",
         title: "Test Title",
       }),
@@ -491,12 +491,12 @@ describe("failed frontmatter writes (#187)", () => {
     }
   });
 
-  test("an all-punctuation tags string writes nothing and reports no change", async () => {
-    // "," is a non-empty string, so it passed validateMetadataInput and the
-    // truthiness guard, but parseTags reduces it to []. That empty array was
-    // written as `tags: []` and reported as a change (#161).
+  test("a blank-only tags array writes nothing and reports no change", async () => {
+    // A non-empty array of blanks passes validateMetadataInput, but
+    // normalizeTags reduces it to []. That empty array was written as
+    // `tags: []` and reported as a change (#161).
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: " , ", description: "", title: "" }),
+      toolUseResponse({ tags: ["", "  ", " "], description: "", title: "" }),
     );
     const { app, fm, writes } = makeApp({});
 
@@ -517,7 +517,7 @@ describe("failed frontmatter writes (#187)", () => {
     // an empty title and reported "Metadata updated successfully"; the same
     // holds for a whitespace-only description.
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "", description: "   ", title: '""' }),
+      toolUseResponse({ tags: [], description: "   ", title: '""' }),
     );
     const { app, fm, writes } = makeApp({});
 
@@ -537,7 +537,7 @@ describe("failed frontmatter writes (#187)", () => {
     // The model returned nothing usable, so no write is even attempted — the
     // case "skipped: no changes" is supposed to describe.
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: "", description: "", title: "" }),
+      toolUseResponse({ tags: [], description: "", title: "" }),
     );
     const { app } = makeApp({});
 
@@ -624,5 +624,95 @@ describe("stripSurroundingQuotes", () => {
 
   test('unwraps to an empty string for ""', () => {
     expect(stripSurroundingQuotes('""')).toBe("");
+  });
+});
+
+describe("existing tags reach the request (#251)", () => {
+  beforeEach(() => {
+    mockCreate.mockClear();
+  });
+
+  function sentUserMessage(): string {
+    const body = mockCreate.mock.calls[0]?.[0] as {
+      messages: { content: string }[];
+    };
+    return body.messages[0].content;
+  }
+
+  function sentSystem(): string {
+    const body = mockCreate.mock.calls[0]?.[0] as { system: string };
+    return body.system;
+  }
+
+  // getContent strips frontmatter before the request (#164), so without this
+  // wiring the model never sees the tags it is being asked to replace and every
+  // run is an independent draw from the body.
+  test("a note's current tags are sent for reconciliation", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
+    );
+    const { app } = makeApp({
+      frontmatter: { tags: ["science-fiction", "review"] },
+      content: "body text",
+    });
+
+    await generateMetadata(
+      app,
+      makeSettings({ updateMethod: "always_regenerate" }),
+    );
+
+    expect(sentUserMessage()).toContain("science-fiction\nreview");
+    expect(sentSystem()).toContain("keep each tag that still fits");
+  });
+
+  test("a scalar tags value is read too, not just a list", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
+    );
+    const { app } = makeApp({
+      frontmatter: { tags: "solo-tag" },
+      content: "body text",
+    });
+
+    await generateMetadata(
+      app,
+      makeSettings({ updateMethod: "always_regenerate" }),
+    );
+
+    expect(sentUserMessage()).toContain("solo-tag");
+  });
+
+  test("a note with no tags gets no reconciliation instruction", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
+    );
+    const { app } = makeApp({ content: "body text" });
+
+    await generateMetadata(app, makeSettings());
+
+    expect(sentSystem()).not.toContain("current tags");
+    expect(sentUserMessage()).not.toContain("current-tags");
+  });
+
+  // The field name is configurable, so the read must follow the setting rather
+  // than assume "tags".
+  test("reads the configured tags field name", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
+    );
+    const { app } = makeApp({
+      frontmatter: { keywords: ["from-keywords"] },
+      content: "body text",
+    });
+
+    await generateMetadata(
+      app,
+      makeSettings({
+        tagsFieldName: "keywords",
+        updateMethod: "always_regenerate",
+      }),
+    );
+
+    expect(sentUserMessage()).toContain("from-keywords");
   });
 });
