@@ -61,10 +61,11 @@ describe("migrateSettings", () => {
 
   test("does not change current values", () => {
     const settings = ok({
-      updateMethod: "always_regenerate",
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      tagsPolicy: "merge",
       anthropicModel: "claude-sonnet-5",
     });
-    expect(settings.updateMethod).toBe("always_regenerate");
+    expect(settings.tagsPolicy).toBe("merge");
     expect(settings.anthropicModel).toBe("claude-sonnet-5");
   });
 
@@ -81,6 +82,9 @@ describe("migrateSettings", () => {
 
   test("normalizes invalid trust-boundary settings to defaults", () => {
     const settings = ok({
+      // Pinned to the current version so no migration runs: migration 3 sets
+      // the three policies itself, which would mask the invalid values below.
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       anthropicApiKey: 123,
       anthropicModel: "not-a-real-model",
       tagsFieldName: false,
@@ -91,7 +95,9 @@ describe("migrateSettings", () => {
       truncateContent: "yes",
       contentTokenLimit: -10,
       truncateMethod: "bogus",
-      updateMethod: "overwrite",
+      tagsPolicy: "bogus",
+      descriptionPolicy: "reconcile",
+      titlePolicy: 7,
       tagsPrompt: 123,
       descriptionPrompt: false,
       titlePrompt: null,
@@ -110,11 +116,17 @@ describe("migrateSettings", () => {
       const settings = ok({
         schemaVersion: CURRENT_SCHEMA_VERSION,
         truncateMethod: inherited,
-        updateMethod: inherited,
+        tagsPolicy: inherited,
+        descriptionPolicy: inherited,
+        titlePolicy: inherited,
       });
 
       expect(settings.truncateMethod).toBe(DEFAULT_SETTINGS.truncateMethod);
-      expect(settings.updateMethod).toBe(DEFAULT_SETTINGS.updateMethod);
+      expect(settings.tagsPolicy).toBe(DEFAULT_SETTINGS.tagsPolicy);
+      expect(settings.descriptionPolicy).toBe(
+        DEFAULT_SETTINGS.descriptionPolicy,
+      );
+      expect(settings.titlePolicy).toBe(DEFAULT_SETTINGS.titlePolicy);
     },
   );
 
@@ -131,7 +143,9 @@ describe("migrateSettings", () => {
       truncateContent: false,
       contentTokenLimit: 42,
       truncateMethod: "heading",
-      updateMethod: "always_regenerate",
+      tagsPolicy: "merge",
+      descriptionPolicy: "preserve",
+      titlePolicy: "overwrite",
       maxBulkFiles: 250,
       tagsPrompt: "t",
       descriptionPrompt: "d",
@@ -429,5 +443,60 @@ describe("API key length (#158)", () => {
   test("a key exactly at the limit is kept", () => {
     const key = "x".repeat(API_KEY_MAX_LENGTH);
     expect(ok({ anthropicApiKey: key }).anthropicApiKey).toBe(key);
+  });
+});
+
+describe("migration 2 → 3: updateMethod becomes a policy per field (#252)", () => {
+  test("preserve_existing leaves every field protected", () => {
+    const settings = ok({
+      schemaVersion: 2,
+      updateMethod: "preserve_existing",
+    });
+
+    expect(settings.tagsPolicy).toBe("preserve");
+    expect(settings.descriptionPolicy).toBe("preserve");
+    expect(settings.titlePolicy).toBe("preserve");
+  });
+
+  // Deliberately not `merge`. Append could never remove a tag, so the sprawl it
+  // produced was unfixable from the settings tab; this is the upgrade applying
+  // the fix. `merge` stays available for anyone who wants the old behavior.
+  test("always_regenerate moves tags to reconcile, not merge", () => {
+    const settings = ok({
+      schemaVersion: 2,
+      updateMethod: "always_regenerate",
+    });
+
+    expect(settings.tagsPolicy).toBe("reconcile");
+    expect(settings.descriptionPolicy).toBe("overwrite");
+    expect(settings.titlePolicy).toBe("overwrite");
+  });
+
+  test("an absent updateMethod is treated as preserve_existing, its old default", () => {
+    const settings = ok({ schemaVersion: 2 });
+
+    expect(settings.tagsPolicy).toBe("preserve");
+    expect(settings.descriptionPolicy).toBe("preserve");
+    expect(settings.titlePolicy).toBe("preserve");
+  });
+
+  test("the retired key does not survive the migration", () => {
+    const settings = ok({
+      schemaVersion: 2,
+      updateMethod: "always_regenerate",
+    });
+
+    expect("updateMethod" in settings).toBe(false);
+    expect(settings.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  // A fresh install has no data.json at all, so migrateSettings returns
+  // kind:"missing" and DEFAULT_SETTINGS applies — the migration must not be
+  // what decides a new user's policies.
+  test("a brand-new install gets the defaults, not the migration's output", () => {
+    expect(migrateSettings(null)).toEqual({ kind: "missing" });
+    expect(DEFAULT_SETTINGS.tagsPolicy).toBe("reconcile");
+    expect(DEFAULT_SETTINGS.descriptionPolicy).toBe("overwrite");
+    expect(DEFAULT_SETTINGS.titlePolicy).toBe("preserve");
   });
 });

@@ -54,7 +54,17 @@ export class BulkConfirmModal extends Modal {
       ? settings.truncateMethod
       : "disabled";
     contentEl.createEl("p", {
-      text: `Model: ${settings.anthropicModel} · Update: ${settings.updateMethod} · Truncation: ${truncLabel}`,
+      text: `Model: ${settings.anthropicModel} · Truncation: ${truncLabel}`,
+    });
+    // On its own line rather than folded into the row above: since #252 the
+    // tags policy can *remove* tags, and title can overwrite, so what this run
+    // will do to existing values is the thing worth reading before approving
+    // hundreds of billed calls across a folder.
+    const titlePolicy = settings.enableTitle
+      ? settings.titlePolicy
+      : "disabled";
+    contentEl.createEl("p", {
+      text: `Write policy — tags: ${settings.tagsPolicy} · description: ${settings.descriptionPolicy} · title: ${titlePolicy}`,
     });
 
     // Gauged on willChange, not total: a folder of 500 already-tagged notes

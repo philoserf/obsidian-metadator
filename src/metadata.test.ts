@@ -100,6 +100,14 @@ function makeFile(path = "note.md"): { path: string; extension: string } {
   return { path, extension: "md" };
 }
 
+// The #178 live re-check is what `preserve` does; these suites used to get it
+// from the old global preserve_existing default.
+const PRESERVE_ALL = {
+  tagsPolicy: "preserve",
+  descriptionPolicy: "preserve",
+  titlePolicy: "preserve",
+} as const;
+
 function makeSettings(
   overrides: Partial<MetadataToolSettings> = {},
 ): MetadataToolSettings {
@@ -174,7 +182,11 @@ describe("generateMetadata integration", () => {
         description: "existing desc",
       },
     });
-    const settings = makeSettings({ updateMethod: "preserve_existing" });
+    const settings = makeSettings({
+      tagsPolicy: "preserve",
+      descriptionPolicy: "preserve",
+      titlePolicy: "preserve",
+    });
 
     await generateMetadata(app, settings);
 
@@ -186,7 +198,12 @@ describe("generateMetadata integration", () => {
     expect(fm.title).toBe("New Title");
   });
 
-  test("always_regenerate updates all fields", async () => {
+  // The predecessor of this test was named "always_regenerate updates all
+  // fields" and asserted tags === ["old-tag", "new-tag"] — a merge, under a
+  // name promising an overwrite. That mismatch is exactly what #230 reported,
+  // and it stayed invisible because the name described the documented
+  // behavior while the assertion pinned the real one.
+  test("reconcile replaces the tag list instead of growing it (#230)", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
         tags: ["new-tag"],
@@ -202,13 +219,73 @@ describe("generateMetadata integration", () => {
         title: "Old Title",
       },
     });
-    const settings = makeSettings({ updateMethod: "always_regenerate" });
+    const settings = makeSettings({
+      tagsPolicy: "reconcile",
+      descriptionPolicy: "overwrite",
+      titlePolicy: "overwrite",
+    });
 
     await generateMetadata(app, settings);
 
-    expect(fm.tags).toEqual(["old-tag", "new-tag"]);
+    // "old-tag" is gone — under the old append this was impossible, which is
+    // why a sprawling tag list could not be cleaned from the settings tab.
+    expect(fm.tags).toEqual(["new-tag"]);
     expect(fm.description).toBe("new desc");
     expect(fm.title).toBe("New Title");
+  });
+
+  test("merge keeps the old behavior for anyone who wants it", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: ["new-tag"],
+        description: "new desc",
+        title: "New Title",
+      }),
+    );
+
+    const { app, fm } = makeApp({
+      frontmatter: { tags: ["old-tag"], description: "old desc" },
+    });
+
+    await generateMetadata(
+      app,
+      makeSettings({ tagsPolicy: "merge", descriptionPolicy: "overwrite" }),
+    );
+
+    expect(fm.tags).toEqual(["old-tag", "new-tag"]);
+  });
+
+  test("each field's policy is independent of the others (#252)", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        tags: ["new-tag"],
+        description: "new desc",
+        title: "New Title",
+      }),
+    );
+
+    const { app, fm } = makeApp({
+      frontmatter: {
+        tags: ["stale-one", "stale-two"],
+        description: "old desc",
+        title: "Load-Bearing Title",
+      },
+    });
+
+    // The bind #252 exists to break: cleaning up tags used to require
+    // always_regenerate, which also rewrote every title unconditionally.
+    await generateMetadata(
+      app,
+      makeSettings({
+        tagsPolicy: "reconcile",
+        descriptionPolicy: "overwrite",
+        titlePolicy: "preserve",
+      }),
+    );
+
+    expect(fm.tags).toEqual(["new-tag"]);
+    expect(fm.description).toBe("new desc");
+    expect(fm.title).toBe("Load-Bearing Title");
   });
 
   test("strips surrounding quotes from generated title before writing", async () => {
@@ -341,7 +418,7 @@ describe("concurrent edits during the API call (#178)", () => {
     mockCreate.mockClear();
   });
 
-  test("preserve_existing does not overwrite a field the user filled in mid-request", async () => {
+  test("preserve does not overwrite a field the user filled in mid-request", async () => {
     const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
 
     // The note is empty when the request starts, so the pre-call snapshot says
@@ -356,7 +433,7 @@ describe("concurrent edits during the API call (#178)", () => {
       });
     });
 
-    await generateMetadata(app, makeSettings());
+    await generateMetadata(app, makeSettings(PRESERVE_ALL));
 
     expect(fm.description).toBe("what the user typed");
     // Fields the user did not touch are still filled in.
@@ -364,7 +441,7 @@ describe("concurrent edits during the API call (#178)", () => {
     expect(fm.tags).toEqual(["ai", "testing"]);
   });
 
-  test("preserve_existing does not open the file for a field it is keeping", async () => {
+  test("preserve does not open the file for a field it is keeping", async () => {
     // processFrontMatter serializes and writes the file back on every call,
     // whether or not the callback mutates anything. Calling it for a field we
     // have already decided to leave alone cost an mtime bump and a vault
@@ -389,12 +466,12 @@ describe("concurrent edits during the API call (#178)", () => {
       }),
     );
 
-    await generateMetadata(app, makeSettings());
+    await generateMetadata(app, makeSettings(PRESERVE_ALL));
 
     expect(writes()).toBe(1);
   });
 
-  test("preserve_existing keeps a field whose value is 0 or false", async () => {
+  test("preserve keeps a field whose value is 0 or false", async () => {
     // Falsy but present. isEmptyValue used to report both as empty, so
     // shouldGenerate sent the note to the API and the update_if_empty re-check
     // then overwrote the very values it exists to protect (#201).
@@ -411,7 +488,7 @@ describe("concurrent edits during the API call (#178)", () => {
       }),
     );
 
-    await generateMetadata(app, makeSettings());
+    await generateMetadata(app, makeSettings(PRESERVE_ALL));
 
     expect(fm.description).toBe(0);
     expect(fm.title).toBe(false);
@@ -431,7 +508,11 @@ describe("concurrent edits during the API call (#178)", () => {
 
     await generateMetadata(
       app,
-      makeSettings({ updateMethod: "always_regenerate" }),
+      makeSettings({
+        tagsPolicy: "reconcile",
+        descriptionPolicy: "overwrite",
+        titlePolicy: "overwrite",
+      }),
     );
 
     expect(fm.description).toBe("what Claude generated");
@@ -658,7 +739,11 @@ describe("existing tags reach the request (#251)", () => {
 
     await generateMetadata(
       app,
-      makeSettings({ updateMethod: "always_regenerate" }),
+      makeSettings({
+        tagsPolicy: "reconcile",
+        descriptionPolicy: "overwrite",
+        titlePolicy: "overwrite",
+      }),
     );
 
     expect(sentUserMessage()).toContain("science-fiction\nreview");
@@ -676,7 +761,11 @@ describe("existing tags reach the request (#251)", () => {
 
     await generateMetadata(
       app,
-      makeSettings({ updateMethod: "always_regenerate" }),
+      makeSettings({
+        tagsPolicy: "reconcile",
+        descriptionPolicy: "overwrite",
+        titlePolicy: "overwrite",
+      }),
     );
 
     expect(sentUserMessage()).toContain("solo-tag");
@@ -709,7 +798,9 @@ describe("existing tags reach the request (#251)", () => {
       app,
       makeSettings({
         tagsFieldName: "keywords",
-        updateMethod: "always_regenerate",
+        tagsPolicy: "reconcile",
+        descriptionPolicy: "overwrite",
+        titlePolicy: "overwrite",
       }),
     );
 

@@ -11,7 +11,11 @@ import { isAbortError } from "./errors";
 import { acquire, release } from "./inFlight";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, normalizeTags, readExistingTags } from "./prompt";
-import type { MetadataToolSettings } from "./settings";
+import type {
+  MetadataToolSettings,
+  ScalarPolicy,
+  TagsPolicy,
+} from "./settings";
 
 function notifyApiError(error: unknown): void {
   if (error instanceof ClaudeApiError) {
@@ -88,15 +92,29 @@ export function stripSurroundingQuotes(str: string): string {
 // useful instead of the generic "no changes".
 export const ALREADY_IN_PROGRESS = "already generating metadata for this note";
 
+// A `preserve` field is the only one that can make a request pointless: every
+// other policy writes whatever comes back. So the question is whether any
+// enabled field would write, and a note where all three are preserved and all
+// three are populated is the one case worth not billing a call for.
+function willWrite(
+  policy: TagsPolicy | ScalarPolicy,
+  existing: unknown,
+): boolean {
+  return policy === "preserve" ? isEmptyValue(existing) : true;
+}
+
 export function shouldGenerate(
   frontMatter: Record<string, unknown>,
   settings: MetadataToolSettings,
 ): boolean {
-  if (settings.updateMethod === "always_regenerate") return true;
   return (
-    isEmptyValue(frontMatter[settings.tagsFieldName]) ||
-    isEmptyValue(frontMatter[settings.descriptionFieldName]) ||
-    (settings.enableTitle && isEmptyValue(frontMatter[settings.titleFieldName]))
+    willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName]) ||
+    willWrite(
+      settings.descriptionPolicy,
+      frontMatter[settings.descriptionFieldName],
+    ) ||
+    (settings.enableTitle &&
+      willWrite(settings.titlePolicy, frontMatter[settings.titleFieldName]))
   );
 }
 
@@ -166,7 +184,6 @@ export async function generateMetadataForFile(
       file,
       settings,
       frontMatter,
-      settings.updateMethod === "preserve_existing",
       opts.bulk ?? false,
       opts.signal,
     );
@@ -259,7 +276,6 @@ async function addMetadataWithClaude(
   file: TFile,
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
-  preserveExisting: boolean,
   isBulk: boolean,
   signal?: AbortSignal,
 ): Promise<WriteOutcome> {
@@ -334,36 +350,37 @@ async function addMetadataWithClaude(
 
   let hasChanges = false;
 
+  // Each field carries its own policy, so the write method is decided per
+  // field rather than from one global flag (#252).
   type FieldUpdate =
-    | { fieldName: string; value: string[]; updateMethod: "append" }
-    | { fieldName: string; value: string; updateMethod: "update" };
+    | { fieldName: string; value: string[]; policy: TagsPolicy }
+    | { fieldName: string; value: string; policy: ScalarPolicy };
+
+  // `preserve` re-checks emptiness against the live frontmatter inside
+  // processFrontMatter rather than the `frontMatter` snapshot, which was taken
+  // before a request that can run for REQUEST_TIMEOUT_MS — otherwise a value
+  // the user typed during the call gets overwritten (#178). `merge` needs no
+  // such guard because it unions with the live value, so a concurrent edit
+  // survives either way; `reconcile` and `overwrite` are asked for explicitly.
+  function methodFor(
+    u: FieldUpdate,
+  ): "append" | "replace" | "update" | "update_if_empty" {
+    if (u.policy === "preserve") return "update_if_empty";
+    if (u.policy === "merge") return "append";
+    // reconcile writes the model's reconciled list in place of the old one;
+    // "replace" is the array-typed counterpart of "update" (#230).
+    return u.policy === "reconcile" ? "replace" : "update";
+  }
 
   async function writeField(u: FieldUpdate): Promise<boolean> {
     try {
-      if (u.updateMethod === "append") {
-        return await updateFrontMatter(
-          app,
-          file,
-          u.fieldName,
-          u.value,
-          "append",
-        );
-      }
-      // Under preserve_existing the decision to overwrite must be made against the
-      // live frontmatter, not `frontMatter` — that snapshot was taken before a
-      // request that can run for REQUEST_TIMEOUT_MS (#178). The append path
-      // above needs no such guard: it merges with the live value, so a
-      // concurrent edit survives either way.
-      if (preserveExisting) {
-        return await updateFrontMatter(
-          app,
-          file,
-          u.fieldName,
-          u.value,
-          "update_if_empty",
-        );
-      }
-      return await updateFrontMatter(app, file, u.fieldName, u.value, "update");
+      return await updateFrontMatter(
+        app,
+        file,
+        u.fieldName,
+        u.value,
+        methodFor(u),
+      );
     } catch (error) {
       if (!isBulk) {
         new Notice(
@@ -396,7 +413,7 @@ async function addMetadataWithClaude(
     updates.push({
       fieldName: settings.tagsFieldName,
       value: tags,
-      updateMethod: "append",
+      policy: settings.tagsPolicy,
     });
   }
   // Same shape as the tags guard: judge the value that would actually be
@@ -406,7 +423,7 @@ async function addMetadataWithClaude(
     updates.push({
       fieldName: settings.descriptionFieldName,
       value: metadata.description,
-      updateMethod: "update",
+      policy: settings.descriptionPolicy,
     });
   }
   // stripSurroundingQuotes trims and can empty the string outright — `""`
@@ -417,7 +434,7 @@ async function addMetadataWithClaude(
     updates.push({
       fieldName: settings.titleFieldName,
       value: title,
-      updateMethod: "update",
+      policy: settings.titlePolicy,
     });
   }
 
@@ -425,12 +442,12 @@ async function addMetadataWithClaude(
     if (signal?.aborted) {
       return { changed: hasChanges, failures };
     }
-    // A populated field under preserve_existing is left alone — and left alone
-    // means not opening the file at all. processFrontMatter serializes and
-    // writes back on every call regardless of whether the callback mutated
-    // anything, so calling it here cost an mtime bump, a vault modify event and
-    // disk I/O per skipped field, per file, across a whole bulk run (#185).
-    if (preserveExisting && !isEmptyValue(frontMatter[u.fieldName])) {
+    // A populated field under `preserve` is left alone — and left alone means
+    // not opening the file at all. processFrontMatter serializes and writes
+    // back on every call regardless of whether the callback mutated anything,
+    // so calling it here cost an mtime bump, a vault modify event and disk I/O
+    // per skipped field, per file, across a whole bulk run (#185).
+    if (u.policy === "preserve" && !isEmptyValue(frontMatter[u.fieldName])) {
       continue;
     }
     if (await writeField(u)) {

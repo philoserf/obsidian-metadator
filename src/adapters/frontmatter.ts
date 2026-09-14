@@ -6,7 +6,7 @@ export async function updateFrontMatter(
   file: TFile,
   key: string,
   value: string | boolean | string[],
-  method: "append" | "update" | "update_if_empty",
+  method: "append" | "replace" | "update" | "update_if_empty",
 ): Promise<boolean> {
   let changed = false;
   await app.fileManager.processFrontMatter(file, (frontmatter) => {
@@ -33,6 +33,24 @@ export async function updateFrontMatter(
         base.length !== merged.length ||
         base.some((item, i) => item !== merged[i]);
       frontmatter[key] = merged;
+    } else if (method === "replace") {
+      // The array counterpart of "update", and the reason tags cannot simply
+      // reuse it: "update" is typed for a scalar and would write the list as a
+      // comma-joined string, after which Obsidian's tag pane stops indexing the
+      // field (#230). Compared element-wise because a fresh array is never ===
+      // the stored one, which would report a change on every run.
+      const values = value as string[];
+      const existing = frontmatter[key];
+      const same =
+        Array.isArray(existing) &&
+        existing.length === values.length &&
+        existing.every((item, i) => item === values[i]);
+      if (same) return;
+      // Writing [] where the field was already empty is not a change — the same
+      // guard the append path needs (#161).
+      if (values.length === 0 && isEmptyValue(existing)) return;
+      changed = true;
+      frontmatter[key] = values;
     } else if (method === "update") {
       if (frontmatter[key] !== value) changed = true;
       frontmatter[key] = value;

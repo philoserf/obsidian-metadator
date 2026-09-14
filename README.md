@@ -18,14 +18,24 @@ If you want something similar, the code is MIT-licensed — fork it and adapt. D
 
 Run **Generate metadata for current note** on the active note. The plugin reads the note body, optionally truncates it, sends it to Claude with a JSON-return prompt, parses the response, and writes `tags`, `description`, and (optionally) `title` back to frontmatter.
 
-Three settings shape what happens on each run.
+Three groups of settings shape what happens on each run.
 
-### Update method
+### Write policy
 
-| Method                        | Behavior                                       |
-| ----------------------------- | ---------------------------------------------- |
-| `preserve_existing` (default) | Only populate fields that are missing or empty |
-| `always_regenerate`           | Overwrite every field on every run             |
+One policy per field, because the three fields are different kinds of value. A single global setting could not serve them: the only value that would clean up a sprawling tag list also rewrote every title unconditionally.
+
+| Field         | Options                            | Default     |
+| ------------- | ---------------------------------- | ----------- |
+| `tags`        | `reconcile` · `merge` · `preserve` | `reconcile` |
+| `description` | `overwrite` · `preserve`           | `overwrite` |
+| `title`       | `overwrite` · `preserve`           | `preserve`  |
+
+- **`reconcile`** sends the note's current tags with the request and writes back the reconciled set — tags that still fit are kept, ones that no longer apply are dropped. This is the only policy that can _remove_ a tag.
+- **`merge`** adds to what is already there and never removes. Tag lists grow on every run.
+- **`overwrite`** replaces the value on every run.
+- **`preserve`** writes only when the field is empty, re-checking at write time so a value typed during the request is not clobbered.
+
+`title` defaults to `preserve` because it is frequently kept in sync by another plugin or relied on by a publisher, where a silent rewrite changes a note's public identity.
 
 ### Truncation method
 
