@@ -281,14 +281,18 @@ async function addMetadataWithClaude(
 ): Promise<WriteOutcome> {
   const requestId = newRequestId();
 
-  const contentStr = settings.truncateContent
-    ? await getContent(
-        app,
-        file,
-        settings.contentTokenLimit,
-        settings.truncateMethod,
-      )
-    : await getContent(app, file, -1, "head_only");
+  // One call over one argument. The ternary used to be over the whole argument
+  // list, and its second arm passed "head_only" as though choosing something —
+  // getContent returns on `limit <= 0` before it ever reads `method`, so the
+  // choice was inert and a reader had to walk into the function to learn that.
+  // `truncateContent: false` is a limit of "no limit", which is what -1 already
+  // means here.
+  const contentStr = await getContent(
+    app,
+    file,
+    settings.truncateContent ? settings.contentTokenLimit : -1,
+    settings.truncateMethod,
+  );
 
   const { system, userMessage } = buildPrompt(
     contentStr,

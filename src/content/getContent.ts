@@ -11,8 +11,12 @@ import {
 export async function getContent(
   app: App,
   file: TFile,
-  limit: number = 1000,
-  method: TruncateMethod = "head_only",
+  // No defaults: settings is the single source for both, and passing them is
+  // already universal. `limit = 1000` was a silent second copy of
+  // DEFAULT_SETTINGS.contentTokenLimit that nothing kept in sync (#165 closed
+  // the same duplication in settingsTab.ts), and no code path reached either.
+  limit: number,
+  method: TruncateMethod,
 ): Promise<string> {
   // cachedRead, not read: this is pure extraction — the string is tokenized,
   // truncated and embedded in a prompt, and nothing derives a write from it
