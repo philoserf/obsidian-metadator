@@ -61,13 +61,18 @@ const realConfirm = BulkConfirmModal.prototype.openAndAwait;
 const realSetProgress = BulkProgressModal.prototype.setProgress;
 
 let confirmAnswer = true;
+let capOverrideAnswer = false;
 
 beforeEach(() => {
   confirmAnswer = true;
+  capOverrideAnswer = false;
   mockCreate.mockReset();
   mockCreate.mockResolvedValue(TOOL_RESPONSE);
   FakeNotice.messages.length = 0;
-  BulkConfirmModal.prototype.openAndAwait = async () => confirmAnswer;
+  BulkConfirmModal.prototype.openAndAwait = async () => ({
+    confirmed: confirmAnswer,
+    capOverridden: capOverrideAnswer,
+  });
 });
 
 afterEach(() => {
@@ -266,5 +271,49 @@ describe("runBulkForFolder", () => {
 
     expect(FakeNotice.messages.join(" ")).toContain("already have metadata");
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+// The cap used to be enforced only by a disabled button in the confirm modal,
+// so anything reaching runBulkForFolder another way ran uncapped (#238).
+describe("runBulkForFolder cap enforcement", () => {
+  test("refuses a run over the cap when the override was not ticked", async () => {
+    confirmAnswer = true;
+    capOverrideAnswer = false;
+
+    await runBulkForFolder(
+      makeApp(),
+      folderOf("a.md", "b.md", "c.md"),
+      settings({ maxBulkFiles: 2 }),
+    );
+
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(FakeNotice.messages.join(" ")).toContain("Refusing to run");
+  });
+
+  test("runs over the cap when the override was ticked", async () => {
+    confirmAnswer = true;
+    capOverrideAnswer = true;
+
+    await runBulkForFolder(
+      makeApp(),
+      folderOf("a.md", "b.md", "c.md"),
+      settings({ maxBulkFiles: 2 }),
+    );
+
+    expect(mockCreate).toHaveBeenCalled();
+  });
+
+  test("a run at or under the cap needs no override", async () => {
+    confirmAnswer = true;
+    capOverrideAnswer = false;
+
+    await runBulkForFolder(
+      makeApp(),
+      folderOf("a.md", "b.md"),
+      settings({ maxBulkFiles: 2 }),
+    );
+
+    expect(mockCreate).toHaveBeenCalled();
   });
 });

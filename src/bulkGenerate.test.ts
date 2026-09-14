@@ -25,17 +25,26 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const {
-  collectCandidates,
-  classifyCandidates,
-  computeDelayMs,
-  runBulk,
-  DEFAULT_RETRY_DELAYS_MS,
-  CONSECUTIVE_FAILURE_LIMIT,
-  CONNECTION_HALT_STREAK,
-  CONNECTION_MAX_RETRIES,
-} = await import("./bulkGenerate");
-const { ClaudeApiError, resetClientCache } = await import("./adapters/claude");
+const { collectCandidates, classifyCandidates, exceedsBulkCap, runBulk } =
+  await import("./bulkGenerate");
+const { DEFAULT_RETRY_DELAYS_MS, DEFAULT_HALT_STREAK, RETRY_POLICY } =
+  await import("./retryPolicy");
+
+// Read off the policy table rather than re-stated, so these cannot drift from
+// it — and fail loudly rather than silently defaulting if the connection row
+// ever loses the overrides that make it the special case.
+const connectionPolicy = RETRY_POLICY.connection;
+if (
+  connectionPolicy?.maxRetries === undefined ||
+  connectionPolicy.haltStreak === undefined
+) {
+  throw new Error(
+    "RETRY_POLICY.connection must carry both maxRetries and haltStreak",
+  );
+}
+const CONNECTION_MAX_RETRIES = connectionPolicy.maxRetries;
+const CONNECTION_HALT_STREAK = connectionPolicy.haltStreak;
+const { resetClientCache } = await import("./adapters/claude");
 // claude.ts caches one Anthropic client per API key for the whole run, while
 // mock.module is per-file. These suites use colliding keys, so without this a
 // client built under another file's mocked SDK gets served here and its
@@ -319,11 +328,13 @@ describe("runBulk", () => {
     const files = [file("n1.md"), file("n2.md"), file("n3.md")];
     const app = makeApp();
     let processed = 0;
+    const controller = new AbortController();
     const { results } = await runBulk(app, files, settings(), {
       onProgress: () => {
         processed++;
+        if (processed >= 2) controller.abort("cancelled_by_user");
       },
-      shouldAbort: () => processed >= 2,
+      signal: controller.signal,
     });
     expect(results.length).toBeLessThan(3);
   });
@@ -427,7 +438,7 @@ describe("runBulk", () => {
     // proving a dead network is dead (#221).
     expect(halted?.kind).toBe("connection");
     expect(results).toHaveLength(CONNECTION_HALT_STREAK);
-    expect(CONNECTION_HALT_STREAK).toBeLessThan(CONSECUTIVE_FAILURE_LIMIT);
+    expect(CONNECTION_HALT_STREAK).toBeLessThan(DEFAULT_HALT_STREAK);
   });
 
   test("a connection error retries on the shorter schedule", async () => {
@@ -482,7 +493,7 @@ describe("runBulk", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  test("halts after CONSECUTIVE_FAILURE_LIMIT identical non-retryable errors", async () => {
+  test("halts after DEFAULT_HALT_STREAK identical non-retryable errors", async () => {
     mockCreate.mockRejectedValue(new Error("boom"));
     const files = Array.from({ length: 10 }, (_, i) => file(`n${i}.md`));
 
@@ -490,8 +501,8 @@ describe("runBulk", () => {
       retryDelaysMs: FAST_RETRIES,
     });
 
-    expect(halted?.consecutive).toBe(CONSECUTIVE_FAILURE_LIMIT);
-    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+    expect(halted?.consecutive).toBe(DEFAULT_HALT_STREAK);
+    expect(results).toHaveLength(DEFAULT_HALT_STREAK);
   });
 
   test("a success resets the consecutive-failure streak", async () => {
@@ -543,7 +554,7 @@ describe("runBulk", () => {
     // failed, so five in a row is a proven ceiling, not a blip. Continuing
     // would spend 15 more files x 4 calls proving the same thing.
     expect(halted?.kind).toBe("rate_limit");
-    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+    expect(results).toHaveLength(DEFAULT_HALT_STREAK);
   });
 
   test("a rate limit that clears before the limit does not halt", async () => {
@@ -601,7 +612,7 @@ describe("runBulk", () => {
     });
 
     expect(halted?.kind).toBe("other");
-    expect(results).toHaveLength(CONSECUTIVE_FAILURE_LIMIT);
+    expect(results).toHaveLength(DEFAULT_HALT_STREAK);
   });
 
   test("per-file error isolation — one failure does not abort batch", async () => {
@@ -695,15 +706,15 @@ describe("runBulk", () => {
   test("abort before first attempt skips without calling the API", async () => {
     const files = [file("n1.md")];
     const app = makeApp();
-    let aborted = false;
+    const controller = new AbortController();
     const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: [5_000],
-      shouldAbort: () => aborted,
+      signal: controller.signal,
       onProgress: () => {
-        // onProgress fires after runBulk's pre-loop shouldAbort check but
-        // before runFileWithRetry calls the API; the per-attempt guard must
-        // catch it so no API call is made.
-        aborted = true;
+        // onProgress fires after runBulk's pre-loop abort check but before
+        // runFileWithRetry calls the API; the per-attempt guard must catch it
+        // so no API call is made.
+        controller.abort("cancelled_by_user");
       },
     });
     expect(results).toHaveLength(1);
@@ -719,14 +730,12 @@ describe("runBulk", () => {
       .default as unknown as {
       RateLimitError: new (msg: string) => Error;
     };
-    let aborted = false;
+    const controller = new AbortController();
     mockCreate.mockImplementation(async () => {
       // Fire abort on the next tick, after this throw resolves — so
-      // runFileWithRetry sees the error, enters sleepAbortable, and then
-      // picks up the abort during polling.
-      setTimeout(() => {
-        aborted = true;
-      }, 0);
+      // runFileWithRetry sees the error and is already inside sleepAbortable
+      // when the signal fires.
+      setTimeout(() => controller.abort("cancelled_by_user"), 0);
       throw new Anthropic.RateLimitError("429");
     });
     const files = [file("n1.md")];
@@ -734,13 +743,14 @@ describe("runBulk", () => {
     const start = Date.now();
     const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: [5_000],
-      shouldAbort: () => aborted,
+      signal: controller.signal,
     });
     const elapsed = Date.now() - start;
     expect(results).toHaveLength(1);
     expect(results[0].kind).toBe("skipped");
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    // Abort polls every 100ms; should return well under the 5s retry delay.
+    // The wait is now event-driven, so this returns on the abort itself rather
+    // than at the next poll tick — far inside the 5s retry delay.
     expect(elapsed).toBeLessThan(1_000);
   });
 
@@ -810,44 +820,18 @@ describe("runBulk", () => {
   });
 });
 
-describe("computeDelayMs", () => {
-  test("applies low-end jitter (random=0 → 0.5x base)", () => {
-    expect(computeDelayMs(1000, undefined, () => 0)).toBe(500);
+// The cap used to exist only as a disabled button inside BulkConfirmModal, so
+// the headless suite could not reach it at all (#238).
+describe("exceedsBulkCap", () => {
+  test("is false at the cap and true above it", () => {
+    const s = settings({ maxBulkFiles: 10 });
+    expect(exceedsBulkCap(9, s)).toBe(false);
+    expect(exceedsBulkCap(10, s)).toBe(false);
+    expect(exceedsBulkCap(11, s)).toBe(true);
   });
 
-  test("applies high-end jitter (random≈1 → ~1.5x base)", () => {
-    expect(computeDelayMs(1000, undefined, () => 0.999)).toBe(1499);
-  });
-
-  test("applies mid-range jitter (random=0.5 → 1.0x base)", () => {
-    expect(computeDelayMs(1000, undefined, () => 0.5)).toBe(1000);
-  });
-
-  test("returns 0 when base delay is 0 (zero-delay tests stay deterministic)", () => {
-    expect(computeDelayMs(0, undefined, () => 0.7)).toBe(0);
-  });
-
-  test("ignores non-ClaudeApiError values when computing jitter", () => {
-    expect(computeDelayMs(1000, new Error("plain"), () => 0)).toBe(500);
-  });
-
-  test("honors retryAfterMs from a ClaudeApiError when provided", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited", 800);
-    expect(computeDelayMs(1000, err, () => 0)).toBe(800);
-  });
-
-  test("caps retryAfterMs at 2x base to avoid stalling the bulk loop", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited", 60_000);
-    expect(computeDelayMs(1000, err, () => 0)).toBe(2000);
-  });
-
-  test("honors retryAfterMs of 0 (server says retry immediately)", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited", 0);
-    expect(computeDelayMs(1000, err, () => 0.999)).toBe(0);
-  });
-
-  test("falls back to jitter when retryAfterMs is undefined on a ClaudeApiError", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited");
-    expect(computeDelayMs(1000, err, () => 0)).toBe(500);
+  test("follows the setting rather than a constant", () => {
+    expect(exceedsBulkCap(600, settings({ maxBulkFiles: 500 }))).toBe(true);
+    expect(exceedsBulkCap(600, settings({ maxBulkFiles: 1000 }))).toBe(false);
   });
 });

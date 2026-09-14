@@ -42,26 +42,26 @@ describe("BulkConfirmModal", () => {
   test("Cancel resolves false", async () => {
     const { promise, el } = open();
     el.findByText("Cancel")?.dispatch("click");
-    expect(await promise).toBe(false);
+    expect((await promise).confirmed).toBe(false);
   });
 
   test("Generate resolves true", async () => {
     const { promise, el } = open();
     el.findByText("Generate (10)")?.dispatch("click");
-    expect(await promise).toBe(true);
+    expect((await promise).confirmed).toBe(true);
   });
 
   test("closing without a button — Esc or X — defaults to cancel", async () => {
     const { modal, promise } = open();
     modal.close();
-    expect(await promise).toBe(false);
+    expect((await promise).confirmed).toBe(false);
   });
 
   test("the first resolution wins; a later close cannot flip it", async () => {
     const { modal, promise, el } = open();
     el.findByText("Generate (10)")?.dispatch("click");
     modal.close();
-    expect(await promise).toBe(true);
+    expect((await promise).confirmed).toBe(true);
   });
 
   test("over the cap, Generate is disabled until the override is checked", async () => {
@@ -78,7 +78,7 @@ describe("BulkConfirmModal", () => {
     expect(confirm?.disabled).toBe(false);
 
     confirm?.dispatch("click");
-    expect(await promise).toBe(true);
+    expect((await promise).confirmed).toBe(true);
   });
 
   test("under the cap there is no override gate", async () => {

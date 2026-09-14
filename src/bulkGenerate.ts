@@ -1,16 +1,37 @@
 import { type App, TFile, TFolder } from "obsidian";
-import { ClaudeApiError, type ClaudeErrorKind } from "./adapters/claude";
+import { ClaudeApiError } from "./adapters/claude";
 import { logDebug } from "./logger";
 import {
   type FileResult,
   generateMetadataForFile,
   shouldGenerate,
 } from "./metadata";
+import {
+  computeDelayMs,
+  DEFAULT_RETRY_DELAYS_MS,
+  type HaltKind,
+  haltKindOf,
+  haltStreakFor,
+  isRetryable,
+  scheduleFor,
+} from "./retryPolicy";
 import type { MetadataToolSettings } from "./settings";
 
-export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [
-  2_000, 8_000, 30_000,
-];
+// The cap is policy, and policy lives in this layer. It used to exist only as
+// a computed boolean inside BulkConfirmModal — a red paragraph and a disabled
+// button — which put a data-and-money safety limit in the one layer this
+// codebase otherwise keeps free of decisions, and left it untestable from the
+// headless suite that covers retry, halt and abort in detail.
+//
+// Gauged on files-that-will-change rather than files scanned: a folder of 500
+// already-populated notes with three to generate is not a large run, and 90
+// that all need generating is.
+export function exceedsBulkCap(
+  willChange: number,
+  settings: MetadataToolSettings,
+): boolean {
+  return willChange > settings.maxBulkFiles;
+}
 
 export function collectCandidates(folder: TFolder): TFile[] {
   const out: TFile[] = [];
@@ -64,28 +85,10 @@ export interface BulkProgress {
 
 export interface RunBulkOptions {
   onProgress?: (p: BulkProgress) => void;
-  shouldAbort?: () => boolean;
   retryDelaysMs?: readonly number[];
   signal?: AbortSignal;
   random?: () => number;
 }
-
-// A run that fails this many times in a row with the same kind is failing
-// systemically, not per-file. Retryable kinds (rate_limit, overloaded,
-// connection) count toward it too, but only once runFileWithRetry has
-// exhausted the whole backoff schedule for that file — by then they are a
-// proven ceiling, not a blip.
-export const CONSECUTIVE_FAILURE_LIMIT = 5;
-
-// Why a run stopped before reaching every file. "auth" is decided on the first
-// occurrence: a rejected key rejects every subsequent file too, so one
-// round-trip is all the evidence needed. Everything else needs
-// CONSECUTIVE_FAILURE_LIMIT in a row, because a single "api" or "unknown" is
-// just as likely to be one bad note as a broken run.
-// "other" covers failures that never reached the API — a frontmatter write
-// against a read-only vault, say. Those are as systemic as any auth failure:
-// every file fails identically.
-export type HaltKind = ClaudeErrorKind | "other";
 
 export interface BulkHalt {
   kind: HaltKind;
@@ -98,98 +101,32 @@ export interface BulkRunOutcome {
   halted?: BulkHalt;
 }
 
-function haltKindOf(error: unknown): HaltKind {
-  return error instanceof ClaudeApiError ? error.kind : "other";
-}
-
-// Kinds worth another attempt: server-side throttling, and the network blips
-// and timeouts that used to fail a file outright on the first hiccup (#180).
-// Typed as the kind union rather than plain strings so renaming a
-// ClaudeErrorKind can't silently drop a kind out of the retry set.
-const RETRYABLE_KINDS: ReadonlySet<ClaudeErrorKind> = new Set<ClaudeErrorKind>([
-  "rate_limit",
-  "overloaded",
-  "connection",
-]);
-
-function isRetryable(error: unknown): boolean {
-  return error instanceof ClaudeApiError && RETRYABLE_KINDS.has(error.kind);
-}
-
-// A connection failure is not a throttle. A rate limit means the server heard us
-// and said no, so waiting is meaningful and later files may still succeed; a
-// connection failure means we never reached it, and each attempt burns the full
-// request timeout three times over because the SDK retries underneath us.
-//
-// So connection errors get a shorter schedule and a shorter streak. On a hung
-// socket — established but silent, unlike a refused connection, which fails fast
-// — the full policy took about an hour to give up on a dead network. This brings
-// that back to roughly the pre-retry figure while still absorbing the Wi-Fi blip
-// the retry exists for.
-export const CONNECTION_MAX_RETRIES = 2;
-export const CONNECTION_HALT_STREAK = 2;
-
-function isConnectionError(error: unknown): boolean {
-  return error instanceof ClaudeApiError && error.kind === "connection";
-}
-
-// A prefix of the caller's schedule rather than its own constant, so a test
-// passing zero delays gets zero delays here too.
-function scheduleFor(
-  error: unknown,
-  delays: readonly number[],
-): readonly number[] {
-  return isConnectionError(error)
-    ? delays.slice(0, CONNECTION_MAX_RETRIES)
-    : delays;
-}
-
-function haltStreakFor(kind: HaltKind): number {
-  return kind === "connection"
-    ? CONNECTION_HALT_STREAK
-    : CONSECUTIVE_FAILURE_LIMIT;
-}
-
-// Cap server-provided Retry-After at this multiple of the scheduled base
-// delay so a misbehaving header can't stall a long bulk run indefinitely.
-const RETRY_AFTER_CAP_MULTIPLIER = 2;
-
-export function computeDelayMs(
-  baseDelayMs: number,
-  error: unknown,
-  random: () => number = Math.random,
-): number {
-  if (
-    error instanceof ClaudeApiError &&
-    error.retryAfterMs !== undefined &&
-    Number.isFinite(error.retryAfterMs)
-  ) {
-    return Math.min(
-      error.retryAfterMs,
-      baseDelayMs * RETRY_AFTER_CAP_MULTIPLIER,
-    );
-  }
-  // Full jitter in [0.5x, 1.5x] of base — avoids synchronized retry storms
-  // across parallel clients hitting a shared-tenant overload.
-  return Math.round(baseDelayMs * (0.5 + random()));
-}
-
-const ABORT_POLL_MS = 100;
-
+// Resolves true if the wait was cut short by an abort. Event-driven rather
+// than a polling loop: cancelling during a 30-second backoff is now immediate
+// instead of up to a poll interval late, and there is no interval constant to
+// pick. The listener is removed in the finally because `signal` outlives this
+// call — it is the per-run controller's, and a bulk run awaits this once per
+// retry per file.
 async function sleepAbortable(
   ms: number,
-  shouldAbort?: () => boolean,
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  if (ms <= 0) return shouldAbort?.() ?? false;
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    if (shouldAbort?.()) return true;
-    const remaining = deadline - Date.now();
-    await new Promise((resolve) =>
-      setTimeout(resolve, Math.min(ABORT_POLL_MS, remaining)),
-    );
+  if (signal?.aborted) return true;
+  if (ms <= 0) return false;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      if (!signal) return;
+      onAbort = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  } finally {
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
-  return shouldAbort?.() ?? false;
 }
 
 async function runFileWithRetry(
@@ -197,15 +134,11 @@ async function runFileWithRetry(
   file: TFile,
   settings: MetadataToolSettings,
   retryDelaysMs: readonly number[],
-  shouldAbort?: () => boolean,
   signal?: AbortSignal,
   random: () => number = Math.random,
 ): Promise<FileResult> {
-  const shouldStop = () =>
-    (shouldAbort?.() ?? false) || (signal?.aborted ?? false);
-
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
-    if (shouldStop()) {
+    if (signal?.aborted) {
       return { kind: "skipped", file, reason: "cancelled before attempt" };
     }
     const r = await generateMetadataForFile(app, file, settings, {
@@ -225,7 +158,7 @@ async function runFileWithRetry(
         errorKind: r.error instanceof ClaudeApiError ? r.error.kind : "unknown",
       });
     }
-    const aborted = await sleepAbortable(delayMs, shouldStop);
+    const aborted = await sleepAbortable(delayMs, signal);
     if (aborted) {
       return {
         kind: "skipped",
@@ -242,13 +175,7 @@ export async function runBulk(
   app: App,
   files: TFile[],
   settings: MetadataToolSettings,
-  {
-    onProgress,
-    shouldAbort,
-    retryDelaysMs,
-    signal,
-    random,
-  }: RunBulkOptions = {},
+  { onProgress, retryDelaysMs, signal, random }: RunBulkOptions = {},
 ): Promise<BulkRunOutcome> {
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const results: FileResult[] = [];
@@ -257,7 +184,7 @@ export async function runBulk(
   let streak = 0;
 
   for (let i = 0; i < files.length; i++) {
-    if (shouldAbort?.() || signal?.aborted) break;
+    if (signal?.aborted) break;
     const file = files[i];
     onProgress?.({ current: i + 1, total: files.length, file, errors });
     const result = await runFileWithRetry(
@@ -265,7 +192,6 @@ export async function runBulk(
       file,
       settings,
       delays,
-      shouldAbort,
       signal,
       random,
     );

@@ -23,6 +23,9 @@ export function release(path: string): void {
   inFlight.delete(path);
 }
 
+// For tests — production queries membership through acquire, whose false
+// return is the answer. Kept because asserting set membership through acquire
+// would mutate the set the assertion is about.
 export function isInFlight(path: string): boolean {
   return inFlight.has(path);
 }
