@@ -7,7 +7,6 @@ import type { MetadataToolSettings } from "./settings";
 
 export interface RunBulkForFolderOptions {
   signal?: AbortSignal;
-  shouldAbort?: () => boolean;
 }
 
 export async function runBulkForFolder(
@@ -68,15 +67,15 @@ export async function runBulkForFolder(
   try {
     const { results, halted } = await runBulk(app, willChange, settings, {
       onProgress: (p) => progress.setProgress(p),
-      shouldAbort: () =>
-        (opts.shouldAbort?.() ?? false) || progress.isAborted(),
       signal: runController.signal,
     });
 
-    const aborted =
-      progress.isAborted() ||
-      (opts.shouldAbort?.() ?? false) ||
-      runController.signal.aborted;
+    // The signal is the single cancellation channel. The progress modal sets
+    // its aborted flag in exactly two places and calls onAbort immediately
+    // after each, and that handler is installed before open() — so
+    // progress.isAborted() cannot be true while this signal is not, and
+    // consulting both asked two sources for one fact.
+    const aborted = runController.signal.aborted;
     progress.finish();
 
     new BulkSummaryModal(app, results, {

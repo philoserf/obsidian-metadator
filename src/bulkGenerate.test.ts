@@ -319,11 +319,13 @@ describe("runBulk", () => {
     const files = [file("n1.md"), file("n2.md"), file("n3.md")];
     const app = makeApp();
     let processed = 0;
+    const controller = new AbortController();
     const { results } = await runBulk(app, files, settings(), {
       onProgress: () => {
         processed++;
+        if (processed >= 2) controller.abort("cancelled_by_user");
       },
-      shouldAbort: () => processed >= 2,
+      signal: controller.signal,
     });
     expect(results.length).toBeLessThan(3);
   });
@@ -695,15 +697,15 @@ describe("runBulk", () => {
   test("abort before first attempt skips without calling the API", async () => {
     const files = [file("n1.md")];
     const app = makeApp();
-    let aborted = false;
+    const controller = new AbortController();
     const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: [5_000],
-      shouldAbort: () => aborted,
+      signal: controller.signal,
       onProgress: () => {
-        // onProgress fires after runBulk's pre-loop shouldAbort check but
-        // before runFileWithRetry calls the API; the per-attempt guard must
-        // catch it so no API call is made.
-        aborted = true;
+        // onProgress fires after runBulk's pre-loop abort check but before
+        // runFileWithRetry calls the API; the per-attempt guard must catch it
+        // so no API call is made.
+        controller.abort("cancelled_by_user");
       },
     });
     expect(results).toHaveLength(1);
@@ -719,14 +721,12 @@ describe("runBulk", () => {
       .default as unknown as {
       RateLimitError: new (msg: string) => Error;
     };
-    let aborted = false;
+    const controller = new AbortController();
     mockCreate.mockImplementation(async () => {
       // Fire abort on the next tick, after this throw resolves — so
-      // runFileWithRetry sees the error, enters sleepAbortable, and then
-      // picks up the abort during polling.
-      setTimeout(() => {
-        aborted = true;
-      }, 0);
+      // runFileWithRetry sees the error and is already inside sleepAbortable
+      // when the signal fires.
+      setTimeout(() => controller.abort("cancelled_by_user"), 0);
       throw new Anthropic.RateLimitError("429");
     });
     const files = [file("n1.md")];
@@ -734,13 +734,14 @@ describe("runBulk", () => {
     const start = Date.now();
     const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: [5_000],
-      shouldAbort: () => aborted,
+      signal: controller.signal,
     });
     const elapsed = Date.now() - start;
     expect(results).toHaveLength(1);
     expect(results[0].kind).toBe("skipped");
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    // Abort polls every 100ms; should return well under the 5s retry delay.
+    // The wait is now event-driven, so this returns on the abort itself rather
+    // than at the next poll tick — far inside the 5s retry delay.
     expect(elapsed).toBeLessThan(1_000);
   });
 

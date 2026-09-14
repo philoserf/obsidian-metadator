@@ -64,7 +64,6 @@ export interface BulkProgress {
 
 export interface RunBulkOptions {
   onProgress?: (p: BulkProgress) => void;
-  shouldAbort?: () => boolean;
   retryDelaysMs?: readonly number[];
   signal?: AbortSignal;
   random?: () => number;
@@ -174,22 +173,32 @@ export function computeDelayMs(
   return Math.round(baseDelayMs * (0.5 + random()));
 }
 
-const ABORT_POLL_MS = 100;
-
+// Resolves true if the wait was cut short by an abort. Event-driven rather
+// than a polling loop: cancelling during a 30-second backoff is now immediate
+// instead of up to a poll interval late, and there is no interval constant to
+// pick. The listener is removed in the finally because `signal` outlives this
+// call — it is the per-run controller's, and a bulk run awaits this once per
+// retry per file.
 async function sleepAbortable(
   ms: number,
-  shouldAbort?: () => boolean,
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  if (ms <= 0) return shouldAbort?.() ?? false;
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    if (shouldAbort?.()) return true;
-    const remaining = deadline - Date.now();
-    await new Promise((resolve) =>
-      setTimeout(resolve, Math.min(ABORT_POLL_MS, remaining)),
-    );
+  if (signal?.aborted) return true;
+  if (ms <= 0) return false;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      if (!signal) return;
+      onAbort = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  } finally {
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
-  return shouldAbort?.() ?? false;
 }
 
 async function runFileWithRetry(
@@ -197,15 +206,11 @@ async function runFileWithRetry(
   file: TFile,
   settings: MetadataToolSettings,
   retryDelaysMs: readonly number[],
-  shouldAbort?: () => boolean,
   signal?: AbortSignal,
   random: () => number = Math.random,
 ): Promise<FileResult> {
-  const shouldStop = () =>
-    (shouldAbort?.() ?? false) || (signal?.aborted ?? false);
-
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
-    if (shouldStop()) {
+    if (signal?.aborted) {
       return { kind: "skipped", file, reason: "cancelled before attempt" };
     }
     const r = await generateMetadataForFile(app, file, settings, {
@@ -225,7 +230,7 @@ async function runFileWithRetry(
         errorKind: r.error instanceof ClaudeApiError ? r.error.kind : "unknown",
       });
     }
-    const aborted = await sleepAbortable(delayMs, shouldStop);
+    const aborted = await sleepAbortable(delayMs, signal);
     if (aborted) {
       return {
         kind: "skipped",
@@ -244,7 +249,6 @@ export async function runBulk(
   settings: MetadataToolSettings,
   {
     onProgress,
-    shouldAbort,
     retryDelaysMs,
     signal,
     random,
@@ -257,7 +261,7 @@ export async function runBulk(
   let streak = 0;
 
   for (let i = 0; i < files.length; i++) {
-    if (shouldAbort?.() || signal?.aborted) break;
+    if (signal?.aborted) break;
     const file = files[i];
     onProgress?.({ current: i + 1, total: files.length, file, errors });
     const result = await runFileWithRetry(
@@ -265,7 +269,6 @@ export async function runBulk(
       file,
       settings,
       delays,
-      shouldAbort,
       signal,
       random,
     );
