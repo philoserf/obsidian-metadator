@@ -11,8 +11,10 @@ import {
 export async function getContent(
   app: App,
   file: TFile,
-  limit: number = 1000,
-  method: TruncateMethod = "head_only",
+  // Not defaulted: a default here is a second copy of
+  // DEFAULT_SETTINGS.contentTokenLimit that nothing keeps in sync (#165).
+  limit: number,
+  method: TruncateMethod,
 ): Promise<string> {
   // cachedRead, not read: this is pure extraction — the string is tokenized,
   // truncated and embedded in a prompt, and nothing derives a write from it

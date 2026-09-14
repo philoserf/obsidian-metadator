@@ -22,7 +22,7 @@ export const MAX_BULK_FILES = 100_000;
 export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
-// in main.ts. Each migration's key is the schema version it produces.
+// in settingsMigrate.ts. Each migration's key is the schema version it produces.
 export const CURRENT_SCHEMA_VERSION = 3;
 
 export interface MetadataToolSettings {

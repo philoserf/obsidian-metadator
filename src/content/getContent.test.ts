@@ -9,17 +9,19 @@ describe("getContent", () => {
     } as unknown as App;
   }
 
+  // `method` is supplied but inert in both: getContent returns on limit <= 0
+  // before it ever consults it.
   test("returns full content when limit is 0", async () => {
     const content = "Hello world, this is some content.";
     const app = makeVaultApp(content);
-    const result = await getContent(app, {} as TFile, 0);
+    const result = await getContent(app, {} as TFile, 0, "head_only");
     expect(result).toBe(content);
   });
 
   test("returns full content when limit is negative", async () => {
     const content = "Hello world, this is some content.";
     const app = makeVaultApp(content);
-    const result = await getContent(app, {} as TFile, -1);
+    const result = await getContent(app, {} as TFile, -1, "head_only");
     expect(result).toBe(content);
   });
 });

@@ -281,14 +281,14 @@ async function addMetadataWithClaude(
 ): Promise<WriteOutcome> {
   const requestId = newRequestId();
 
-  const contentStr = settings.truncateContent
-    ? await getContent(
-        app,
-        file,
-        settings.contentTokenLimit,
-        settings.truncateMethod,
-      )
-    : await getContent(app, file, -1, "head_only");
+  // truncateContent: false is a limit of "no limit", which is what -1 means to
+  // getContent — so the toggle is one argument, not two spellings of the call.
+  const contentStr = await getContent(
+    app,
+    file,
+    settings.truncateContent ? settings.contentTokenLimit : -1,
+    settings.truncateMethod,
+  );
 
   const { system, userMessage } = buildPrompt(
     contentStr,

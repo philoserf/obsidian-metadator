@@ -317,6 +317,25 @@ describe("callClaudeForMetadata", () => {
     expect(caught).not.toBeInstanceOf(ClaudeApiError);
   });
 
+  // With enableTitle off, buildToolSchema does not declare `title`, so a model
+  // that volunteers one is off-schema. Validating it anyway turned a non-string
+  // into a thrown error that discarded the tags and description that arrived
+  // correctly — a failure mode invented by validating an unwanted field (#250).
+  test("ignores an off-schema title instead of failing the generation", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["a"], description: "d", title: 42 }),
+    );
+
+    const result = await callClaudeForMetadata("s", "u", {
+      ...settings,
+      enableTitle: false,
+    });
+
+    expect(result.tags).toEqual(["a"]);
+    expect(result.description).toBe("d");
+    expect(result.title).toBeUndefined();
+  });
+
   test("declares tags as a bounded array of strings (#251)", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({ tags: ["a"], description: "d", title: "t" }),

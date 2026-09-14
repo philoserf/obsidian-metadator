@@ -196,15 +196,14 @@ function validateMetadataInput(
       );
     }
     out.title = obj.title;
-  } else if (obj.title !== undefined) {
-    if (typeof obj.title !== "string") {
-      throw new ClaudeApiError(
-        "api",
-        "Tool input field 'title' is not a string",
-      );
-    }
-    out.title = obj.title;
   }
+  // No `else` branch: when title generation is off, buildToolSchema does not
+  // declare `title` at all, so a volunteered one is already off-schema and
+  // metadata.ts guards its write on the same enableTitle that made
+  // includeTitle false — the value could never be read. Validating it anyway
+  // meant a non-string title failed the whole generation, discarding the tags
+  // and description that arrived correctly, over a field the user switched
+  // off. An off-schema title is now ignored, like every other unexpected key.
   return out;
 }
 
