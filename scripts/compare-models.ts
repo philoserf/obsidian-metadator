@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { ClaudeApiError, callClaudeForMetadata } from "../src/adapters/claude";
 import { buildPrompt } from "../src/prompt";
-import { DEFAULT_SETTINGS, VALID_MODEL_OPTIONS } from "../src/settings";
+import { DEFAULT_SETTINGS, MODEL_OPTION_LABELS } from "../src/settings";
 
 const SAMPLE_CONTENT = `# Composting for apartment dwellers
 
@@ -26,6 +26,8 @@ The main failure mode is overfeeding: rotting scraps outpace what the
 worms can process and the bin turns anaerobic and smells. Start with
 small amounts and increase gradually as the worm population grows.`;
 
+const MODEL_IDS = Object.keys(MODEL_OPTION_LABELS);
+
 async function main() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -39,10 +41,10 @@ async function main() {
     : SAMPLE_CONTENT;
 
   console.log(
-    `Comparing ${VALID_MODEL_OPTIONS.length} models on ${contentPath ?? "the built-in sample note"}\n`,
+    `Comparing ${MODEL_IDS.length} models on ${contentPath ?? "the built-in sample note"}\n`,
   );
 
-  for (const model of VALID_MODEL_OPTIONS) {
+  for (const model of MODEL_IDS) {
     const settings = {
       ...DEFAULT_SETTINGS,
       anthropicApiKey: apiKey,

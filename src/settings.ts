@@ -46,7 +46,7 @@ export interface MetadataToolSettings {
   truncateMethod: TruncateMethod;
 
   // Update behavior
-  updateMethod: "always_regenerate" | "preserve_existing";
+  updateMethod: UpdateMethod;
 
   // Bulk-run safeguard: warn and require explicit override above this many
   // files-that-will-change. Tracks API-call count, not total candidates.
@@ -57,17 +57,6 @@ export interface MetadataToolSettings {
   descriptionPrompt: string;
   titlePrompt: string;
 }
-
-// Models offered in the settings dropdown. This list is a convenience, not a
-// constraint: anthropicModel accepts any well-formed model id (see
-// isModelId), so a model released after this build can be typed in without a
-// code change.
-export const VALID_MODEL_OPTIONS = [
-  "claude-sonnet-5",
-  "claude-opus-5",
-  "claude-fable-5-1",
-  "claude-haiku-4-5",
-] as const;
 
 // Shape of an Anthropic model id, deliberately loose. A well-formed but
 // unknown id reaches the API and fails there with a clear error, which is a
@@ -99,43 +88,40 @@ export function isModelId(value: string): boolean {
   return value.length <= MODEL_ID_MAX_LENGTH && MODEL_ID_PATTERN.test(value);
 }
 
-export const MODEL_OPTION_LABELS: Record<
-  (typeof VALID_MODEL_OPTIONS)[number],
-  string
-> = {
+// Each of these records is both the option list and the display labels: the
+// keys are the enumeration, the values are what the settings tab renders.
+// Iterate with Object.entries and test membership with Object.hasOwn, so
+// adding an option is a one-line edit in one place.
+
+// Models offered in the settings dropdown. A convenience, not a constraint:
+// anthropicModel accepts any well-formed model id (see isModelId), so a model
+// released after this build can be typed in without a code change — hence the
+// open `string` key rather than a closed union.
+export const MODEL_OPTION_LABELS: Record<string, string> = {
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-opus-5": "Claude Opus 5",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-haiku-4-5": "Claude Haiku 4.5",
 };
 
-export const VALID_TRUNCATE_METHOD_OPTIONS = [
-  "head_only",
-  "head_tail",
-  "heading",
-] as const;
-
-export const TRUNCATE_METHOD_LABELS: Record<
-  (typeof VALID_TRUNCATE_METHOD_OPTIONS)[number],
-  string
-> = {
+// Keyed by TruncateMethod rather than deriving it: the type is defined in
+// content/truncate.ts and imported here, deliberately, so content/ never
+// imports settings. Annotating the record this way gets the same
+// exhaustiveness check while keeping that dependency pointing the right way.
+export const TRUNCATE_METHOD_LABELS: Record<TruncateMethod, string> = {
   head_only: "Beginning Only",
   head_tail: "Beginning + End",
   heading: "Headings + Summaries",
 };
 
-export const VALID_UPDATE_METHOD_OPTIONS = [
-  "always_regenerate",
-  "preserve_existing",
-] as const;
-
-export const UPDATE_METHOD_LABELS: Record<
-  (typeof VALID_UPDATE_METHOD_OPTIONS)[number],
-  string
-> = {
+// updateMethod has no type of its own elsewhere, so this record is its
+// definition and UpdateMethod is derived from it below.
+export const UPDATE_METHOD_LABELS = {
   always_regenerate: "Always Regenerate",
   preserve_existing: "Preserve Existing",
 };
+
+export type UpdateMethod = keyof typeof UPDATE_METHOD_LABELS;
 
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
