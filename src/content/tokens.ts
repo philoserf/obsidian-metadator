@@ -22,7 +22,7 @@
 // straight through a script boundary and swallows the CJK characters too —
 // "hello你好world" tokenized to one token instead of four, an unbounded merge
 // that silently undercounts any bilingual note (#162). The two regexes are
-// held to identical output by the shared suite in content.test.ts.
+// held to identical output by the shared suite in content/tokens.test.ts.
 const CJK_FAMILY_RANGES = "一-龥぀-ヿ가-힯";
 const NOT_CJK = `(?![${CJK_FAMILY_RANGES}])`;
 

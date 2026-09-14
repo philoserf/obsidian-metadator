@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(cat | jq -r '.tool_input.file_path // empty' 2>/dev/null); case \"$f\" in *src/*.test.ts) ;; *src/*.ts) t=\"${f%.ts}.test.ts\"; [ -f \"$t\" ] && bun test \"$t\" 2>&1 | tail -5;; esac; exit 0",
+            "command": "f=$(cat | jq -r '.tool_input.file_path // empty' 2>/dev/null); case \"$f\" in *src/*.test.ts|*src/test-preload.ts|*src/testDom.ts) ;; *src/*.ts) t=\"${f%.ts}.test.ts\"; if [ -f \"$t\" ]; then bun test \"$t\" 2>&1 | tail -5; else echo \"[hook] no test file at ${t#*src/} — this source file is outside the auto-test net\"; fi;; esac; exit 0",
             "timeout": 15,
             "async": true
           }
