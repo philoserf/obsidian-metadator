@@ -8,11 +8,12 @@ import {
   isModelId,
   MAX_BULK_FILES,
   MAX_CONTENT_TOKEN_LIMIT,
+  type MetadataToolSettings,
   MODEL_OPTION_LABELS,
   PROMPT_MAX_LENGTH,
+  SCALAR_POLICY_LABELS,
+  TAGS_POLICY_LABELS,
   TRUNCATE_METHOD_LABELS,
-  UPDATE_METHOD_LABELS,
-  type UpdateMethod,
 } from "./settings";
 
 // `max` is required rather than optional: a bounded parser named "strict
@@ -153,6 +154,31 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
         );
+      });
+  }
+
+  // The three write-policy settings differ only in which key they write and
+  // which vocabulary they offer, so they share one builder.
+  private addPolicySetting<
+    K extends "tagsPolicy" | "descriptionPolicy" | "titlePolicy",
+  >(
+    containerEl: HTMLElement,
+    label: string,
+    desc: string,
+    key: K,
+    labels: Record<string, string>,
+  ): Setting {
+    return new Setting(containerEl)
+      .setName(`${label} Write Policy`)
+      .setDesc(desc)
+      .addDropdown((dropdown) => {
+        for (const [value, optionLabel] of Object.entries(labels)) {
+          dropdown.addOption(value, optionLabel);
+        }
+        dropdown.setValue(this.plugin.settings[key]).onChange(async (value) => {
+          this.plugin.settings[key] = value as MetadataToolSettings[K];
+          await this.plugin.saveSettings();
+        });
       });
   }
 
@@ -319,24 +345,31 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       );
 
     // Update Settings
-    new Setting(containerEl).setName("Update Settings").setHeading();
+    new Setting(containerEl).setName("Write Policy").setHeading();
 
-    new Setting(containerEl)
-      .setName("Update Method")
-      .setDesc(
-        "Always Regenerate: regenerate on every command; Preserve Existing: only generate empty fields",
-      )
-      .addDropdown((dropdown) => {
-        for (const [method, label] of Object.entries(UPDATE_METHOD_LABELS)) {
-          dropdown.addOption(method, label);
-        }
-        dropdown
-          .setValue(this.plugin.settings.updateMethod)
-          .onChange(async (value) => {
-            this.plugin.settings.updateMethod = value as UpdateMethod;
-            await this.plugin.saveSettings();
-          });
-      });
+    this.addPolicySetting(
+      containerEl,
+      "Tags",
+      "Reconcile: replace the list with a reconciled set, keeping the tags that still fit; Merge: add to what is there and never remove; Preserve: only write when the field is empty.",
+      "tagsPolicy",
+      TAGS_POLICY_LABELS,
+    );
+
+    this.addPolicySetting(
+      containerEl,
+      "Description",
+      "Overwrite: replace on every run; Preserve: only write when the field is empty.",
+      "descriptionPolicy",
+      SCALAR_POLICY_LABELS,
+    );
+
+    this.addPolicySetting(
+      containerEl,
+      "Title",
+      "Overwrite: replace on every run; Preserve: only write when the field is empty. Preserve is the default because a title is often kept in sync by another plugin or relied on by a publisher.",
+      "titlePolicy",
+      SCALAR_POLICY_LABELS,
+    );
 
     this.addBoundedIntSetting(
       containerEl,

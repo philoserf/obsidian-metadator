@@ -195,7 +195,11 @@ describe("classifyCandidates", () => {
     const result = classifyCandidates(
       app,
       [f1, f2],
-      settings({ updateMethod: "preserve_existing" }),
+      settings({
+        tagsPolicy: "preserve",
+        descriptionPolicy: "preserve",
+        titlePolicy: "preserve",
+      }),
     );
     expect(result.willChange.map((f: TFile) => f.path)).toEqual(["empty.md"]);
     expect(result.willSkip.map((f: TFile) => f.path)).toEqual(["full.md"]);
@@ -209,7 +213,11 @@ describe("classifyCandidates", () => {
     const result = classifyCandidates(
       app,
       [f],
-      settings({ updateMethod: "preserve_existing" }),
+      settings({
+        tagsPolicy: "preserve",
+        descriptionPolicy: "preserve",
+        titlePolicy: "preserve",
+      }),
     );
     expect(result.willChange.map((f: TFile) => f.path)).toEqual(["partial.md"]);
   });
@@ -226,7 +234,11 @@ describe("classifyCandidates", () => {
     const result = classifyCandidates(
       app,
       [f1, f2],
-      settings({ updateMethod: "always_regenerate" }),
+      settings({
+        tagsPolicy: "reconcile",
+        descriptionPolicy: "overwrite",
+        titlePolicy: "overwrite",
+      }),
     );
     expect(result.willChange).toHaveLength(2);
     expect(result.willSkip).toHaveLength(0);
@@ -241,14 +253,24 @@ describe("classifyCandidates", () => {
     const withTitle = classifyCandidates(
       app,
       [f],
-      settings({ updateMethod: "preserve_existing", enableTitle: true }),
+      settings({
+        tagsPolicy: "preserve",
+        descriptionPolicy: "preserve",
+        titlePolicy: "preserve",
+        enableTitle: true,
+      }),
     );
     expect(withTitle.willChange).toHaveLength(1);
 
     const withoutTitle = classifyCandidates(
       app,
       [f],
-      settings({ updateMethod: "preserve_existing", enableTitle: false }),
+      settings({
+        tagsPolicy: "preserve",
+        descriptionPolicy: "preserve",
+        titlePolicy: "preserve",
+        enableTitle: false,
+      }),
     );
     expect(withoutTitle.willChange).toHaveLength(0);
   });

@@ -8,8 +8,10 @@ import {
   MAX_CONTENT_TOKEN_LIMIT,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
+  SCALAR_POLICY_LABELS,
+  type ScalarPolicy,
+  TAGS_POLICY_LABELS,
   TRUNCATE_METHOD_LABELS,
-  UPDATE_METHOD_LABELS,
 } from "./settings";
 
 function readString(
@@ -52,10 +54,14 @@ function isTruncateMethod(
   return Object.hasOwn(TRUNCATE_METHOD_LABELS, value);
 }
 
-function isUpdateMethod(
+function isTagsPolicy(
   value: string,
-): value is MetadataToolSettings["updateMethod"] {
-  return Object.hasOwn(UPDATE_METHOD_LABELS, value);
+): value is MetadataToolSettings["tagsPolicy"] {
+  return Object.hasOwn(TAGS_POLICY_LABELS, value);
+}
+
+function isScalarPolicy(value: string): value is ScalarPolicy {
+  return Object.hasOwn(SCALAR_POLICY_LABELS, value);
 }
 
 // Schema migrations, keyed by the version they produce. To add migration N,
@@ -89,6 +95,34 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
         if (s.anthropicModel === "claude-haiku-4-5-20251001") {
           s.anthropicModel = "claude-haiku-4-5";
         }
+      },
+    ],
+    [
+      3,
+      (s) => {
+        // 2 → 3: one global updateMethod becomes a policy per field (#252).
+        // The three fields are different kinds of value, and no single enum
+        // value could express "clean up tags" without also meaning "rewrite
+        // every title".
+        //
+        // preserve_existing mapped to leaving every populated field alone, so
+        // all three become `preserve` and nothing about that user's runs
+        // changes.
+        //
+        // always_regenerate mapped to: tags appended (never replaced —
+        // the #230 bug), description and title overwritten. Its tags become
+        // `reconcile` rather than `merge`, which is a deliberate behavior
+        // change on upgrade: append could never remove a tag, so the sprawl it
+        // produced was unfixable from the settings tab. `merge` remains
+        // available for anyone who wants the old behavior back.
+        //
+        // An absent updateMethod means the bag predates the setting or never
+        // set it, in which case preserve_existing was its effective default.
+        const regenerate = s.updateMethod === "always_regenerate";
+        s.tagsPolicy = regenerate ? "reconcile" : "preserve";
+        s.descriptionPolicy = regenerate ? "overwrite" : "preserve";
+        s.titlePolicy = regenerate ? "overwrite" : "preserve";
+        delete s.updateMethod;
       },
     ],
   ]);
@@ -157,9 +191,17 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     migrated.truncateMethod,
     DEFAULT_SETTINGS.truncateMethod,
   );
-  const updateMethodCandidate = readString(
-    migrated.updateMethod,
-    DEFAULT_SETTINGS.updateMethod,
+  const tagsPolicyCandidate = readString(
+    migrated.tagsPolicy,
+    DEFAULT_SETTINGS.tagsPolicy,
+  );
+  const descriptionPolicyCandidate = readString(
+    migrated.descriptionPolicy,
+    DEFAULT_SETTINGS.descriptionPolicy,
+  );
+  const titlePolicyCandidate = readString(
+    migrated.titlePolicy,
+    DEFAULT_SETTINGS.titlePolicy,
   );
 
   const normalized: MetadataToolSettings = {
@@ -214,9 +256,15 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     truncateMethod: isTruncateMethod(truncateMethodCandidate)
       ? truncateMethodCandidate
       : DEFAULT_SETTINGS.truncateMethod,
-    updateMethod: isUpdateMethod(updateMethodCandidate)
-      ? updateMethodCandidate
-      : DEFAULT_SETTINGS.updateMethod,
+    tagsPolicy: isTagsPolicy(tagsPolicyCandidate)
+      ? tagsPolicyCandidate
+      : DEFAULT_SETTINGS.tagsPolicy,
+    descriptionPolicy: isScalarPolicy(descriptionPolicyCandidate)
+      ? descriptionPolicyCandidate
+      : DEFAULT_SETTINGS.descriptionPolicy,
+    titlePolicy: isScalarPolicy(titlePolicyCandidate)
+      ? titlePolicyCandidate
+      : DEFAULT_SETTINGS.titlePolicy,
     tagsPrompt: readString(migrated.tagsPrompt, DEFAULT_SETTINGS.tagsPrompt, {
       nonEmpty: true,
       maxLength: PROMPT_MAX_LENGTH,

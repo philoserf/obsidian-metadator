@@ -251,7 +251,18 @@ describe("runBulkForFolder", () => {
         App["metadataCache"]["getFileCache"]
       >;
 
-    await runBulkForFolder(app, folderOf("a.md"), settings());
+    // All three policies must be `preserve` for a populated note to count as
+    // needing nothing: under `overwrite` or `reconcile` the field is rewritten
+    // whatever is already there, so there is still work to do.
+    await runBulkForFolder(
+      app,
+      folderOf("a.md"),
+      settings({
+        tagsPolicy: "preserve",
+        descriptionPolicy: "preserve",
+        titlePolicy: "preserve",
+      }),
+    );
 
     expect(FakeNotice.messages.join(" ")).toContain("already have metadata");
     expect(mockCreate).not.toHaveBeenCalled();

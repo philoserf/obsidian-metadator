@@ -248,3 +248,84 @@ describe("append onto a blank existing value", () => {
     expect(changed).toBe(true);
   });
 });
+
+// The array-typed counterpart of "update", added for the tags `reconcile`
+// policy (#252). Tags cannot reuse "update": it is typed for a scalar and
+// would write the list as a comma-joined string, after which Obsidian's tag
+// pane stops indexing the field (#230).
+describe("replace", () => {
+  test("writes the new list in place of the old one", async () => {
+    const { app, fm } = makeApp({ tags: ["stale-one", "stale-two", "review"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["review", "le-guin"],
+      "replace",
+    );
+    // The first policy under which a rerun can remove a tag at all.
+    expect(fm.tags).toEqual(["review", "le-guin"]);
+    expect(changed).toBe(true);
+  });
+
+  test("writes a YAML list, not a joined scalar", async () => {
+    const { app, fm } = makeApp({});
+    await updateFrontMatter(app, {} as TFile, "tags", ["a", "b"], "replace");
+    expect(Array.isArray(fm.tags)).toBe(true);
+  });
+
+  // Idempotence is the point of #251 + #252 together: a rerun on an unchanged
+  // note whose tags the model reconciles to the same set must not report a
+  // change, or every bulk run dirties every file.
+  test("an identical list is not a change", async () => {
+    const { app, fm } = makeApp({ tags: ["a", "b"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["a", "b"],
+      "replace",
+    );
+    expect(changed).toBe(false);
+    expect(fm.tags).toEqual(["a", "b"]);
+  });
+
+  test("reordering the same tags is a change", async () => {
+    const { app, fm } = makeApp({ tags: ["a", "b"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      ["b", "a"],
+      "replace",
+    );
+    expect(changed).toBe(true);
+    expect(fm.tags).toEqual(["b", "a"]);
+  });
+
+  test("an empty list against an empty field writes nothing (#161)", async () => {
+    const { app, fm } = makeApp({});
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "replace",
+    );
+    expect(changed).toBe(false);
+    expect("tags" in fm).toBe(false);
+  });
+
+  test("an empty list does clear a populated field", async () => {
+    const { app, fm } = makeApp({ tags: ["gone"] });
+    const changed = await updateFrontMatter(
+      app,
+      {} as TFile,
+      "tags",
+      [],
+      "replace",
+    );
+    expect(changed).toBe(true);
+    expect(fm.tags).toEqual([]);
+  });
+});

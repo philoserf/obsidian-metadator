@@ -23,7 +23,7 @@ export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in main.ts. Each migration's key is the schema version it produces.
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export interface MetadataToolSettings {
   schemaVersion: number;
@@ -45,8 +45,10 @@ export interface MetadataToolSettings {
   contentTokenLimit: number;
   truncateMethod: TruncateMethod;
 
-  // Update behavior
-  updateMethod: UpdateMethod;
+  // Write policy, one per field
+  tagsPolicy: TagsPolicy;
+  descriptionPolicy: ScalarPolicy;
+  titlePolicy: ScalarPolicy;
 
   // Bulk-run safeguard: warn and require explicit override above this many
   // files-that-will-change. Tracks API-call count, not total candidates.
@@ -114,14 +116,28 @@ export const TRUNCATE_METHOD_LABELS: Record<TruncateMethod, string> = {
   heading: "Headings + Summaries",
 };
 
-// updateMethod has no type of its own elsewhere, so this record is its
-// definition and UpdateMethod is derived from it below.
-export const UPDATE_METHOD_LABELS = {
-  always_regenerate: "Always Regenerate",
-  preserve_existing: "Preserve Existing",
+// One policy per field, because the three fields are different kinds of value
+// and a single global setting could not serve them (#252). `tags` is a set that
+// wants reconciling against what is already there; `description` is a cheap
+// scalar that is fine to replace; `title` is a scalar that is often
+// externally synced and load-bearing, so it defaults to being left alone.
+//
+// These records are the enumerations — see the note above MODEL_OPTION_LABELS.
+export const TAGS_POLICY_LABELS = {
+  reconcile: "Reconcile",
+  merge: "Merge",
+  preserve: "Preserve",
 };
 
-export type UpdateMethod = keyof typeof UPDATE_METHOD_LABELS;
+export type TagsPolicy = keyof typeof TAGS_POLICY_LABELS;
+
+// description and title share a vocabulary but not a default.
+export const SCALAR_POLICY_LABELS = {
+  overwrite: "Overwrite",
+  preserve: "Preserve",
+};
+
+export type ScalarPolicy = keyof typeof SCALAR_POLICY_LABELS;
 
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -140,7 +156,14 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   contentTokenLimit: 1000,
   truncateMethod: "head_only",
 
-  updateMethod: "preserve_existing",
+  // Defaults differ per field on purpose. tags reconcile because an
+  // unreconciled list is the problem #252 exists to fix; description
+  // overwrites because it is cheap and disposable; title preserves because it
+  // is frequently kept in sync by another plugin or relied on by a publisher,
+  // and rewriting it silently changes a note's public identity.
+  tagsPolicy: "reconcile",
+  descriptionPolicy: "overwrite",
+  titlePolicy: "preserve",
 
   maxBulkFiles: 500,
 
