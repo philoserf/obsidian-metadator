@@ -64,7 +64,15 @@ export class BulkSummaryModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     const changed = this.results.filter((r) => r.kind === "changed").length;
-    const skipped = this.results.filter((r) => r.kind === "skipped").length;
+    // Counted apart from ordinary skips because the two mean opposite things:
+    // "already populated" is the expected no-op the run is designed around,
+    // while "locked" means a note the user asked for was passed over and still
+    // needs a run. Folding them together erased that — and the interactive
+    // path had always surfaced it, so one entry point reported the lock and
+    // the other hid it (#232).
+    const skippedResults = this.results.filter((r) => r.kind === "skipped");
+    const locked = skippedResults.filter((r) => r.reason === "locked").length;
+    const skipped = skippedResults.length - locked;
     const errors = this.results.filter((r) => r.kind === "error");
     const { aborted, halted, totalPlanned } = this.info;
     const remaining = totalPlanned - this.results.length;
@@ -83,6 +91,11 @@ export class BulkSummaryModal extends Modal {
     const summary = contentEl.createEl("ul");
     summary.createEl("li", { text: `${changed} changed` });
     summary.createEl("li", { text: `${skipped} skipped` });
+    if (locked > 0) {
+      summary.createEl("li", {
+        text: `${locked} skipped (already being generated elsewhere — re-run to pick these up)`,
+      });
+    }
     summary.createEl("li", { text: `${errors.length} errored` });
     if (remaining > 0) {
       summary.createEl("li", {
