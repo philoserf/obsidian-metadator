@@ -500,3 +500,63 @@ describe("migration 2 → 3: updateMethod becomes a policy per field (#252)", ()
     expect(DEFAULT_SETTINGS.titlePolicy).toBe("preserve");
   });
 });
+
+describe("field-name collision while title generation is off (#248)", () => {
+  test("keeps the two names in use and resets only the inert one", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTitle: false,
+      tagsFieldName: "keywords",
+      descriptionFieldName: "summary",
+      titleFieldName: "keywords",
+    });
+
+    // These used to be destroyed to fix a value nothing reads.
+    expect(settings.tagsFieldName).toBe("keywords");
+    expect(settings.descriptionFieldName).toBe("summary");
+    expect(settings.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
+  });
+
+  test("still resets all three when the names in use collide", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTitle: false,
+      tagsFieldName: "keywords",
+      descriptionFieldName: "keywords",
+      titleFieldName: "headline",
+    });
+
+    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(settings.descriptionFieldName).toBe(
+      DEFAULT_SETTINGS.descriptionFieldName,
+    );
+    expect(settings.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
+  });
+
+  test("with title generation on, a title collision still resets all three", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTitle: true,
+      tagsFieldName: "keywords",
+      descriptionFieldName: "summary",
+      titleFieldName: "keywords",
+    });
+
+    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(settings.descriptionFieldName).toBe(
+      DEFAULT_SETTINGS.descriptionFieldName,
+    );
+  });
+
+  test("a valid inert titleFieldName is left alone", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTitle: false,
+      tagsFieldName: "keywords",
+      descriptionFieldName: "summary",
+      titleFieldName: "headline",
+    });
+
+    expect(settings.titleFieldName).toBe("headline");
+  });
+});

@@ -16,6 +16,7 @@ const names = (over: Partial<FieldNames> = {}): FieldNames => ({
   tagsFieldName: "tags",
   descriptionFieldName: "description",
   titleFieldName: "title",
+  enableTitle: true,
   ...over,
 });
 
@@ -75,5 +76,36 @@ describe("DEFAULT_SETTINGS satisfies its own validators", () => {
 
   test("the default model is a well-formed model id", () => {
     expect(isModelId(DEFAULT_SETTINGS.anthropicModel)).toBe(true);
+  });
+});
+
+// titleFieldName is inert when title generation is off — shouldGenerate does
+// not consult it, buildPrompt omits the title instruction, and the write loop
+// never queues a title update. A stale value there cannot clobber anything, so
+// treating it as a collision destroyed two valid settings to fix one nothing
+// reads (#248).
+describe("areFieldNamesDistinct with title generation off", () => {
+  test("a colliding but inert titleFieldName is not a collision", () => {
+    expect(
+      areFieldNamesDistinct(
+        names({ enableTitle: false, titleFieldName: "tags" }),
+      ),
+    ).toBe(true);
+  });
+
+  test("the two names still in use must remain distinct", () => {
+    expect(
+      areFieldNamesDistinct(
+        names({ enableTitle: false, descriptionFieldName: "tags" }),
+      ),
+    ).toBe(false);
+  });
+
+  test("with title generation on it is a collision again", () => {
+    expect(
+      areFieldNamesDistinct(
+        names({ enableTitle: true, titleFieldName: "tags" }),
+      ),
+    ).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { clearInFlight } from "./inFlight";
 import { logError } from "./logger";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 import { migrateSettings } from "./settingsMigrate";
+import { decideLoad, decideSave } from "./settingsStore";
 import { MetadataToolSettingTab } from "./settingsTab";
 import { generateMetadata } from "./singleNote";
 
@@ -14,9 +15,11 @@ export default class MetadataToolPlugin extends Plugin {
   // would construct a controller that onload() discards on the next line.
   private runController!: AbortController;
   // Set when data.json was written by a newer plugin version. While set,
-  // saveSettings() refuses to write so we don't clobber forward-version
-  // data with our defaults. Cleared by a successful (in-version) load.
-  private futureSchemaBlocked = false;
+  // saveSettings() refuses to write so we don't clobber forward-version data
+  // with our defaults. The decision itself lives in settingsStore.ts, where it
+  // can be tested without a Plugin; this field is only where the answer is
+  // kept between the two calls.
+  private writesBlocked = false;
 
   async onload(): Promise<void> {
     this.runController = new AbortController();
@@ -82,29 +85,16 @@ export default class MetadataToolPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    const result = migrateSettings(await this.loadData());
-    if (result.kind === "ok") {
-      this.settings = { ...result.settings };
-      this.futureSchemaBlocked = false;
-    } else if (result.kind === "future") {
-      this.settings = { ...DEFAULT_SETTINGS };
-      this.futureSchemaBlocked = true;
-      new Notice(
-        `Metadator settings were written by a newer plugin version (schema v${result.loadedSchemaVersion}). Settings won't be saved until you upgrade the plugin to avoid corrupting your data.`,
-        12000,
-      );
-    } else {
-      this.settings = { ...DEFAULT_SETTINGS };
-      this.futureSchemaBlocked = false;
-    }
+    const decision = decideLoad(migrateSettings(await this.loadData()));
+    this.settings = decision.settings;
+    this.writesBlocked = decision.writesBlocked;
+    if (decision.notice) new Notice(decision.notice, 12000);
   }
 
   async saveSettings(): Promise<void> {
-    if (this.futureSchemaBlocked) {
-      new Notice(
-        "Refusing to save: settings file is from a newer plugin version. Upgrade the plugin or delete data.json to proceed.",
-        8000,
-      );
+    const decision = decideSave(this.writesBlocked);
+    if (decision.kind === "refuse") {
+      new Notice(decision.notice, 8000);
       return;
     }
     await this.saveData(this.settings);
