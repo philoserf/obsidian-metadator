@@ -11,10 +11,8 @@ import {
 export async function getContent(
   app: App,
   file: TFile,
-  // No defaults: settings is the single source for both, and passing them is
-  // already universal. `limit = 1000` was a silent second copy of
-  // DEFAULT_SETTINGS.contentTokenLimit that nothing kept in sync (#165 closed
-  // the same duplication in settingsTab.ts), and no code path reached either.
+  // Not defaulted: a default here is a second copy of
+  // DEFAULT_SETTINGS.contentTokenLimit that nothing keeps in sync (#165).
   limit: number,
   method: TruncateMethod,
 ): Promise<string> {
