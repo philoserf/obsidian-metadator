@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_SETTINGS } from "./settings";
+import { DEFAULT_SETTINGS } from "../settings";
 
 // Mock error classes matching the Anthropic SDK shape
 class MockAuthenticationError extends Error {
@@ -58,7 +58,7 @@ const {
   parseRetryAfterMs,
   resetClientCache,
   usesAutoToolChoice,
-} = await import("./adapters/claude");
+} = await import("./claude");
 
 const settings = {
   ...DEFAULT_SETTINGS,
