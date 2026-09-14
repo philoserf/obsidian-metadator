@@ -249,7 +249,7 @@ describe("append onto a blank existing value", () => {
   });
 });
 
-// The array-typed counterpart of "update", added for the tags `reconcile`
+// The array-typed counterpart of "update", added for the tags `regenerate`
 // policy (#252). Tags cannot reuse "update": it is typed for a scalar and
 // would write the list as a comma-joined string, after which Obsidian's tag
 // pane stops indexing the field (#230).

@@ -235,9 +235,9 @@ describe("classifyCandidates", () => {
       app,
       [f1, f2],
       settings({
-        tagsPolicy: "reconcile",
-        descriptionPolicy: "overwrite",
-        titlePolicy: "overwrite",
+        tagsPolicy: "regenerate",
+        descriptionPolicy: "regenerate",
+        titlePolicy: "regenerate",
       }),
     );
     expect(result.willChange).toHaveLength(2);

@@ -123,18 +123,24 @@ export const TRUNCATE_METHOD_LABELS: Record<TruncateMethod, string> = {
 // externally synced and load-bearing, so it defaults to being left alone.
 //
 // These records are the enumerations — see the note above MODEL_OPTION_LABELS.
+// All three share one vocabulary so "always regenerate" is a single idea you
+// turn on per field, rather than a behavior wearing a different name on each.
+// `regenerate` means the same thing everywhere — replace what is there with
+// what the model returned — even though the write differs by value kind: a
+// list is replaced wholesale, a scalar is overwritten.
 export const TAGS_POLICY_LABELS = {
-  reconcile: "Reconcile",
+  regenerate: "Always Regenerate",
   merge: "Merge",
-  preserve: "Preserve",
+  preserve: "Preserve Existing",
 };
 
 export type TagsPolicy = keyof typeof TAGS_POLICY_LABELS;
 
-// description and title share a vocabulary but not a default.
+// The scalars offer the same two, minus `merge`, which is meaningless for a
+// value that is not a set.
 export const SCALAR_POLICY_LABELS = {
-  overwrite: "Overwrite",
-  preserve: "Preserve",
+  regenerate: "Always Regenerate",
+  preserve: "Preserve Existing",
 };
 
 export type ScalarPolicy = keyof typeof SCALAR_POLICY_LABELS;
@@ -156,13 +162,13 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   contentTokenLimit: 1000,
   truncateMethod: "head_only",
 
-  // Defaults differ per field on purpose. tags reconcile because an
-  // unreconciled list is the problem #252 exists to fix; description
-  // overwrites because it is cheap and disposable; title preserves because it
+  // Defaults differ per field on purpose. tags regenerate because a list that
+  // can never be pruned is the problem #252 exists to fix; description
+  // regenerates because it is cheap and disposable; title preserves because it
   // is frequently kept in sync by another plugin or relied on by a publisher,
   // and rewriting it silently changes a note's public identity.
-  tagsPolicy: "reconcile",
-  descriptionPolicy: "overwrite",
+  tagsPolicy: "regenerate",
+  descriptionPolicy: "regenerate",
   titlePolicy: "preserve",
 
   maxBulkFiles: 500,

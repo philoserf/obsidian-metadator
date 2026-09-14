@@ -32,15 +32,16 @@ Three groups of settings shape what happens on each run.
 
 One policy per field, because the three fields are different kinds of value. A single global setting could not serve them: the only value that would clean up a sprawling tag list also rewrote every title unconditionally.
 
-| Field         | Options                            | Default     |
-| ------------- | ---------------------------------- | ----------- |
-| `tags`        | `reconcile` · `merge` · `preserve` | `reconcile` |
-| `description` | `overwrite` · `preserve`           | `overwrite` |
-| `title`       | `overwrite` · `preserve`           | `preserve`  |
+All three offer the same choice, so "always regenerate" is one idea you turn on per field rather than a behavior wearing a different name on each.
 
-- **`reconcile`** sends the note's current tags with the request and writes back the reconciled set — tags that still fit are kept, ones that no longer apply are dropped. This is the only policy that can _remove_ a tag.
-- **`merge`** adds to what is already there and never removes. Tag lists grow on every run.
-- **`overwrite`** replaces the value on every run.
+| Field         | Options                             | Default      |
+| ------------- | ----------------------------------- | ------------ |
+| `tags`        | `regenerate` · `merge` · `preserve` | `regenerate` |
+| `description` | `regenerate` · `preserve`           | `regenerate` |
+| `title`       | `regenerate` · `preserve`           | `preserve`   |
+
+- **`regenerate`** replaces what is there with what the model returned. For `tags` that means the reconciled set — the note's current tags are sent with the request, so those that still fit are kept and those that no longer apply are dropped. It is the only policy that can _remove_ a tag.
+- **`merge`** adds to what is already there and never removes, so tag lists grow on every run. Offered for `tags` only; it is meaningless for a value that is not a set.
 - **`preserve`** writes only when the field is empty, re-checking at write time so a value typed during the request is not clobbered.
 
 `title` defaults to `preserve` because it is frequently kept in sync by another plugin or relied on by a publisher, where a silent rewrite changes a note's public identity.

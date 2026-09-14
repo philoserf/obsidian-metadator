@@ -203,7 +203,7 @@ describe("generateMetadata integration", () => {
   // name promising an overwrite. That mismatch is exactly what #230 reported,
   // and it stayed invisible because the name described the documented
   // behavior while the assertion pinned the real one.
-  test("reconcile replaces the tag list instead of growing it (#230)", async () => {
+  test("regenerate replaces the tag list instead of growing it (#230)", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
         tags: ["new-tag"],
@@ -220,9 +220,9 @@ describe("generateMetadata integration", () => {
       },
     });
     const settings = makeSettings({
-      tagsPolicy: "reconcile",
-      descriptionPolicy: "overwrite",
-      titlePolicy: "overwrite",
+      tagsPolicy: "regenerate",
+      descriptionPolicy: "regenerate",
+      titlePolicy: "regenerate",
     });
 
     await generateMetadata(app, settings);
@@ -249,7 +249,7 @@ describe("generateMetadata integration", () => {
 
     await generateMetadata(
       app,
-      makeSettings({ tagsPolicy: "merge", descriptionPolicy: "overwrite" }),
+      makeSettings({ tagsPolicy: "merge", descriptionPolicy: "regenerate" }),
     );
 
     expect(fm.tags).toEqual(["old-tag", "new-tag"]);
@@ -277,8 +277,8 @@ describe("generateMetadata integration", () => {
     await generateMetadata(
       app,
       makeSettings({
-        tagsPolicy: "reconcile",
-        descriptionPolicy: "overwrite",
+        tagsPolicy: "regenerate",
+        descriptionPolicy: "regenerate",
         titlePolicy: "preserve",
       }),
     );
@@ -494,7 +494,7 @@ describe("concurrent edits during the API call (#178)", () => {
     expect(fm.title).toBe(false);
   });
 
-  test("always_regenerate still overwrites, since the user asked for it", async () => {
+  test("regenerate still overwrites, since the user asked for it", async () => {
     const { app, fm } = makeApp({ frontmatter: {}, snapshotCache: true });
 
     mockCreate.mockImplementationOnce(async () => {
@@ -509,9 +509,9 @@ describe("concurrent edits during the API call (#178)", () => {
     await generateMetadata(
       app,
       makeSettings({
-        tagsPolicy: "reconcile",
-        descriptionPolicy: "overwrite",
-        titlePolicy: "overwrite",
+        tagsPolicy: "regenerate",
+        descriptionPolicy: "regenerate",
+        titlePolicy: "regenerate",
       }),
     );
 
@@ -740,9 +740,9 @@ describe("existing tags reach the request (#251)", () => {
     await generateMetadata(
       app,
       makeSettings({
-        tagsPolicy: "reconcile",
-        descriptionPolicy: "overwrite",
-        titlePolicy: "overwrite",
+        tagsPolicy: "regenerate",
+        descriptionPolicy: "regenerate",
+        titlePolicy: "regenerate",
       }),
     );
 
@@ -762,9 +762,9 @@ describe("existing tags reach the request (#251)", () => {
     await generateMetadata(
       app,
       makeSettings({
-        tagsPolicy: "reconcile",
-        descriptionPolicy: "overwrite",
-        titlePolicy: "overwrite",
+        tagsPolicy: "regenerate",
+        descriptionPolicy: "regenerate",
+        titlePolicy: "regenerate",
       }),
     );
 
@@ -798,9 +798,9 @@ describe("existing tags reach the request (#251)", () => {
       app,
       makeSettings({
         tagsFieldName: "keywords",
-        tagsPolicy: "reconcile",
-        descriptionPolicy: "overwrite",
-        titlePolicy: "overwrite",
+        tagsPolicy: "regenerate",
+        descriptionPolicy: "regenerate",
+        titlePolicy: "regenerate",
       }),
     );
 
