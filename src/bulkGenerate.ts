@@ -139,12 +139,9 @@ async function runFileWithRetry(
 ): Promise<FileResult> {
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
     if (signal?.aborted) {
-      return { kind: "skipped", file, reason: "cancelled before attempt" };
+      return { kind: "skipped", file, reason: "cancelled" };
     }
-    const r = await generateMetadataForFile(app, file, settings, {
-      bulk: true,
-      signal,
-    });
+    const r = await generateMetadataForFile(app, file, settings, { signal });
     if (r.kind !== "error" || !isRetryable(r.error)) return r;
     const delays = scheduleFor(r.error, retryDelaysMs);
     if (attempt >= delays.length) return r;
@@ -163,12 +160,19 @@ async function runFileWithRetry(
       return {
         kind: "skipped",
         file,
-        reason: "cancelled during retry backoff",
+        reason: "cancelled",
       };
     }
   }
-  // Unreachable — loop always returns.
-  return { kind: "skipped", file, reason: "retry loop exited unexpectedly" };
+  // Unreachable: every path inside the loop returns, and the loop runs at
+  // least once. Throwing rather than inventing a SkipReason — the reasons are
+  // a closed set of things that happen to a user's file, and "the retry loop
+  // has a bug" is not one of them. This surfaces as an error notice instead of
+  // a file silently reported as skipped, which is the same choice
+  // applyMigrations makes for its own impossible state.
+  throw new Error(
+    `[Metadator] retry loop exited without returning for ${file.path}`,
+  );
 }
 
 export async function runBulk(

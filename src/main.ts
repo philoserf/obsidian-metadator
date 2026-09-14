@@ -2,10 +2,10 @@ import { Notice, Plugin, TFolder } from "obsidian";
 import { runBulkForFolder } from "./bulkOrchestrator";
 import { clearInFlight } from "./inFlight";
 import { logError } from "./logger";
-import { generateMetadata } from "./metadata";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 import { migrateSettings } from "./settingsMigrate";
 import { MetadataToolSettingTab } from "./settingsTab";
+import { generateMetadata } from "./singleNote";
 
 export default class MetadataToolPlugin extends Plugin {
   settings: MetadataToolSettings = DEFAULT_SETTINGS;

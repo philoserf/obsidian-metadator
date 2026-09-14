@@ -1,4 +1,4 @@
-import { type App, Notice, type TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import {
   ClaudeApiError,
   callClaudeForMetadata,
@@ -7,7 +7,7 @@ import {
 import { updateFrontMatter } from "./adapters/frontmatter";
 import { getContent } from "./content/getContent";
 import { isEmptyValue } from "./emptyValue";
-import { isAbortError } from "./errors";
+import { FrontmatterWriteError, isAbortError } from "./errors";
 import { acquire, release } from "./inFlight";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, normalizeTags, readExistingTags } from "./prompt";
@@ -16,47 +16,6 @@ import type {
   ScalarPolicy,
   TagsPolicy,
 } from "./settings";
-
-function notifyApiError(error: unknown): void {
-  if (error instanceof ClaudeApiError) {
-    switch (error.kind) {
-      case "auth":
-        new Notice(
-          "Authentication failed. Please check your API key in Settings → Metadator",
-          8000,
-        );
-        return;
-      case "rate_limit":
-        new Notice(
-          "Rate limit exceeded. Please wait a moment and try again.",
-          8000,
-        );
-        return;
-      case "overloaded":
-        new Notice(
-          "API is currently overloaded. Please try again in a moment.",
-          8000,
-        );
-        return;
-      case "connection":
-        new Notice(
-          "Could not reach the API. Check your network connection and try again.",
-          8000,
-        );
-        return;
-      case "api":
-        new Notice(`API error: ${error.message}`, 8000);
-        return;
-      case "unknown":
-        new Notice(`Unexpected error: ${error.message}`, 8000);
-        return;
-    }
-  }
-  new Notice(
-    `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
-    8000,
-  );
-}
 
 // "Starts with a quote and ends with a quote" is not the same as "is quoted".
 // A title that merely opens and closes with quoted phrases satisfied the old
@@ -88,9 +47,22 @@ export function stripSurroundingQuotes(str: string): string {
   return trimmed;
 }
 
-// Recognised by generateMetadata so the interactive path can say something
-// useful instead of the generic "no changes".
-export const ALREADY_IN_PROGRESS = "already generating metadata for this note";
+// Why a file was passed over. A closed union, not prose: six of these mean
+// materially different things to a user, and two are load-bearing —
+// "nothing_written" is the only skip that follows a *billed* API call, and
+// "locked" is the only one that means "try again in a minute". Recovering that
+// from a sentence meant an exported string constant compared with === , which
+// is a missing case in the union wearing a disguise, and it only ever scaled
+// to the one case someone needed (#234).
+//
+// The rule this encodes: prose may be displayed, never matched.
+export type SkipReason =
+  | "not_markdown"
+  | "no_api_key"
+  | "already_populated"
+  | "cancelled"
+  | "locked"
+  | "nothing_written";
 
 // A `preserve` field is the only one that can make a request pointless: every
 // other policy writes whatever comes back. So the question is whether any
@@ -128,15 +100,10 @@ interface WriteOutcome {
 
 export type FileResult =
   | { kind: "changed"; file: TFile }
-  | { kind: "skipped"; file: TFile; reason: string }
+  | { kind: "skipped"; file: TFile; reason: SkipReason }
   | { kind: "error"; file: TFile; reason: string; error: unknown };
 
 export interface GenerateOptions {
-  bulk?: boolean;
-  signal?: AbortSignal;
-}
-
-export interface InteractiveGenerateOptions {
   signal?: AbortSignal;
 }
 
@@ -147,22 +114,22 @@ export async function generateMetadataForFile(
   opts: GenerateOptions = {},
 ): Promise<FileResult> {
   if (file.extension !== "md") {
-    return { kind: "skipped", file, reason: "not a markdown file" };
+    return { kind: "skipped", file, reason: "not_markdown" };
   }
 
   if (!settings.anthropicApiKey) {
-    return { kind: "skipped", file, reason: "missing API key" };
+    return { kind: "skipped", file, reason: "no_api_key" };
   }
 
   const fm = app.metadataCache.getFileCache(file);
   const frontMatter = fm?.frontmatter || {};
 
   if (!shouldGenerate(frontMatter, settings)) {
-    return { kind: "skipped", file, reason: "all fields already populated" };
+    return { kind: "skipped", file, reason: "already_populated" };
   }
 
   if (opts.signal?.aborted) {
-    return { kind: "skipped", file, reason: "cancelled before request" };
+    return { kind: "skipped", file, reason: "cancelled" };
   }
 
   // Guards both entry points at the one place they share. Without it, a
@@ -175,7 +142,7 @@ export async function generateMetadataForFile(
   // one acquired and leak the original for the rest of the session.
   const lockPath = file.path;
   if (!acquire(lockPath)) {
-    return { kind: "skipped", file, reason: ALREADY_IN_PROGRESS };
+    return { kind: "skipped", file, reason: "locked" };
   }
 
   try {
@@ -184,7 +151,6 @@ export async function generateMetadataForFile(
       file,
       settings,
       frontMatter,
-      opts.bulk ?? false,
       opts.signal,
     );
     if (outcome.failures.length > 0) {
@@ -192,18 +158,18 @@ export async function generateMetadataForFile(
       // billed, and the note did not get what the user asked for. Report it as
       // an error so the bulk summary counts it and the single-note flow shows a
       // notice, both of which treat "skipped" as unremarkable.
-      const fields = outcome.failures.map((f) => f.field).join(", ");
+      const fields = outcome.failures.map((f) => f.field);
       const partial = outcome.changed ? " (other fields were written)" : "";
       return {
         kind: "error",
         file,
-        reason: `failed to write frontmatter: ${fields}${partial}`,
-        error: outcome.failures[0]?.error,
+        reason: `failed to write frontmatter: ${fields.join(", ")}${partial}`,
+        error: new FrontmatterWriteError(fields, outcome.failures[0]?.error),
       };
     }
     return outcome.changed
       ? { kind: "changed", file }
-      : { kind: "skipped", file, reason: "no changes" };
+      : { kind: "skipped", file, reason: "nothing_written" };
   } catch (error) {
     if (opts.signal?.aborted || isAbortError(error)) {
       return { kind: "skipped", file, reason: "cancelled" };
@@ -219,64 +185,11 @@ export async function generateMetadataForFile(
   }
 }
 
-export async function generateMetadata(
-  app: App,
-  settings: MetadataToolSettings,
-  opts: InteractiveGenerateOptions = {},
-): Promise<void> {
-  const file = app.workspace.getActiveFile();
-  if (!file) {
-    new Notice("Please open a file first");
-    return;
-  }
-
-  if (file.extension !== "md") {
-    new Notice("Current file is not a markdown file");
-    return;
-  }
-
-  if (!settings.anthropicApiKey) {
-    new Notice(
-      "Please configure your Anthropic API key in Settings → Metadator",
-      8000,
-    );
-    return;
-  }
-
-  const result = await generateMetadataForFile(app, file, settings, {
-    signal: opts.signal,
-  });
-  if (result.kind === "changed") {
-    new Notice("Metadata updated successfully");
-  } else if (
-    result.kind === "skipped" &&
-    result.reason === ALREADY_IN_PROGRESS
-  ) {
-    new Notice("Already generating metadata for this note");
-  } else if (result.kind === "error") {
-    notifyApiError(result.error);
-    logError({
-      event: "generation_failed",
-      file: file.path,
-      errorKind:
-        result.error instanceof ClaudeApiError ? result.error.kind : "unknown",
-      errorMessage:
-        result.error instanceof Error
-          ? result.error.message
-          : String(result.error),
-      errorName: result.error instanceof Error ? result.error.name : undefined,
-      errorStack:
-        result.error instanceof Error ? result.error.stack : undefined,
-    });
-  }
-}
-
 async function addMetadataWithClaude(
   app: App,
   file: TFile,
   settings: MetadataToolSettings,
   frontMatter: Record<string, unknown>,
-  isBulk: boolean,
   signal?: AbortSignal,
 ): Promise<WriteOutcome> {
   const requestId = newRequestId();
@@ -308,7 +221,6 @@ async function addMetadataWithClaude(
     });
   }
 
-  const notice = isBulk ? undefined : new Notice("Generating metadata...", 0);
   const startedAt = Date.now();
   let metadata: MetadataFields;
   try {
@@ -328,8 +240,6 @@ async function addMetadataWithClaude(
       });
     }
     throw error;
-  } finally {
-    notice?.hide();
   }
 
   if (settings.debugLogging) {
@@ -391,11 +301,6 @@ async function addMetadataWithClaude(
         methodFor(u),
       );
     } catch (error) {
-      if (!isBulk) {
-        new Notice(
-          `Failed to write ${u.fieldName}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
       logError({
         event: "frontmatter_write_failed",
         file: file.path,

@@ -39,7 +39,7 @@ describe("groupErrors", () => {
       {
         kind: "skipped",
         file: { path: "b.md" } as unknown as TFile,
-        reason: "no changes",
+        reason: "nothing_written",
       },
       errorResult("c.md", "boom"),
     ];

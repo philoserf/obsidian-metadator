@@ -3,6 +3,7 @@ import type { App, TFile } from "obsidian";
 import { BulkConfirmModal, worstCaseApiCalls } from "./bulkConfirmModal";
 import { BulkProgressModal } from "./bulkProgressModal";
 import { BulkSummaryModal } from "./bulkSummaryModal";
+import type { SkipReason } from "./metadata";
 import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
 import type { FakeEl } from "./testDom";
 
@@ -262,5 +263,44 @@ describe("BulkSummaryModal", () => {
     const text = contentOf(modal).allText().join(" ");
     expect(text).toContain("…and 5 more");
     expect(text).not.toContain("distinct failure 20");
+  });
+});
+
+// A locked file means a note the user asked for was passed over and still
+// needs a run; an already-populated one is the expected no-op. Counting them
+// together erased the difference, while the interactive path had always
+// surfaced it (#232).
+describe("BulkSummaryModal lock skips", () => {
+  const skip = (path: string, reason: SkipReason) => ({
+    kind: "skipped" as const,
+    file: { path } as unknown as TFile,
+    reason,
+  });
+
+  function listText(results: ReturnType<typeof skip>[]): string {
+    const modal = new BulkSummaryModal(app, results, {
+      aborted: false,
+      totalPlanned: results.length,
+    });
+    modal.open();
+    return contentOf(modal).allText().join(" | ");
+  }
+
+  test("counts locked files on their own line", () => {
+    const text = listText([
+      skip("a.md", "already_populated"),
+      skip("b.md", "locked"),
+      skip("c.md", "locked"),
+    ]);
+
+    expect(text).toContain("1 skipped |");
+    expect(text).toContain("2 skipped (already being generated elsewhere");
+  });
+
+  test("says nothing about locks when there were none", () => {
+    const text = listText([skip("a.md", "already_populated")]);
+
+    expect(text).toContain("1 skipped");
+    expect(text).not.toContain("already being generated elsewhere");
   });
 });
