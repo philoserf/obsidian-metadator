@@ -100,6 +100,24 @@ describe("migrateSettings", () => {
     expect(settings).toEqual(DEFAULT_SETTINGS);
   });
 
+  // The option lists are the key sets of TRUNCATE_METHOD_LABELS and
+  // UPDATE_METHOD_LABELS, so membership is an own-property test. Written with
+  // `in` instead of Object.hasOwn it would walk the prototype chain and accept
+  // every name below as a valid setting.
+  test.each(["toString", "constructor", "valueOf", "__proto__"])(
+    "rejects the inherited Object property %p as an enum value",
+    (inherited) => {
+      const settings = ok({
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        truncateMethod: inherited,
+        updateMethod: inherited,
+      });
+
+      expect(settings.truncateMethod).toBe(DEFAULT_SETTINGS.truncateMethod);
+      expect(settings.updateMethod).toBe(DEFAULT_SETTINGS.updateMethod);
+    },
+  );
+
   test("preserves valid loaded settings", () => {
     const validLoaded: MetadataToolSettings = {
       schemaVersion: CURRENT_SCHEMA_VERSION,

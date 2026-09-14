@@ -1,4 +1,5 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
+import type { TruncateMethod } from "./content/truncate";
 import type MetadataToolPlugin from "./main";
 import {
   API_KEY_MAX_LENGTH,
@@ -11,9 +12,7 @@ import {
   PROMPT_MAX_LENGTH,
   TRUNCATE_METHOD_LABELS,
   UPDATE_METHOD_LABELS,
-  VALID_MODEL_OPTIONS,
-  VALID_TRUNCATE_METHOD_OPTIONS,
-  VALID_UPDATE_METHOD_OPTIONS,
+  type UpdateMethod,
 } from "./settings";
 
 // `max` is required rather than optional: a bounded parser named "strict
@@ -270,10 +269,10 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     const modelListId = "metadator-model-options";
     const modelList = containerEl.createEl("datalist");
     modelList.id = modelListId;
-    for (const model of VALID_MODEL_OPTIONS) {
+    for (const [model, label] of Object.entries(MODEL_OPTION_LABELS)) {
       const option = modelList.createEl("option");
       option.value = model;
-      option.label = MODEL_OPTION_LABELS[model];
+      option.label = label;
     }
 
     new Setting(containerEl)
@@ -328,15 +327,13 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         "Always Regenerate: regenerate on every command; Preserve Existing: only generate empty fields",
       )
       .addDropdown((dropdown) => {
-        for (const method of VALID_UPDATE_METHOD_OPTIONS) {
-          dropdown.addOption(method, UPDATE_METHOD_LABELS[method]);
+        for (const [method, label] of Object.entries(UPDATE_METHOD_LABELS)) {
+          dropdown.addOption(method, label);
         }
         dropdown
           .setValue(this.plugin.settings.updateMethod)
           .onChange(async (value) => {
-            this.plugin.settings.updateMethod = value as
-              | "always_regenerate"
-              | "preserve_existing";
+            this.plugin.settings.updateMethod = value as UpdateMethod;
             await this.plugin.saveSettings();
           });
       });
@@ -377,16 +374,13 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       .setName("Truncate Method")
       .setDesc("How to truncate long content")
       .addDropdown((dropdown) => {
-        for (const method of VALID_TRUNCATE_METHOD_OPTIONS) {
-          dropdown.addOption(method, TRUNCATE_METHOD_LABELS[method]);
+        for (const [method, label] of Object.entries(TRUNCATE_METHOD_LABELS)) {
+          dropdown.addOption(method, label);
         }
         dropdown
           .setValue(this.plugin.settings.truncateMethod)
           .onChange(async (value) => {
-            this.plugin.settings.truncateMethod = value as
-              | "head_only"
-              | "head_tail"
-              | "heading";
+            this.plugin.settings.truncateMethod = value as TruncateMethod;
             await this.plugin.saveSettings();
           });
       });

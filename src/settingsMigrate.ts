@@ -8,8 +8,8 @@ import {
   MAX_CONTENT_TOKEN_LIMIT,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
-  VALID_TRUNCATE_METHOD_OPTIONS,
-  VALID_UPDATE_METHOD_OPTIONS,
+  TRUNCATE_METHOD_LABELS,
+  UPDATE_METHOD_LABELS,
 } from "./settings";
 
 function readString(
@@ -43,23 +43,19 @@ function readPositiveInt(
     : fallback;
 }
 
+// Membership in the label record is the definition of a valid option, so a
+// new option is added in one place. Object.hasOwn, not `in`: `in` walks the
+// prototype chain and would accept "toString" as a truncate method.
 function isTruncateMethod(
   value: string,
 ): value is MetadataToolSettings["truncateMethod"] {
-  return (
-    value === VALID_TRUNCATE_METHOD_OPTIONS[0] ||
-    value === VALID_TRUNCATE_METHOD_OPTIONS[1] ||
-    value === VALID_TRUNCATE_METHOD_OPTIONS[2]
-  );
+  return Object.hasOwn(TRUNCATE_METHOD_LABELS, value);
 }
 
 function isUpdateMethod(
   value: string,
 ): value is MetadataToolSettings["updateMethod"] {
-  return (
-    value === VALID_UPDATE_METHOD_OPTIONS[0] ||
-    value === VALID_UPDATE_METHOD_OPTIONS[1]
-  );
+  return Object.hasOwn(UPDATE_METHOD_LABELS, value);
 }
 
 // Schema migrations, keyed by the version they produce. To add migration N,
