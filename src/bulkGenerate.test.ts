@@ -25,15 +25,11 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const {
-  collectCandidates,
-  classifyCandidates,
-  computeDelayMs,
-  runBulk,
-  DEFAULT_RETRY_DELAYS_MS,
-  DEFAULT_HALT_STREAK,
-  RETRY_POLICY,
-} = await import("./bulkGenerate");
+const { collectCandidates, classifyCandidates, runBulk } = await import(
+  "./bulkGenerate"
+);
+const { DEFAULT_RETRY_DELAYS_MS, DEFAULT_HALT_STREAK, RETRY_POLICY } =
+  await import("./retryPolicy");
 
 // Read off the policy table rather than re-stated, so these cannot drift from
 // it — and fail loudly rather than silently defaulting if the connection row
@@ -49,7 +45,7 @@ if (
 }
 const CONNECTION_MAX_RETRIES = connectionPolicy.maxRetries;
 const CONNECTION_HALT_STREAK = connectionPolicy.haltStreak;
-const { ClaudeApiError, resetClientCache } = await import("./adapters/claude");
+const { resetClientCache } = await import("./adapters/claude");
 // claude.ts caches one Anthropic client per API key for the whole run, while
 // mock.module is per-file. These suites use colliding keys, so without this a
 // client built under another file's mocked SDK gets served here and its
@@ -822,47 +818,5 @@ describe("runBulk", () => {
 
     expect(results).toHaveLength(0);
     expect(mockCreate).not.toHaveBeenCalled();
-  });
-});
-
-describe("computeDelayMs", () => {
-  test("applies low-end jitter (random=0 → 0.5x base)", () => {
-    expect(computeDelayMs(1000, undefined, () => 0)).toBe(500);
-  });
-
-  test("applies high-end jitter (random≈1 → ~1.5x base)", () => {
-    expect(computeDelayMs(1000, undefined, () => 0.999)).toBe(1499);
-  });
-
-  test("applies mid-range jitter (random=0.5 → 1.0x base)", () => {
-    expect(computeDelayMs(1000, undefined, () => 0.5)).toBe(1000);
-  });
-
-  test("returns 0 when base delay is 0 (zero-delay tests stay deterministic)", () => {
-    expect(computeDelayMs(0, undefined, () => 0.7)).toBe(0);
-  });
-
-  test("ignores non-ClaudeApiError values when computing jitter", () => {
-    expect(computeDelayMs(1000, new Error("plain"), () => 0)).toBe(500);
-  });
-
-  test("honors retryAfterMs from a ClaudeApiError when provided", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited", 800);
-    expect(computeDelayMs(1000, err, () => 0)).toBe(800);
-  });
-
-  test("caps retryAfterMs at 2x base to avoid stalling the bulk loop", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited", 60_000);
-    expect(computeDelayMs(1000, err, () => 0)).toBe(2000);
-  });
-
-  test("honors retryAfterMs of 0 (server says retry immediately)", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited", 0);
-    expect(computeDelayMs(1000, err, () => 0.999)).toBe(0);
-  });
-
-  test("falls back to jitter when retryAfterMs is undefined on a ClaudeApiError", () => {
-    const err = new ClaudeApiError("rate_limit", "rate limited");
-    expect(computeDelayMs(1000, err, () => 0)).toBe(500);
   });
 });

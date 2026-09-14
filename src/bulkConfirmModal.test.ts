@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { REQUESTS_PER_ATTEMPT } from "./adapters/claude";
 import { worstCaseApiCalls } from "./bulkConfirmModal";
-import { DEFAULT_RETRY_DELAYS_MS } from "./bulkGenerate";
+import { DEFAULT_RETRY_DELAYS_MS } from "./retryPolicy";
 
 describe("worstCaseApiCalls", () => {
   test("counts the bulk retry schedule and the SDK's own retries", () => {

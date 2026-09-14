@@ -1,6 +1,6 @@
 import { type App, Modal } from "obsidian";
 import { REQUESTS_PER_ATTEMPT } from "./adapters/claude";
-import { DEFAULT_RETRY_DELAYS_MS } from "./bulkGenerate";
+import { DEFAULT_RETRY_DELAYS_MS } from "./retryPolicy";
 import type { MetadataToolSettings } from "./settings";
 
 const LARGE_BATCH_THRESHOLD = 100;
