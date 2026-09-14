@@ -24,9 +24,9 @@
     "@anthropic-ai/sdk": "^0.125.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
-    "@types/bun": "^1.4.1",
-    "@types/node": "^26.4.1",
+    "@biomejs/biome": "^2.5.13",
+    "@types/bun": "^1.4.2",
+    "@types/node": "^26.5.1",
     "obsidian": "^1.13.1",
     "typescript": "^7.0.2"
   }
