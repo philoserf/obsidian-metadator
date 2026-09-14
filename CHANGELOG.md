@@ -1,5 +1,51 @@
 # Changelog
 
+## 3.0.0
+
+Twenty-four issues from the 2.5.0 audit passes, across six milestones. The headline is that the write policy is now per field, which is what makes a sprawling tag list fixable without rewriting every title.
+
+### Breaking Changes
+
+- **`updateMethod` is replaced by three per-field write policies.** One setting governed `tags`, `description` and `title`, and the three are not alike. A user with sprawling tags had two choices and neither worked: `preserve_existing` never rewrote a populated field, so tags could not be cleaned; `always_regenerate` *appended* tags — never replacing them — while overwriting every title unconditionally. On a large vault that silently rewrites the public identity of everything already published. (#252, #230)
+
+  **Settings migrate automatically** (schema 2 → 3, the `updateMethod` key is removed):
+
+  | Was | tags | description | title |
+  | --- | --- | --- | --- |
+  | `preserve_existing` | `preserve` | `preserve` | `preserve` |
+  | `always_regenerate` | **`regenerate`** | `regenerate` | `regenerate` |
+
+  **`always_regenerate` users: read this one.** Your tags move to `regenerate`, not `merge`. A run can now **remove** a tag, where append never could — that is the fix, but it is a real change to what happens to your notes on the next run. Choose `merge` in Settings → Metadator if you want the old add-only behavior back.
+
+  New installs default to `regenerate` for tags and description, and **`preserve` for title** — a title is often kept in sync by another plugin or relied on by a publisher, where a silent rewrite changes a note's public identity.
+
+- **`submit_metadata` returns tags as an array** rather than one comma-separated string, bounded to 12 per response. A comma inside a tag no longer silently splits it in two. Affects nothing user-facing except that the default tags prompt drops the clause that existed to work around it; saved prompts are untouched.
+
+### Added
+
+- **Regeneration reconciles instead of redrawing.** Frontmatter is stripped before a request, so the model never saw the tags it was replacing and every run was an independent draw from the body — which is why lists grew without bound, and why a naive replace would have churned between near-synonyms like `review` and `book-review` instead of converging. The note's current tags are now sent in their own block, with the model asked to keep what still fits, drop what no longer does, and prefer an existing tag over a near-synonym of it. (#251)
+
+### Changed
+
+- **The bulk confirm dialog shows the write policy** on its own line. Since tags can now be removed and titles overwritten, what a folder run will do to existing values is the thing worth reading before approving hundreds of billed calls.
+- **`maxBulkFiles` is enforced where the work happens.** It existed only as a disabled button in the confirm modal, so anything reaching the folder run another way bypassed it silently. The run now refuses above the cap unless the override was actually ticked — and the settings copy calls it a confirmation gate rather than a hard limit, which is what a checkbox-liftable limit is. (#238)
+- **Cancelling a bulk run is immediate.** The retry backoff was a polling loop, so cancelling during a 30-second wait took up to a poll interval to register. (#231)
+- **The README describes the plugin that ships.** It claimed there was no folder mode — there has been one since 2.4.0 — and described a JSON-return prompt where the code uses a forced structured tool call. The privacy section also understated what leaves the vault. (#243, #244)
+
+### Fixed
+
+- **One failed frontmatter write produced four notices**, and the last called it an "Unexpected error" — the wording reserved for an unknown API failure, sending the user to check an API key that was fine. Now one notice, correctly worded. (#239)
+- **The single-note command was silent when it wrote nothing.** Four of six outcomes produced no notice, no log and no modal, which is indistinguishable from a broken hotkey — including the case where a request went out, was billed, and returned nothing usable. Every outcome now says something, and that one says the request was billed. (#237)
+- **A field-name collision reset settings it had no reason to touch.** With title generation off, `titleFieldName` is inert — but a stale value there failed the distinctness check at load, and the reset destroyed the tags and description field names alongside it, silently. Only names actually in use are compared now, and both reset paths warn. (#248)
+- **A file skipped because another run held its lock** was reported in the bulk summary as an ordinary skip, indistinguishable from one already populated — while the single-note path had always surfaced it. They mean opposite things: one is the expected no-op, the other is a note that still needs a run. (#232)
+- **An off-schema `title` could fail a whole generation.** With title generation off, a non-string `title` volunteered by the model threw an error that discarded the tags and description that arrived correctly. (#250)
+
+### Internal
+
+Twelve refactors with no user-visible effect, listed for the record: test files renamed to name their sources so the auto-test hook stops reporting false greens (#247); settings enumerations collapsed onto their label records (#241); the retry policy expressed as one table and moved to an Obsidian-free module (#233, #242); the bulk run reduced to a single cancellation channel (#231, #249); `FileResult.reason` made a closed union so outcomes can be told apart by type rather than by prose (#234); the settings load/save decision extracted so the guard against clobbering a newer install's settings is finally testable (#245, #235); and five mechanical deletions (#229, #236, #240, #246, #250).
+
+Tests went from 363 to 425.
+
 ## 2.5.0
 
 Six milestones of code-audit work: 44 issues from the 2.4.0 audit, plus the default prompts and two issues found while reviewing the fixes.
