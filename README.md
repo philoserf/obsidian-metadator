@@ -6,7 +6,7 @@ Generate metadata (tags, description, title) for [Obsidian](https://obsidian.md/
 
 This is personal tooling, not a general-purpose plugin. It is opinionated in ways that only make sense for one person's workflow:
 
-- **Single user.** The only known installation is the maintainer's. Breaking changes ship without migration paths (see `CHANGELOG.md` — 2.0.0 renamed `maxTokens` to `contentTokenLimit`, 2.0.1 dropped all pre-2.0 settings migrations).
+- **Single user.** The only known installation is the maintainer's. Breaking changes can ship without migration paths (see `CHANGELOG.md` — 2.0.0 renamed `maxTokens` to `contentTokenLimit`, 2.0.1 dropped all pre-2.0 settings migrations).
 - **Paid API required.** The plugin calls Anthropic's Claude API. You supply and pay for your own API key; there is no free tier, no provider abstraction and no local-model path — swapping in another API means rewriting `src/adapters/claude.ts`.
 - **Frontmatter only.** Generated `tags`, `description`, and `title` are written to YAML frontmatter via Obsidian's `processFrontMatter()`. There is no inline-tag or body-content mode.
 - **It will spend your money in bulk if you let it.** Besides the single-note command there is a recursive folder action, and a large folder means hundreds of billed API calls. It is gated by a confirm dialog and the `maxBulkFiles` setting, but the gate is a checkbox you can tick past.
@@ -48,7 +48,7 @@ All three offer the same choice, so "always regenerate" is one idea you turn on 
 
 ### Truncation method
 
-Large notes are truncated before being sent to Claude so prompt size stays bounded. The token count uses a regex over words, punctuation, CJK characters, and newlines.
+Large notes are truncated before being sent to Claude so prompt size stays bounded. The token count uses a regex over words, punctuation, CJK characters, and newlines, with a catch-all so emoji and markdown syntax count too.
 
 | Method                | Behavior                                            |
 | --------------------- | --------------------------------------------------- |
