@@ -75,7 +75,7 @@ CI (`.github/workflows/main.yml`) enforces that: it runs `bun run build` and the
 
 ## Release Process
 
-Use the `release-gate` then `release-ship` skills — do not tag by hand. Pushing any tag triggers `.github/workflows/release.yml`, which builds and attaches `main.js` + `manifest.json` to a GitHub release. Version numbers live in three files: `version-bump.ts` (wired to the `version` package script) is what propagates `package.json`'s version into `manifest.json` and adds the `version → minAppVersion` row to `versions.json`.
+Use the `release-gate` then `release-ship` skills — do not tag by hand. Pushing a bare-semver tag (`1.2.3`) triggers `.github/workflows/release.yml`, which refuses a tag that disagrees with `package.json`, `manifest.json` or `versions.json`, requires a fresh build to match the committed `main.js`, runs the tests, and attaches `main.js` + `manifest.json` to a GitHub release. Version numbers live in three files: `version-bump.ts` (wired to the `version` package script) is what propagates `package.json`'s version into `manifest.json` and adds the `version → minAppVersion` row to `versions.json`.
 
 ## Tests and Code Style
 
