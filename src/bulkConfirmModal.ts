@@ -51,7 +51,7 @@ export class BulkConfirmModal extends Modal {
     });
   }
 
-  onOpen(): void {
+  override onOpen(): void {
     const { contentEl } = this;
     const { folderPath, total, willChange, willSkip, settings } = this.info;
 
@@ -130,7 +130,7 @@ export class BulkConfirmModal extends Modal {
     });
   }
 
-  onClose(): void {
+  override onClose(): void {
     // Fires on both button-driven close and Esc/X; resolve(false) is a no-op
     // if a button already resolved, so Esc defaults to cancel.
     this.resolve(false);

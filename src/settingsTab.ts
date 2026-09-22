@@ -104,7 +104,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
   }
 
   // Obsidian does not await hide(), so each flush is fire-and-forget.
-  hide(): void {
+  override hide(): void {
     for (const p of this.pending) p.flush();
     this.pending = [];
     super.hide();
@@ -240,7 +240,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
       });
   }
 
-  display(): void {
+  override display(): void {
     const { containerEl } = this;
     containerEl.empty();
     this.pending = [];

@@ -61,7 +61,7 @@ export class BulkSummaryModal extends Modal {
     this.info = info;
   }
 
-  onOpen(): void {
+  override onOpen(): void {
     const { contentEl } = this;
     const changed = this.results.filter((r) => r.kind === "changed").length;
     // Counted apart from ordinary skips because the two mean opposite things:
@@ -133,7 +133,7 @@ export class BulkSummaryModal extends Modal {
     closeBtn.addEventListener("click", () => this.close());
   }
 
-  onClose(): void {
+  override onClose(): void {
     this.contentEl.empty();
   }
 }
