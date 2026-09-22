@@ -3,10 +3,10 @@ import { DEFAULT_SETTINGS } from "../settings";
 
 // Mock error classes matching the Anthropic SDK shape
 class MockAuthenticationError extends Error {
-  name = "AuthenticationError";
+  override name = "AuthenticationError";
 }
 class MockRateLimitError extends Error {
-  name = "RateLimitError";
+  override name = "RateLimitError";
   headers?: { get(name: string): string | null };
   constructor(message?: string, headers?: Record<string, string>) {
     super(message);
@@ -18,7 +18,7 @@ class MockRateLimitError extends Error {
   }
 }
 class MockInternalServerError extends Error {
-  name = "InternalServerError";
+  override name = "InternalServerError";
   headers?: { get(name: string): string | null };
   constructor(message?: string, headers?: Record<string, string>) {
     super(message);
@@ -30,12 +30,12 @@ class MockInternalServerError extends Error {
   }
 }
 class MockAPIError extends Error {
-  name = "APIError";
+  override name = "APIError";
 }
 // Mirrors the SDK: APIConnectionTimeoutError extends APIConnectionError
 // extends APIError, so classifyError must test this one first.
 class MockAPIConnectionError extends MockAPIError {
-  name = "APIConnectionError";
+  override name = "APIConnectionError";
 }
 
 const mockCreate = mock();
@@ -615,7 +615,7 @@ describe("connection error classification (#180)", () => {
 
   test("a timeout subclass classifies as connection too", async () => {
     class MockTimeout extends MockAPIConnectionError {
-      name = "APIConnectionTimeoutError";
+      override name = "APIConnectionTimeoutError";
     }
     mockCreate.mockRejectedValueOnce(new MockTimeout("Request timed out."));
 

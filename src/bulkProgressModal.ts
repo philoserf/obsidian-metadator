@@ -8,7 +8,7 @@ export class BulkProgressModal extends Modal {
   private cancelBtn?: HTMLButtonElement;
   private onAbort?: () => void;
 
-  onOpen(): void {
+  override onOpen(): void {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "Generating metadata" });
     this.statusEl = contentEl.createEl("p", { text: "Starting…" });
@@ -48,7 +48,7 @@ export class BulkProgressModal extends Modal {
     this.close();
   }
 
-  onClose(): void {
+  override onClose(): void {
     if (!this.finishing) {
       this.aborted = true;
       this.onAbort?.();

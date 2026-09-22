@@ -9,7 +9,7 @@ import { MetadataToolSettingTab } from "./settingsTab";
 import { generateMetadata } from "./singleNote";
 
 export default class MetadataToolPlugin extends Plugin {
-  settings: MetadataToolSettings = DEFAULT_SETTINGS;
+  override settings: MetadataToolSettings = DEFAULT_SETTINGS;
   // Assigned first thing in onload(), which Obsidian always calls before any
   // command, menu item, or onunload() can run. No field initializer here: it
   // would construct a controller that onload() discards on the next line.
@@ -21,7 +21,7 @@ export default class MetadataToolPlugin extends Plugin {
   // kept between the two calls.
   private writesBlocked = false;
 
-  async onload(): Promise<void> {
+  override async onload(): Promise<void> {
     this.runController = new AbortController();
     await this.loadSettings();
 
@@ -79,7 +79,7 @@ export default class MetadataToolPlugin extends Plugin {
     this.addSettingTab(new MetadataToolSettingTab(this.app, this));
   }
 
-  onunload(): void {
+  override onunload(): void {
     this.runController.abort("plugin_unloaded");
     clearInFlight();
   }

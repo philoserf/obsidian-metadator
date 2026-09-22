@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "noImplicitOverride": true,
+    "isolatedModules": true,
     "target": "ESNext",
     "lib": ["DOM", "ESNext"],
     "module": "ESNext",
