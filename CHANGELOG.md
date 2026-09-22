@@ -1,18 +1,28 @@
 # Changelog
 
+## 3.0.1
+
+### Fixed
+
+- **`minAppVersion` is now 1.4.4**, up from 1.4.0. Every frontmatter write goes through `app.fileManager.processFrontMatter`, which first shipped in Obsidian 1.4.4, so on 1.4.0–1.4.3 the plugin installed and then failed at the first write. Nothing else the plugin calls needs more than 1.4.4. (#270, #272)
+
+### Internal
+
+- `@anthropic-ai/sdk` 0.125.0 → 0.128.0, plus dev tooling (`@biomejs/biome` 2.5.14, `@types/node` 26.6.2).
+
 ## 3.0.0
 
 Twenty-four issues from the 2.5.0 audit passes, across six milestones. The headline is that the write policy is now per field, which is what makes a sprawling tag list fixable without rewriting every title.
 
 ### Breaking Changes
 
-- **`updateMethod` is replaced by three per-field write policies.** One setting governed `tags`, `description` and `title`, and the three are not alike. A user with sprawling tags had two choices and neither worked: `preserve_existing` never rewrote a populated field, so tags could not be cleaned; `always_regenerate` *appended* tags — never replacing them — while overwriting every title unconditionally. On a large vault that silently rewrites the public identity of everything already published. (#252, #230)
+- **`updateMethod` is replaced by three per-field write policies.** One setting governed `tags`, `description` and `title`, and the three are not alike. A user with sprawling tags had two choices and neither worked: `preserve_existing` never rewrote a populated field, so tags could not be cleaned; `always_regenerate` _appended_ tags — never replacing them — while overwriting every title unconditionally. On a large vault that silently rewrites the public identity of everything already published. (#252, #230)
 
   **Settings migrate automatically** (schema 2 → 3, the `updateMethod` key is removed):
 
-  | Was | tags | description | title |
-  | --- | --- | --- | --- |
-  | `preserve_existing` | `preserve` | `preserve` | `preserve` |
+  | Was                 | tags             | description  | title        |
+  | ------------------- | ---------------- | ------------ | ------------ |
+  | `preserve_existing` | `preserve`       | `preserve`   | `preserve`   |
   | `always_regenerate` | **`regenerate`** | `regenerate` | `regenerate` |
 
   **`always_regenerate` users: read this one.** Your tags move to `regenerate`, not `merge`. A run can now **remove** a tag, where append never could — that is the fix, but it is a real change to what happens to your notes on the next run. Choose `merge` in Settings → Metadator if you want the old add-only behavior back.
@@ -118,9 +128,10 @@ Six milestones of code-audit work: 44 issues from the 2.4.0 audit, plus the defa
 
 ### Fixed
 
-- Truncation silently deleted every character the token regex did not recognize. `TOKEN_REGEX` matched CJK, word runs, nine punctuation marks and `\n` and nothing else, so emoji and ordinary markdown syntax (`* _ ` [ ] ( ) - : | ...`) matched no alternative: they were absent from the token count, and because the truncation functions rebuilt their output by re-joining matched tokens rather than slicing the source, they were also dropped from the text sent to the API. `# Title\n\nThis is **bold** and _italic_ ...` truncated to `# Title\n\nThis is bold and...`. Tokens now carry source offsets and truncation slices the original string, and a `\S` catch-all makes every non-whitespace character count. (#179, #182)
+- Truncation silently deleted every character the token regex did not recognize. `TOKEN_REGEX` matched CJK, word runs, nine punctuation marks and `\n` and nothing else, so emoji and ordinary markdown syntax (`* _ ` [ ] ( ) - : | ...`) matched no alternative: they were absent from the token count, and because the truncation functions rebuilt their output by re-joining matched tokens rather than slicing the source, they were also dropped from the text sent to the API. `# Title\n\nThis is **bold** and _italic_ ...`truncated to`# Title\n\nThis is bold and...`. Tokens now carry source offsets and truncation slices the original string, and a `\S` catch-all makes every non-whitespace character count. (#179, #182)
 
   **Behavior change:** notes with heavy markdown or emoji now report a higher token count than before — a more accurate one. If you set `contentTokenLimit` by trial and error against the old undercount, less prose will fit under the same limit. Spaces and tabs are still uncounted, matching how real tokenizers absorb whitespace into the following word; `joinTokens` is gone, since nothing reconstructs text from token strings any more.
+
 - A frontmatter write that threw was indistinguishable from "this note needed nothing": `writeField` returned `false` for both, so a file whose every write failed came back as `{kind: "skipped", reason: "no changes"}`. In bulk runs the per-field notice is suppressed, so the summary counted such a file as skipped even though the API had been called and billed; in the single-note flow `"skipped"` produces no final notice at all. Write failures are now tracked separately and reported as `kind: "error"`, naming the fields that failed and whether others were written. (#187)
 - Under `preserve_existing`, a field the user typed into while a generation request was in flight could be silently overwritten by the model's output. The write decision was made from a `metadataCache` snapshot taken before the request, which can run for up to `REQUEST_TIMEOUT_MS`, and then applied unconditionally at write time. The emptiness check now happens inside `processFrontMatter`, against the live frontmatter, via a new `update_if_empty` adapter method. `always_regenerate` still overwrites, as intended. (#178)
 
