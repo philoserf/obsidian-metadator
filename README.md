@@ -1,5 +1,7 @@
 # Metadator
 
+![Status: Stable](https://img.shields.io/badge/Status-Stable-brightgreen.svg)
+
 Generate metadata (tags, description, title) for [Obsidian](https://obsidian.md/) notes using the [Anthropic Claude API](https://www.anthropic.com/api).
 
 ## You probably shouldn't install this
