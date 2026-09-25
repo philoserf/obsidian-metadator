@@ -17,11 +17,11 @@ export const SDK_MAX_RETRIES = 2;
 export const REQUESTS_PER_ATTEMPT = SDK_MAX_RETRIES + 1;
 const TOOL_NAME = "submit_metadata";
 
-// Model families that reject a forced tool_choice ({type: "tool"}) with a 400.
-// Claude Fable 5.1 dropped forced tool use; match the whole family by prefix
-// so later releases (fable 5.2, mythos, ...) are handled without a code
-// change. These models get tool_choice "auto" plus an explicit instruction.
-const AUTO_TOOL_CHOICE_FAMILIES = /^claude-(?:fable|mythos)-/;
+// Models that reject a forced tool_choice ({type: "tool"}) with a 400: the
+// fable and mythos families by prefix, so later releases are handled without a
+// code change, and Claude Opus 5.5 by id (Claude Opus 5 still accepts forcing).
+// These models get tool_choice "auto" plus an explicit instruction.
+const AUTO_TOOL_CHOICE_FAMILIES = /^claude-(?:fable-|mythos-|opus-5-5)/;
 
 // Appended to the system prompt on the auto path, where nothing but the
 // instruction makes the model call the tool.
@@ -121,7 +121,8 @@ function buildToolSchema(includeTitle: boolean) {
   }
   return {
     name: TOOL_NAME,
-    description: "Submit the generated metadata for the article.",
+    description:
+      "Submit the generated metadata for the article. This is the only way to return results: call it once, with every required field. Each value is written into the note's YAML frontmatter as given.",
     input_schema: {
       type: "object" as const,
       properties,

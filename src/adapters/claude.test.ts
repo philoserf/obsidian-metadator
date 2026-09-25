@@ -534,6 +534,7 @@ describe("tool_choice by model family", () => {
     expect(usesAutoToolChoice("claude-fable-5-2")).toBe(true);
     expect(usesAutoToolChoice("claude-fable-6")).toBe(true);
     expect(usesAutoToolChoice("claude-mythos-5-1")).toBe(true);
+    expect(usesAutoToolChoice("claude-opus-5-5")).toBe(true);
     expect(usesAutoToolChoice("claude-opus-5")).toBe(false);
     expect(usesAutoToolChoice("claude-sonnet-5")).toBe(false);
     expect(usesAutoToolChoice("claude-haiku-4-5")).toBe(false);
