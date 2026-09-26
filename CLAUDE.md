@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Metadator is an Obsidian plugin that generates metadata (tags, description, title) for notes using the Anthropic Claude API. The user runs a command, the plugin sends note content to Claude with a forced `submit_metadata` tool call, validates the tool's structured input, and writes the results into the note's YAML frontmatter. A "Generate metadata (recursive)" folder action runs the same flow over a folder with confirm / progress / summary modals and a configurable hard cap on files-that-will-change.
+Metadator is an Obsidian plugin that generates metadata (tags, description, title) for notes using the Anthropic Claude API. The user runs a command, the plugin sends note content to Claude with a `submit_metadata` tool call (forced via `tool_choice` where the model accepts it, `auto` plus an explicit instruction where it does not — see `usesAutoToolChoice`), validates the tool's structured input, and writes the results into the note's YAML frontmatter. A "Generate metadata (recursive)" folder action runs the same flow over a folder with confirm / progress / summary modals and a configurable hard cap on files-that-will-change.
 
 This is single-user personal tooling, not a general-purpose community plugin — the README says so out loud: the only known installation is the maintainer's, breaking changes ship without migration paths, and feature requests from other users are out of scope.
 
@@ -13,11 +13,7 @@ The current next step for this repo is tracked in the workspace backlog at `../N
 ## Development Commands
 
 ```bash
-bun run dev              # Bundle in watch mode: unminified, linked sourcemap
 bun run build            # check + bundle (this is what CI runs); minified, no sourcemap
-bun run check            # tsc --noEmit, then biome check .
-bun run lint:fix         # biome check --write .
-bun test                 # whole suite
 bun test src/bulkGenerate.test.ts        # one file
 bun test -t "retry"                      # one test / describe by name pattern
 bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_DEPLOY_DEST
@@ -38,7 +34,7 @@ OBSIDIAN_DEPLOY_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
 
 Most of `src/` is self-describing. These three exist in the shape they do for reasons the code cannot state:
 
-- **[src/prompt.ts](src/prompt.ts)** — `buildPrompt`, `normalizeTags` and `readExistingTags`, pure functions with no Obsidian dependency. It stands on one leg now rather than two: `metadata.ts` no longer imports `obsidian` at runtime (#239 moved its last `Notice` out), so the original "without pulling in the Obsidian-runtime-only parts of `metadata.ts`" reason is spent. What remains is that one definition is shared by `metadata.ts` and `scripts/compare-models.ts`, which is reason enough not to fold it back.
+- **[src/prompt.ts](src/prompt.ts)** — `buildPrompt`, `normalizeTags` and `readExistingTags`, pure functions with no Obsidian dependency. It stays a separate module because one definition is shared by `metadata.ts` and `scripts/compare-models.ts`.
 - **[src/adapters/frontmatter.ts](src/adapters/frontmatter.ts)** — `updateFrontMatter` adapter over `app.fileManager.processFrontMatter`. Its `update_if_empty` method re-checks emptiness against the live frontmatter inside the callback, so a decision made before a slow API call cannot overwrite what the user typed during it.
 - **[src/emptyValue.ts](src/emptyValue.ts)** — `isEmptyValue`, shared by the write-policy decision in `metadata.ts` and the write-time re-check in the frontmatter adapter. One definition, so the two cannot disagree.
 
