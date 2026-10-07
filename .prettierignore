@@ -1,0 +1,5 @@
+# Ignored via the global core.excludesfile, so git hides it but prettier does not.
+.issues/
+
+# Generated bundle output.
+main.js
