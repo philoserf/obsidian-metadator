@@ -18,11 +18,10 @@ export function stripFrontMatter(content: string): string {
   if (!OPENING.test(content)) return content;
 
   const lines = content.split("\n");
-  for (let i = 1; i < lines.length; i++) {
-    if (CLOSING.test(lines[i].replace(/\r$/, ""))) {
-      return lines.slice(i + 1).join("\n");
-    }
-  }
+  const close = lines.findIndex(
+    (line, i) => i > 0 && CLOSING.test(line.replace(/\r$/, "")),
+  );
+  if (close > 0) return lines.slice(close + 1).join("\n");
 
   // Unterminated: an opening `---` with no close is not a frontmatter block.
   // Treating it as one would swallow the entire note.

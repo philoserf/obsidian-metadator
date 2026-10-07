@@ -5,20 +5,23 @@
 // developer console and quickly pick out the lifecycle for any one
 // file, including retries and failures.
 
+// Every optional field accepts undefined: a record is built from values that
+// may be unknown (an error without a stack), and an undefined field is simply
+// not logged.
 export interface LogFields {
   event: string;
-  file?: string;
-  model?: string;
-  requestId?: string;
-  attempt?: number;
-  durationMs?: number;
-  errorKind?: string;
-  errorMessage?: string;
-  errorName?: string;
-  errorStack?: string;
-  field?: string;
-  promptLength?: number;
-  contentLength?: number;
+  file?: string | undefined;
+  model?: string | undefined;
+  requestId?: string | undefined;
+  attempt?: number | undefined;
+  durationMs?: number | undefined;
+  errorKind?: string | undefined;
+  errorMessage?: string | undefined;
+  errorName?: string | undefined;
+  errorStack?: string | undefined;
+  field?: string | undefined;
+  promptLength?: number | undefined;
+  contentLength?: number | undefined;
 }
 
 const PREFIX = "[Metadator]";

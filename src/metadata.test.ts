@@ -720,7 +720,7 @@ describe("existing tags reach the request (#251)", () => {
     const body = mockCreate.mock.calls[0]?.[0] as {
       messages: { content: string }[];
     };
-    return body.messages[0].content;
+    return body.messages[0]?.content ?? "";
   }
 
   function sentSystem(): string {

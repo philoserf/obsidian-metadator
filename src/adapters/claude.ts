@@ -41,7 +41,7 @@ export type ClaudeErrorKind =
 
 export class ClaudeApiError extends Error {
   readonly kind: ClaudeErrorKind;
-  readonly retryAfterMs?: number;
+  readonly retryAfterMs?: number | undefined;
   constructor(kind: ClaudeErrorKind, message: string, retryAfterMs?: number) {
     super(message);
     this.kind = kind;
@@ -70,8 +70,10 @@ export interface MetadataFields {
   title?: string;
 }
 
+// `| undefined`: callers forward an optional signal, and absent and undefined
+// both mean "not cancellable".
 export interface CallClaudeOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 // A sanity ceiling on one response, not the target count — that lives in the
