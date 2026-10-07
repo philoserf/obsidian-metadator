@@ -34,6 +34,10 @@ export class BulkProgressModal extends Modal {
     this.statusEl.textContent = `${p.current} / ${p.total} · ${p.file.path} · errors: ${p.errors}`;
   }
 
+  // For tests. Production reads cancellation from the AbortSignal — see the note
+  // in bulkOrchestrator.ts. These assertions are what keep that note true: the
+  // flag is never set without onAbort firing, which is why consulting both was
+  // redundant.
   isAborted(): boolean {
     return this.aborted;
   }
