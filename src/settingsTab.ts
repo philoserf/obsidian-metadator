@@ -19,6 +19,7 @@ import {
   TRUNCATE_METHOD_LABELS,
 } from "./settings";
 import { migrateSettings } from "./settingsMigrate";
+import { SHARED_KEY_ID } from "./settingsStore";
 
 export const SETTINGS_SAVE_DEBOUNCE_MS = 400;
 
@@ -45,6 +46,26 @@ export function createDebouncer(
       commit();
     },
   };
+}
+
+// The name a new key is suggested under. Generic on purpose, so another plugin
+// that needs an Anthropic key can pick the same secret.
+const SUGGESTED_KEY_NAME = SHARED_KEY_ID;
+
+/**
+ * What the API key row says about the secret it points at. The plugin row and
+ * Settings → Keychain are separate screens, and the secret's name syncs with
+ * data.json while its value stays on the device that stored it — so on a
+ * second device the row holds a name the keychain does not have, and nothing
+ * else says what to call the secret. Reads names only, never values.
+ */
+export function apiKeyStatus(id: string, onDevice: readonly string[]): string {
+  if (!id) {
+    return `Choose or create a keychain secret holding your Anthropic API key. Naming it "${SUGGESTED_KEY_NAME}" lets other plugins use the same key.`;
+  }
+  return onDevice.includes(id)
+    ? `Uses the keychain secret "${id}".`
+    : `This device's keychain has no secret named "${id}". Add your key in Settings → Keychain under that name, or choose another secret here.`;
 }
 
 type FieldNameKey = "tagsFieldName" | "descriptionFieldName" | "titleFieldName";
@@ -153,15 +174,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         items: [
           {
             name: "API key",
-            desc: "Your Anthropic API key, from console.anthropic.com. Kept in Obsidian's keychain on this device; only its name is saved with the plugin's settings, so each device that generates metadata needs it chosen once. Running a command sends the note's content to the Anthropic API.",
+            desc: `${apiKeyStatus(
+              settings().anthropicApiKeySecret,
+              this.app.secretStorage.listSecrets(),
+            )} Get a key at console.anthropic.com. Keychain secrets stay on the device that stores them; only the name syncs. Running a command sends the note's content to the Anthropic API.`,
             // No declarative secret control exists, so this row is drawn by
             // hand; it saves through the same setControlValue as the rest.
             render: (setting) => {
               new SecretComponent(this.app, setting.controlEl)
                 .setValue(settings().anthropicApiKeySecret)
-                .onChange((id) =>
-                  this.setControlValue("anthropicApiKeySecret", id),
-                );
+                .onChange((id) => {
+                  this.setControlValue("anthropicApiKeySecret", id);
+                  // Re-render so the description reports the new secret.
+                  this.update();
+                });
             },
           },
           {

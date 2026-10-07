@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { App, SettingDefinition, SettingDefinitionGroup } from "obsidian";
 import type MetadataToolPlugin from "./main";
 import { DEFAULT_SETTINGS, PROMPT_MAX_LENGTH } from "./settings";
-import { createDebouncer, MetadataToolSettingTab } from "./settingsTab";
+import {
+  apiKeyStatus,
+  createDebouncer,
+  MetadataToolSettingTab,
+} from "./settingsTab";
 
 describe("createDebouncer (#177)", () => {
   const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -79,7 +83,8 @@ describe("MetadataToolSettingTab", () => {
       settings: { ...DEFAULT_SETTINGS, ...overrides },
       saveSettings: async () => {},
     } as unknown as MetadataToolPlugin;
-    return { tab: new MetadataToolSettingTab({} as App, plugin), plugin };
+    const app = { secretStorage: { listSecrets: () => [] } } as unknown as App;
+    return { tab: new MetadataToolSettingTab(app, plugin), plugin };
   }
 
   function rows(tab: MetadataToolSettingTab): SettingDefinition[] {
@@ -187,5 +192,25 @@ describe("MetadataToolSettingTab", () => {
     expect(isDisabled(tab, "titleFieldName")).toBe(true);
     expect(isDisabled(tab, "titlePrompt")).toBe(true);
     expect(isDisabled(tab, "tagsPrompt")).toBe(false);
+  });
+});
+
+// The row and Settings → Keychain are separate screens, and only the secret's
+// name syncs — so the row has to say what the secret is called.
+describe("apiKeyStatus", () => {
+  test("suggests the shared name when nothing is chosen", () => {
+    expect(apiKeyStatus("", [])).toContain('"anthropic-api-key"');
+  });
+
+  test("names the secret when this device has it", () => {
+    expect(apiKeyStatus("anthropic-api-key", ["anthropic-api-key"])).toBe(
+      'Uses the keychain secret "anthropic-api-key".',
+    );
+  });
+
+  test("says what to add when this device does not", () => {
+    const status = apiKeyStatus("anthropic-api-key", ["github-token"]);
+    expect(status).toContain('no secret named "anthropic-api-key"');
+    expect(status).toContain("Settings → Keychain");
   });
 });

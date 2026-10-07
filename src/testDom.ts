@@ -122,6 +122,11 @@ export const obsidianDoubles = {
   Plugin: class Plugin {},
   Notice: FakeNotice,
   PluginSettingTab: class PluginSettingTab {
+    // The real constructor keeps the app; the key row reads its keychain.
+    app: unknown;
+    constructor(app?: unknown) {
+      this.app = app;
+    }
     hide(): void {}
     refreshDomState(): void {}
   },
