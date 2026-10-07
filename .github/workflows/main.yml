@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets the rebuild job below start CI on the commit it pushes: a push made
+  # with GITHUB_TOKEN starts no workflow, but a dispatch made with it does.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,3 +35,36 @@ jobs:
       - run: bun run build
       - run: git diff --exit-code main.js
       - run: bun test
+
+  # Dependabot bumps package.json and bun.lock but never rebuilds, so a bump
+  # to a bundled dependency fails `check` on the main.js diff. This rebuilds
+  # and commits the bundle onto the PR branch, then dispatches CI for the new
+  # head, whose `check` run is the one the ruleset requires. A Bun release
+  # that shifts the output is not covered: bun floats on purpose, and that
+  # case stays a one-commit rebuild by hand.
+  rebuild:
+    if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      # The PR branch, not the default merge commit, which cannot be pushed.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Commit main.js and dispatch CI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git diff --quiet main.js && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: rebuild main.js for the dependencies bump" main.js
+          git push
+          gh workflow run main.yml --ref "$GITHUB_HEAD_REF"
