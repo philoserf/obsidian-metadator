@@ -9,10 +9,10 @@
     "audit": "bun audit --audit-level=critical",
     "dev": "bun build src/main.ts --outdir . --format cjs --external obsidian --external electron --sourcemap=linked --watch",
     "build": "bun run check && bun build src/main.ts --outdir . --format cjs --external obsidian --external electron --minify",
-    "check": "bun run typecheck && biome check .",
+    "check": "bun run typecheck && biome check . && prettier --check \"**/*.md\"",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "lint:fix": "biome check --write .",
+    "lint:fix": "biome check --write . && prettier --write \"**/*.md\"",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "version": "bun run version-bump.ts",
@@ -28,6 +28,7 @@
     "@types/bun": "^1.4.2",
     "@types/node": "^26.6.4",
     "obsidian": "^1.13.1",
+    "prettier": "^3.9.9",
     "typescript": "^7.0.2"
   }
 }
