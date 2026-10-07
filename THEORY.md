@@ -195,10 +195,26 @@ an unused value destroys two that were fine.
 **A newer `data.json` makes this install read-only.** No backup sits behind that rule. The
 decision is in `settingsStore.ts` as a pure function so it can be tested at all.
 
+**The API key is not a setting.** `MetadataToolSettings`, the persisted type, holds only
+the _ID_ of a secret in Obsidian's keychain. `MetadataConfig` is those settings plus the
+resolved key, built in one place — `config()` in `main.ts` — when a command runs, and it is
+the type everything downstream accepts. Keep the two apart: a key on the persisted type is
+a key in `data.json`, which syncs to every device and sits on disk in plaintext. The split
+has a cost that the code cannot hide: the secret's name syncs with `data.json` and its value
+does not, so a second device holds a name its keychain lacks. The settings row says so,
+which is all that can be done about it from inside the plugin.
+
+Schema v4 is the read-only rule used on purpose. Its migration rewrites nothing; the bump
+exists so that a 3.x install syncing the same file sees a newer schema and stops writing,
+instead of saving the file back without the secret's ID. A version bump with an empty
+migration is a legitimate tool here, not an oversight.
+
 ## What it accommodates, and what it does not
 
 **Cheap:** a new truncation strategy (a function plus a row in the labels record); a new
-settings option (one row — the label records _are_ the enumerations); a fourth retryable
+settings option (a field, its default and its normalization in `migrateSettings`, and one
+row in the settings tab's declarative definitions — the label records _are_ the
+enumerations); a fourth retryable
 error kind (one row in `RETRY_POLICY`); a new schema migration (one entry keyed by the
 version it produces — and `applyMigrations` throws at load if you bump the version without
 adding it).
@@ -238,10 +254,10 @@ Where I am inferring from code, and where the code is in tension with any story 
   leaves spaces uncounted on purpose, approximating how BPE absorbs whitespace into the
   following word. Whether the count tracks a real tokenizer within any particular margin is
   not established anywhere, and the limit it feeds is a user-facing number.
-- **`BulkProgressModal.isAborted()` has no production caller.** Residue from collapsing the
-  two cancellation channels into one; the only non-test mention is a comment explaining why
-  the orchestrator does _not_ consult it. The tests that use it pin a property that comment
-  depends on, so it should be documented as test-only rather than deleted.
+- **The keychain's edges are known by research, not by test.** That secrets stay on the
+  device that stored them is what Obsidian's behavior suggests and what the settings row
+  is written around, but nothing here tests it. `app.secretStorage` has not been exercised
+  on iOS at all.
 - **The `heading` truncation strategy is the least principled part of `content/`.** Fenced
   code blocks, soft-wrapped continuations and headingless notes are each handled by a
   specific fix for a specific report. I could not reconstruct a rule that predicts all of

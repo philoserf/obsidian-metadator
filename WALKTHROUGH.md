@@ -21,7 +21,11 @@ Each entry point is a thin UI shell over a headless core. The shells own every
 `Notice`; the cores return data and render nothing.
 
 ```text
-  main.ts                     plugin lifecycle, command + menu registration
+  main.ts                     plugin lifecycle, command + menu registration,
+    |                         config(): settings + key read from the keychain
+    +-- settingsMigrate.ts    load path: migrate, normalize, lift a plaintext key
+    +-- settingsStore.ts      what to do with that result; key into the keychain
+    +-- settingsTab.ts        declarative settings tab
     |
     +-- singleNote.ts         UI shell   ->  metadata.ts      one note
     +-- bulkOrchestrator.ts   UI shell   ->  bulkGenerate.ts  a folder
@@ -45,7 +49,7 @@ none held.
 `src/main.ts` — `MetadataToolPlugin.onload`
 
 ```ts
-  async onload(): Promise<void> {
+  override async onload(): Promise<void> {
     this.runController = new AbortController();
     await this.loadSettings();
 
@@ -53,7 +57,7 @@ none held.
       id: "generate-metadata",
       name: "Generate metadata for current note",
       callback: async () => {
-        await generateMetadata(this.app, this.settings, {
+        await generateMetadata(this.app, this.config(), {
           signal: this.runController.signal,
         });
       },
@@ -72,16 +76,9 @@ none held.
               // silently does nothing. The single-note command reaches the same
               // guarantee through generateMetadata's own try/catch.
               try {
-                await runBulkForFolder(
-                  this.app,
-                  fileOrFolder,
-                  {
-                    ...this.settings,
-                  },
-                  {
-                    signal: this.runController.signal,
-                  },
-                );
+                await runBulkForFolder(this.app, fileOrFolder, this.config(), {
+                  signal: this.runController.signal,
+                });
               } catch (error) {
                 const errorMessage =
                   error instanceof Error ? error.message : String(error);
@@ -104,6 +101,31 @@ none held.
   }
 ```
 
+Neither entry point receives `this.settings`. They receive `this.config()`, a
+`MetadataConfig`: the saved settings plus the API key, read out of Obsidian's
+keychain at the moment the command runs. The settings themselves hold only the
+_ID_ of a keychain secret, never the key, so nothing that writes `data.json` can
+write the key. The read is not cached because the key can change in Settings →
+Keychain without these settings changing at all.
+
+`src/main.ts` — `MetadataToolPlugin.config`
+
+```ts
+  config(): MetadataConfig {
+    const id = this.settings.anthropicApiKeySecret;
+    return {
+      ...this.settings,
+      anthropicApiKey: (id && this.app.secretStorage.getSecret(id)) || "",
+    };
+  }
+```
+
+An unset ID or a missing secret resolves to `""`, which the headless core already
+reports as `no_api_key` — so a device that has the secret's name but not its value
+gets the same sentence as one with no key configured. Every function below
+`main.ts` that needs the key takes a `MetadataConfig`; the persisted type,
+`MetadataToolSettings`, has no field to put it in.
+
 ## The single-note path
 
 `singleNote.ts` is the UI shell. It owns every sentence the user sees on this path.
@@ -117,7 +139,7 @@ result instead. Only the no-file guard stays, because there is no file to pass.
 ```ts
 export async function generateMetadata(
   app: App,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   opts: InteractiveGenerateOptions = {},
 ): Promise<void> {
   const file = app.workspace.getActiveFile();
@@ -199,7 +221,9 @@ function skipNotice(reason: SkipReason): string | undefined {
 ## The headless core
 
 `generateMetadataForFile` is what both entry points call. It guards, acquires a
-per-file lock, generates, and returns a `FileResult` — never a `Notice`.
+per-file lock, generates, and returns a `FileResult` — never a `Notice`. The
+`anthropicApiKey` it checks is the one `config()` resolved from the keychain, so an
+empty string here covers both "never configured" and "configured on another device".
 
 `src/metadata.ts` — `generateMetadataForFile`
 
@@ -207,7 +231,7 @@ per-file lock, generates, and returns a `FileResult` — never a `Notice`.
 export async function generateMetadataForFile(
   app: App,
   file: TFile,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   opts: GenerateOptions = {},
 ): Promise<FileResult> {
   if (file.extension !== "md") {
@@ -319,7 +343,7 @@ function willWrite(
 
 export function shouldGenerate(
   frontMatter: Record<string, unknown>,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
 ): boolean {
   return (
     willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName]) ||
@@ -498,9 +522,31 @@ review
 ## The API call
 
 `adapters/claude.ts` is the only module permitted to import `@anthropic-ai/sdk` —
-Biome enforces it. The request forces a `submit_metadata` tool call rather than
-asking for JSON in prose, so the shape is constrained by a schema instead of by
-hope.
+Biome enforces it. The request asks for a `submit_metadata` tool call rather than
+JSON in prose, so the shape is constrained by a schema instead of by hope.
+
+Where the model allows it, the call is _forced_ with `tool_choice`. Some models
+reject a forced `tool_choice` with a 400, so those get `auto` plus a sentence
+appended to the system prompt telling the model to answer only through the tool.
+Those models always think first, and thinking tokens count against `max_tokens`, so
+the auto path also gets a larger output budget (8192 rather than 2048) and low
+effort, to keep the thinking from crowding out the call. The fable
+and mythos families match by prefix, so later releases need no code change; Claude
+Opus 5.5 matches by id, because Claude Opus 5 still accepts forcing.
+
+`src/adapters/claude.ts` — `AUTO_TOOL_CHOICE_FAMILIES`, `usesAutoToolChoice`
+
+```ts
+const AUTO_TOOL_CHOICE_FAMILIES = /^claude-(?:fable-|mythos-|opus-5-5)/;
+
+// Appended to the system prompt on the auto path, where nothing but the
+// instruction makes the model call the tool.
+const TOOL_CALL_INSTRUCTION = `Respond only by calling the ${TOOL_NAME} tool. Do not write a text reply.`;
+
+export function usesAutoToolChoice(model: string): boolean {
+  return AUTO_TOOL_CHOICE_FAMILIES.test(model);
+}
+```
 
 `tags` is an array with bounds. It was one comma-separated string, which meant a tag
 containing a comma silently became two, and nothing capped how many came back.
@@ -542,12 +588,12 @@ with nothing to signal it.
 `src/adapters/claude.ts` — `callClaudeForMetadata`
 
 ```ts
-if (message.stop_reason === "max_tokens") {
-  throw new ClaudeApiError(
-    "api",
-    "Response was truncated at the token limit; the generated metadata would have been incomplete",
-  );
-}
+  if (message.stop_reason === "max_tokens") {
+    throw new ClaudeApiError(
+      "api",
+      "Response was truncated at the token limit; the generated metadata would have been incomplete",
+    );
+  }
 ```
 
 ## The write
@@ -614,17 +660,17 @@ three fields on purpose, so `regenerate` alone cannot say which write to use.
 `src/metadata.ts` — `addMetadataWithClaude` › `methodFor`
 
 ```ts
-function methodFor(
-  u: FieldUpdate,
-): "append" | "replace" | "update" | "update_if_empty" {
-  if (u.policy === "preserve") return "update_if_empty";
-  if (u.policy === "merge") return "append";
-  // One policy, two writes. A list is replaced wholesale — "replace" is the
-  // array-typed counterpart of "update", because "update" is typed for a
-  // scalar and would write the list as a comma-joined string, after which
-  // Obsidian stops indexing the field (#230).
-  return u.kind === "list" ? "replace" : "update";
-}
+  function methodFor(
+    u: FieldUpdate,
+  ): "append" | "replace" | "update" | "update_if_empty" {
+    if (u.policy === "preserve") return "update_if_empty";
+    if (u.policy === "merge") return "append";
+    // One policy, two writes. A list is replaced wholesale — "replace" is the
+    // array-typed counterpart of "update", because "update" is typed for a
+    // scalar and would write the list as a comma-joined string, after which
+    // Obsidian stops indexing the field (#230).
+    return u.kind === "list" ? "replace" : "update";
+  }
 ```
 
 `updateFrontMatter` is the only module that writes to a note. The four methods
@@ -689,7 +735,7 @@ downstream number "files that will change" rather than "files scanned".
 export function classifyCandidates(
   app: App,
   files: TFile[],
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
 ): { willChange: TFile[]; willSkip: TFile[] } {
   const willChange: TFile[] = [];
   const willSkip: TFile[] = [];
@@ -765,7 +811,7 @@ rather than trusting a button.
 ```ts
 export function exceedsBulkCap(
   willChange: number,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
 ): boolean {
   return willChange > settings.maxBulkFiles;
 }
@@ -774,17 +820,17 @@ export function exceedsBulkCap(
 `src/bulkOrchestrator.ts` — `runBulkForFolder`
 
 ```ts
-// Re-checked here rather than trusting the modal's disabled button. The
-// button is an affordance; this is the gate, and it consults the same
-// headless predicate the modal rendered from, so a caller that reaches this
-// function another way cannot slip past the cap unnoticed (#238).
-if (exceedsBulkCap(willChange.length, settings) && !capOverridden) {
-  new Notice(
-    `Refusing to run: ${willChange.length} files exceeds the Max Bulk Files limit of ${settings.maxBulkFiles}.`,
-    8000,
-  );
-  return;
-}
+  // Re-checked here rather than trusting the modal's disabled button. The
+  // button is an affordance; this is the gate, and it consults the same
+  // headless predicate the modal rendered from, so a caller that reaches this
+  // function another way cannot slip past the cap unnoticed (#238).
+  if (exceedsBulkCap(willChange.length, settings) && !capOverridden) {
+    new Notice(
+      `Refusing to run: ${willChange.length} files exceeds the Max Bulk Files limit of ${settings.maxBulkFiles}.`,
+      8000,
+    );
+    return;
+  }
 ```
 
 ### Retry and halt
@@ -968,9 +1014,9 @@ console.log("fresh install".padEnd(24), JSON.stringify(migrateSettings(null)));
 ```
 
 ```text
-v2 preserve_existing     tags=preserve desc=preserve title=preserve | v3
-v2 always_regenerate     tags=regenerate desc=regenerate title=regenerate | v3
-v0 legacy bag            tags=preserve desc=preserve title=preserve | v3
+v2 preserve_existing     tags=preserve desc=preserve title=preserve | v4
+v2 always_regenerate     tags=regenerate desc=regenerate title=regenerate | v4
+v0 legacy bag            tags=preserve desc=preserve title=preserve | v4
 fresh install            {"kind":"missing"}
 ```
 
@@ -993,16 +1039,171 @@ console.log(
 );
 console.log(
   "recovers on an in-version load:",
-  !decideLoad(migrateSettings({ schemaVersion: 3 })).writesBlocked,
+  !decideLoad(migrateSettings({ schemaVersion: 4 })).writesBlocked,
 );
 ```
 
 ```text
-[Metadator] data.json schemaVersion=99 is newer than this plugin (3). Falling back to defaults to avoid corrupting your data.
+[Metadator] data.json schemaVersion=99 is newer than this plugin (4). Falling back to defaults to avoid corrupting your data.
 writes blocked: true
 save decision : "refuse"
 recovers on an in-version load: true
 ```
+
+### The API key
+
+Before 4.0.0 the key sat in `data.json` as plaintext. Now `migrateSettings` lifts any
+plaintext `anthropicApiKey` out of the file, whatever the schema version, and returns
+it beside the settings as `legacyApiKey`; the settings themselves never carry it.
+Version 4's migration does nothing. The bump is the point: a 3.x install that syncs
+the same `data.json` sees a newer schema and goes read-only, instead of saving the
+file back without the secret's ID.
+
+`src/settingsMigrate.ts` — `MIGRATIONS`, the entry producing version 4
+
+```ts
+      4,
+      () => {
+        // 3 → 4: the API key moves from data.json to Obsidian's keychain
+        // (#281). Nothing to rewrite here: migrateSettings hands any plaintext
+        // anthropicApiKey to the plugin as legacyApiKey, whatever the version,
+        // and normalization drops it. The bump is what matters — a v3 build
+        // syncing this file goes read-only rather than saving it back without
+        // the secret's ID.
+      },
+```
+
+`loadSettings` passes `legacyApiKey` to `migrateApiKey`, which stores it in the
+keychain and records the secret's ID. The generic name `anthropic-api-key` is chosen
+so another plugin needing an Anthropic key can pick the same secret; it is never
+overwritten when it already holds a _different_ key. If an ID is already set — another
+device migrated first and Sync merged its file — the plaintext is only dropped,
+because secrets do not sync. Every case returns `true`, meaning save, and saving is
+what removes the plaintext from disk.
+
+`src/settingsStore.ts` — `migrateApiKey`
+
+```ts
+export function migrateApiKey(
+  settings: MetadataToolSettings,
+  legacyApiKey: string,
+  secrets: SecretStore,
+): boolean {
+  if (!legacyApiKey) return false;
+  if (!settings.anthropicApiKeySecret) {
+    const shared = secrets.getSecret(SHARED_KEY_ID);
+    const id =
+      shared === null || shared === legacyApiKey ? SHARED_KEY_ID : OWN_KEY_ID;
+    secrets.setSecret(id, legacyApiKey);
+    settings.anthropicApiKeySecret = id;
+  }
+  return true;
+}
+```
+
+It takes a `SecretStore` — the two methods it uses — rather than `app.secretStorage`,
+so all four cases run under a plain script:
+
+Transcript of a script run with `bun` while writing this document — nothing re-runs it:
+
+```ts
+import { migrateSettings } from "./src/settingsMigrate";
+import { migrateApiKey } from "./src/settingsStore";
+const r = migrateSettings({ schemaVersion: 3, anthropicApiKey: "sk-ant-old" });
+if (r.kind !== "ok") throw r;
+console.log("legacyApiKey  :", JSON.stringify(r.legacyApiKey));
+console.log(
+  "key in bag    :",
+  "anthropicApiKey" in r.settings,
+  "| v" + r.settings.schemaVersion,
+);
+const store = (held: Record<string, string>) => ({
+  getSecret: (id: string) => held[id] ?? null,
+  setSecret: (id: string, v: string) => {
+    held[id] = v;
+  },
+});
+for (const [label, held, preset] of [
+  ["empty keychain", {}, ""],
+  ["same key already shared", { "anthropic-api-key": "sk-ant-old" }, ""],
+  ["different key shared", { "anthropic-api-key": "sk-ant-other" }, ""],
+  ["ID already set (synced)", {}, "anthropic-api-key"],
+] as const) {
+  const s = { ...r.settings, anthropicApiKeySecret: preset };
+  const h: Record<string, string> = { ...held };
+  const save = migrateApiKey(s, r.legacyApiKey, store(h));
+  console.log(
+    label.padEnd(24),
+    "-> id=" + JSON.stringify(s.anthropicApiKeySecret),
+    "save=" + save,
+    "keychain=" + JSON.stringify(Object.keys(h)),
+  );
+}
+```
+
+```text
+legacyApiKey  : "sk-ant-old"
+key in bag    : false | v4
+empty keychain           -> id="anthropic-api-key" save=true keychain=["anthropic-api-key"]
+same key already shared  -> id="anthropic-api-key" save=true keychain=["anthropic-api-key"]
+different key shared     -> id="metadator-anthropic-api-key" save=true keychain=["anthropic-api-key","metadator-anthropic-api-key"]
+ID already set (synced)  -> id="anthropic-api-key" save=true keychain=[]
+```
+
+The last row is the second-device case, and it is why the settings tab has to say
+more than "API key": the secret's _name_ arrived with `data.json`, its value did not.
+
+### The settings tab
+
+The tab is declarative (Obsidian 1.13.0). `getSettingDefinitions` returns five groups
+of rows — Anthropic API, Write policy, Tags, Description, Title — and Obsidian renders
+them, indexes them for settings search, and hands each change to `setControlValue`.
+Rows validate inline: an invalid value shows a message and stores nothing, rather
+than being stored and snapped back.
+
+Every write goes through `migrateSettings`, the same path a reload takes, so an edit
+stores exactly what the next load would produce — a field name trimmed, an emptied
+prompt back at its default. One debouncer covers the whole tab, and `hide()` flushes
+it.
+
+`src/settingsTab.ts` — `MetadataToolSettingTab.setControlValue`
+
+```ts
+  override setControlValue(key: string, value: unknown): void {
+    const result = migrateSettings({ ...this.plugin.settings, [key]: value });
+    if (result.kind !== "ok") return;
+    this.plugin.settings = result.settings;
+    this.save.schedule();
+    // The truncate and title toggles disable other rows.
+    this.refreshDomState();
+  }
+```
+
+Two rows are drawn by hand with `render`, because no declarative control fits: the
+API key, which needs Obsidian's `SecretComponent`, and the model, a text input with a
+datalist of suggestions so a model released after this build can still be typed.
+Both still save through `setControlValue`.
+
+The key row's description comes from `apiKeyStatus`, which answers the second-device
+problem above. It reads secret _names_ from `secretStorage.listSecrets()`, never a
+value, and says which of three states this device is in.
+
+`src/settingsTab.ts` — `apiKeyStatus`
+
+```ts
+export function apiKeyStatus(id: string, onDevice: readonly string[]): string {
+  if (!id) {
+    return `Choose or create a keychain secret holding your Anthropic API key. Naming it "${SUGGESTED_KEY_NAME}" lets other plugins use the same key.`;
+  }
+  return onDevice.includes(id)
+    ? `Uses the keychain secret "${id}".`
+    : `This device's keychain has no secret named "${id}". Add your key in Settings → Keychain under that name, or choose another secret here.`;
+}
+```
+
+It is a pure function, but it lives in `settingsTab.ts`, which imports `obsidian` at
+module scope — so unlike `migrateApiKey` it can be exercised only under `bun test`'s
+preloaded mock, not from a script.
 
 ## Tests
 
@@ -1042,7 +1243,7 @@ mock.module("obsidian", () => obsidianDoubles);
 
 ## Where the linear order broke down
 
-Two places, recorded because a reader should not have to rediscover them.
+Three places, recorded because a reader should not have to rediscover them.
 
 **The write policy cannot be explained before the settings.** `methodFor` reads
 naturally only once you know the policy vocabulary is uniform across three fields
@@ -1056,6 +1257,12 @@ setting before showing what reads it.
 folder run adds retry, halt and cancellation that the command has no equivalent of.
 Following one to the end does not teach the other.
 
+**The key is used before it is explained.** `config()` appears in Startup, because
+that is where both entry points call it, but where the secret's ID comes from —
+`migrateApiKey` on load, or the settings tab — waits for the Settings section. The
+key has two lifetimes, persisted as a name and resolved as a value, and call order
+meets the second first.
+
 ## Build and release
 
 `main.js` is committed on purpose — Obsidian distributes the committed bundle — and
@@ -1065,17 +1272,30 @@ cannot merge.
 `.github/workflows/main.yml` — `check` job
 
 ```yaml
-- run: bun run build
-- run: git diff --exit-code main.js
-- run: bun test
+      - run: bun run build
+      - run: git diff --exit-code main.js
+      - run: bun test
 ```
+
+Dependabot bumps `package.json` and `bun.lock` but never rebuilds, so a second job,
+`rebuild`, runs only on Dependabot's pull requests: it rebuilds, commits `main.js`
+onto the PR branch, and dispatches CI for the new head. A Bun release that shifts
+bundler output is not covered — Bun floats on purpose — and stays a one-commit
+rebuild by hand.
+
+Pushing a bare-semver tag runs `.github/workflows/release.yml`, which refuses a tag
+that disagrees with `package.json`, `manifest.json` or `versions.json`, requires a
+fresh build to match the committed `main.js`, runs the tests, and attaches `main.js`
+and `manifest.json` to a GitHub release.
 
 ## Index
 
 This pass re-checked every quoted snippet against the source and every transcript by
-re-running it, and found nothing to file. The two places the linear order broke down
-are recorded above rather than filed, because they describe the structure rather than
-a defect in it.
+re-running it, for release 4.0.0, and found nothing to file. Ten snippets had drifted
+— mostly the `MetadataToolSettings` → `MetadataConfig` signature change — and were
+re-quoted; the keychain and declarative-tab material is new. The three places the
+linear order broke down are recorded above rather than filed, because they describe
+the structure rather than a defect in it.
 
 | #   | Severity | Issue | Reference |
 | --- | -------- | ----- | --------- |

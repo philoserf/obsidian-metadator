@@ -1,5 +1,38 @@
 # Changelog
 
+## 4.0.0
+
+The API key leaves plaintext `data.json` for Obsidian's keychain, and the settings tab is rebuilt on Obsidian's declarative settings API. Both need Obsidian 1.13.0, so they ship together.
+
+### Breaking Changes
+
+- **`minAppVersion` is now 1.13.0**, up from 1.4.4. The keychain (`SecretStorage`) and the declarative settings tab both first shipped in 1.13.0. (#281, #282)
+- **The API key lives in Obsidian's keychain, not in `data.json`.** Settings now store only the ID of a keychain secret; the key itself is read from the keychain each time a command runs and is never saved. On first load, a plaintext key in `data.json` moves into the keychain as `anthropic-api-key` — or `metadator-anthropic-api-key` if another plugin already keeps a different key under that name — and the plaintext is dropped. (#281)
+
+  **Each device needs the key once.** A secret's _name_ syncs with `data.json`, but its _value_ stays in the keychain of the device that stored it. On every other device, add the key in Settings → Keychain under the name the API key row shows. The row says which secret it uses and whether this device has it. (#289)
+
+- **Settings schema 3 → 4.** The migration changes nothing; the bump exists so that a 3.x install syncing the same `data.json` goes read-only instead of saving the file back without the secret's ID. Update every device. (#281)
+
+### Added
+
+- **Claude Opus 5.5** (`claude-opus-5-5`) works. It rejects a forced `tool_choice`, so it now takes the `auto` tool-choice path, with the larger token budget its always-on thinking needs. Before this, every request with it selected failed with a 400. (#278)
+
+### Changed
+
+- **The settings tab is declarative.** Rows sit in five groups — Anthropic API, Write policy, Tags, Description and Title — and dependent rows disable when their toggle is off. (#282)
+  - Invalid input shows an inline message instead of a notice that snapped the field back, so a half-typed value is no longer reverted before you finish typing. (#203)
+  - The model saves on each well-formed id, not on blur; a partial id is never stored.
+  - The two counts are number fields with the same bounds as before. (#184)
+  - A title field name that collides with another field is refused even while titles are off. (#248)
+  - Every edit is normalized exactly as a reload would normalize it: field names are trimmed, and an emptied prompt reverts to its default. (#186)
+
+### Internal
+
+- Build uses `bun build` directly; CI, release and Dependabot workflows adopted from the plugin template. The release workflow checks the tag against all three version files and the committed `main.js`, and CI rebuilds and commits `main.js` on Dependabot PRs. (#274, #285)
+- TypeScript tightened to the workspace standard, including `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. (#276, #288)
+- Prettier declared for markdown and checked in the gate. (#287)
+- `@anthropic-ai/sdk` 0.128.0 → 0.131.0, plus dev tooling (`@biomejs/biome` 2.5.15, `@types/node` 26.6.4).
+
 ## 3.0.1
 
 ### Fixed
