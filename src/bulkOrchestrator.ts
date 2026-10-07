@@ -8,7 +8,7 @@ import {
 } from "./bulkGenerate";
 import { BulkProgressModal } from "./bulkProgressModal";
 import { BulkSummaryModal } from "./bulkSummaryModal";
-import type { MetadataToolSettings } from "./settings";
+import type { MetadataConfig } from "./settings";
 
 export interface RunBulkForFolderOptions {
   signal?: AbortSignal;
@@ -17,7 +17,7 @@ export interface RunBulkForFolderOptions {
 export async function runBulkForFolder(
   app: App,
   folder: TFolder,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   opts: RunBulkForFolderOptions = {},
 ): Promise<void> {
   if (!settings.anthropicApiKey) {

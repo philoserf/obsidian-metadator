@@ -3,12 +3,9 @@ import type { TruncateMethod } from "./content/truncate";
 export const PROMPT_MAX_LENGTH = 1000;
 
 // Anthropic keys are "sk-ant-" plus roughly a hundred characters, so this is
-// generous while still catching a stray paste of a whole file, which was
-// otherwise accepted and persisted into data.json (#158).
-//
-// Note the key is necessarily stored in plaintext there — Obsidian has no
-// secure-credential API — and the password-style masking on the input is
-// cosmetic.
+// generous while still catching a stray paste of a whole file (#158). The key
+// itself now lives in Obsidian's keychain (#281); this bounds only the legacy
+// plaintext value a pre-v4 data.json can carry into the migration.
 export const API_KEY_MAX_LENGTH = 256;
 
 // Ceilings for the two numeric settings. Without them "positive integer" was
@@ -23,12 +20,15 @@ export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in settingsMigrate.ts. Each migration's key is the schema version it produces.
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export interface MetadataToolSettings {
   schemaVersion: number;
 
-  anthropicApiKey: string;
+  // ID of the API key in Obsidian's secret storage (Settings → Keychain),
+  // never the key: data.json is plaintext and Obsidian Sync copies it to every
+  // device (#281). The key is resolved into a MetadataConfig at use.
+  anthropicApiKeySecret: string;
   anthropicModel: string;
 
   // Field names in frontmatter
@@ -59,6 +59,10 @@ export interface MetadataToolSettings {
   descriptionPrompt: string;
   titlePrompt: string;
 }
+
+// Settings with the API key resolved out of secret storage. Built in one
+// place, MetadataToolPlugin.config(), when a command runs, and never saved.
+export type MetadataConfig = MetadataToolSettings & { anthropicApiKey: string };
 
 // Shape of an Anthropic model id, deliberately loose. A well-formed but
 // unknown id reaches the API and fails there with a clear error, which is a
@@ -151,7 +155,7 @@ export type ScalarPolicy = keyof typeof SCALAR_POLICY_LABELS;
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
 
-  anthropicApiKey: "",
+  anthropicApiKeySecret: "",
   anthropicModel: "claude-sonnet-5",
 
   tagsFieldName: "tags",

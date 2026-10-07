@@ -2,7 +2,7 @@ import { type App, Modal } from "obsidian";
 import { REQUESTS_PER_ATTEMPT } from "./adapters/claude";
 import { exceedsBulkCap } from "./bulkGenerate";
 import { DEFAULT_RETRY_DELAYS_MS } from "./retryPolicy";
-import type { MetadataToolSettings } from "./settings";
+import type { MetadataConfig } from "./settings";
 
 const LARGE_BATCH_THRESHOLD = 100;
 
@@ -28,7 +28,7 @@ export interface ConfirmModalInfo {
   total: number;
   willChange: number;
   willSkip: number;
-  settings: MetadataToolSettings;
+  settings: MetadataConfig;
 }
 
 export class BulkConfirmModal extends Modal {

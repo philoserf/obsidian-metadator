@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { isAbortError } from "../errors";
-import type { MetadataToolSettings } from "../settings";
+import type { MetadataConfig } from "../settings";
 
 // Output budget for the model's tool-use response (tags + description + title).
 // Distinct from settings.contentTokenLimit, which bounds the input note content.
@@ -241,7 +241,7 @@ export function resetClientCache(): void {
 export async function callClaudeForMetadata(
   system: string,
   userMessage: string,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   options: CallClaudeOptions = {},
 ): Promise<MetadataFields> {
   const anthropic = getClient(settings.anthropicApiKey);

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { type App, TFile, TFolder } from "obsidian";
-import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
 
 const mockCreate = mock();
 
@@ -76,9 +76,7 @@ function folder(name: string, children: Array<TFile | TFolder>): TFolder {
   });
 }
 
-function settings(
-  overrides: Partial<MetadataToolSettings> = {},
-): MetadataToolSettings {
+function settings(overrides: Partial<MetadataConfig> = {}): MetadataConfig {
   return {
     ...DEFAULT_SETTINGS,
     anthropicApiKey: "sk-test-key",

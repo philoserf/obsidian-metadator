@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { App } from "obsidian";
-import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
 
 // Mock Anthropic SDK to return controlled responses
 const mockCreate = mock();
@@ -113,9 +113,7 @@ const PRESERVE_ALL = {
   titlePolicy: "preserve",
 } as const;
 
-function makeSettings(
-  overrides: Partial<MetadataToolSettings> = {},
-): MetadataToolSettings {
+function makeSettings(overrides: Partial<MetadataConfig> = {}): MetadataConfig {
   return {
     ...DEFAULT_SETTINGS,
     anthropicApiKey: "sk-test-key",

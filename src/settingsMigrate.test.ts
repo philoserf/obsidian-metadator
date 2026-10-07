@@ -71,11 +71,11 @@ describe("migrateSettings", () => {
 
   test("preserves unrelated settings", () => {
     const settings = ok({
-      anthropicApiKey: "sk-test",
+      anthropicApiKeySecret: "anthropic-api-key",
       tagsFieldName: "tags",
       contentTokenLimit: 500,
     });
-    expect(settings.anthropicApiKey).toBe("sk-test");
+    expect(settings.anthropicApiKeySecret).toBe("anthropic-api-key");
     expect(settings.tagsFieldName).toBe("tags");
     expect(settings.contentTokenLimit).toBe(500);
   });
@@ -133,7 +133,7 @@ describe("migrateSettings", () => {
   test("preserves valid loaded settings", () => {
     const validLoaded: MetadataToolSettings = {
       schemaVersion: CURRENT_SCHEMA_VERSION,
-      anthropicApiKey: "sk-test",
+      anthropicApiKeySecret: "anthropic-api-key",
       anthropicModel: "claude-haiku-4-5",
       tagsFieldName: "keywords",
       descriptionFieldName: "summary",
@@ -426,23 +426,43 @@ describe("field-name collisions (#200)", () => {
   });
 });
 
-describe("API key length (#158)", () => {
-  test("an over-long stored key falls back to the default", () => {
+// #281: the key moved to Obsidian's keychain. A plaintext key in data.json is
+// handed to the plugin once, as legacyApiKey, and never kept in settings —
+// which is what saveSettings writes back.
+function legacy(loaded: unknown): string {
+  const result = migrateSettings(loaded);
+  if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+  return result.legacyApiKey;
+}
+
+describe("a plaintext API key is surfaced, not kept (#281)", () => {
+  test("a v3 key comes out as legacyApiKey and not in settings", () => {
+    const key = `sk-ant-${"a".repeat(100)}`;
+    const loaded = { schemaVersion: 3, anthropicApiKey: key };
+    expect(legacy(loaded)).toBe(key);
+    expect(ok(loaded)).not.toHaveProperty("anthropicApiKey");
+    expect(JSON.stringify(ok(loaded))).not.toContain(key);
+  });
+
+  test("a plaintext key is surfaced whatever the version", () => {
+    // Sync can merge an old device's key into a file already at v4.
+    expect(
+      legacy({ schemaVersion: CURRENT_SCHEMA_VERSION, anthropicApiKey: "k" }),
+    ).toBe("k");
+  });
+
+  test("no plaintext key is the empty string", () => {
+    expect(legacy({ schemaVersion: 3 })).toBe("");
+    expect(legacy({ anthropicApiKey: 42 })).toBe("");
+  });
+
+  test("an over-long key is not moved anywhere (#158)", () => {
     // A stray paste of a whole file was accepted and persisted.
     expect(
-      ok({ anthropicApiKey: "x".repeat(API_KEY_MAX_LENGTH + 1) })
-        .anthropicApiKey,
-    ).toBe(DEFAULT_SETTINGS.anthropicApiKey);
-  });
-
-  test("a realistic key is kept", () => {
-    const key = `sk-ant-${"a".repeat(100)}`;
-    expect(ok({ anthropicApiKey: key }).anthropicApiKey).toBe(key);
-  });
-
-  test("a key exactly at the limit is kept", () => {
+      legacy({ anthropicApiKey: "x".repeat(API_KEY_MAX_LENGTH + 1) }),
+    ).toBe("");
     const key = "x".repeat(API_KEY_MAX_LENGTH);
-    expect(ok({ anthropicApiKey: key }).anthropicApiKey).toBe(key);
+    expect(legacy({ anthropicApiKey: key })).toBe(key);
   });
 });
 

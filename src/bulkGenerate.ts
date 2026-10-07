@@ -15,7 +15,7 @@ import {
   isRetryable,
   scheduleFor,
 } from "./retryPolicy";
-import type { MetadataToolSettings } from "./settings";
+import type { MetadataConfig } from "./settings";
 
 // The cap is policy, and policy lives in this layer. It used to exist only as
 // a computed boolean inside BulkConfirmModal — a red paragraph and a disabled
@@ -28,7 +28,7 @@ import type { MetadataToolSettings } from "./settings";
 // that all need generating is.
 export function exceedsBulkCap(
   willChange: number,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
 ): boolean {
   return willChange > settings.maxBulkFiles;
 }
@@ -61,7 +61,7 @@ function collectInto(folder: TFolder, out: TFile[]): void {
 export function classifyCandidates(
   app: App,
   files: TFile[],
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
 ): { willChange: TFile[]; willSkip: TFile[] } {
   const willChange: TFile[] = [];
   const willSkip: TFile[] = [];
@@ -132,7 +132,7 @@ async function sleepAbortable(
 async function runFileWithRetry(
   app: App,
   file: TFile,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   retryDelaysMs: readonly number[],
   signal?: AbortSignal,
   random: () => number = Math.random,
@@ -178,7 +178,7 @@ async function runFileWithRetry(
 export async function runBulk(
   app: App,
   files: TFile[],
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   { onProgress, retryDelaysMs, signal, random }: RunBulkOptions = {},
 ): Promise<BulkRunOutcome> {
   const delays = retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;

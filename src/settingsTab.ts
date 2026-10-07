@@ -1,8 +1,11 @@
-import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
-import type { TruncateMethod } from "./content/truncate";
+import {
+  type App,
+  PluginSettingTab,
+  SecretComponent,
+  type SettingDefinitionItem,
+} from "obsidian";
 import type MetadataToolPlugin from "./main";
 import {
-  API_KEY_MAX_LENGTH,
   areFieldNamesDistinct,
   DEFAULT_SETTINGS,
   isModelId,
@@ -15,54 +18,7 @@ import {
   TAGS_POLICY_LABELS,
   TRUNCATE_METHOD_LABELS,
 } from "./settings";
-
-// `max` is required rather than optional: a bounded parser named "strict
-// positive int" would be lying about what it enforces.
-export function parseBoundedPositiveInt(
-  value: string,
-  max: number,
-): number | null {
-  const trimmed = value.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const n = Number(trimmed);
-  return n > 0 && n <= max ? n : null;
-}
-
-// Two commit strategies, because the fields split into two kinds.
-//
-// Fields whose validation can only judge a finished value — the numeric ones,
-// the model id, the frontmatter field names — commit on blur. Validating as the
-// user types rejects the value on the way to a good one: clearing the box is the
-// first keystroke of almost every edit, and an empty box is invalid, so changing
-// 500 to 300 used to fire a Notice and snap the old value back before a digit
-// was typed (#203). The Model field already worked this way; the rest did not.
-//
-// Free-text fields update settings in memory immediately and debounce only the
-// disk write, so typing a 1000-character prompt is one save rather than a
-// thousand (#177). Blur alone would risk losing the edit if the tab is closed
-// without the field ever losing focus.
-//
-// Both register a flush that hide() runs, so an edit is never stranded by
-// closing the settings tab.
-interface PendingCommit {
-  flush: () => void;
-}
-
-// Takes the element, not the Setting's text component. The body only ever
-// listened on it; getValue/setValue were used by the commit callbacks, which
-// close over `text` from their own scope and never received it through this
-// parameter — so declaring them here constrained nothing and rejected no
-// invalid program.
-function commitOnBlur(
-  inputEl: HTMLElement,
-  commit: () => void | Promise<void>,
-): PendingCommit {
-  const run = () => {
-    void commit();
-  };
-  inputEl.addEventListener("blur", run);
-  return { flush: run };
-}
+import { migrateSettings } from "./settingsMigrate";
 
 export const SETTINGS_SAVE_DEBOUNCE_MS = 400;
 
@@ -91,391 +47,266 @@ export function createDebouncer(
   };
 }
 
+type FieldNameKey = "tagsFieldName" | "descriptionFieldName" | "titleFieldName";
+type PromptKey = "tagsPrompt" | "descriptionPrompt" | "titlePrompt";
+
+// Declarative settings (Obsidian 1.13.0, #282). Obsidian renders the
+// definitions, indexes every row for settings search, and hands each control
+// change to setControlValue. `validate` rejects a value inline and stores
+// nothing — which also retires #203's snap-back: a half-typed value now shows
+// a message instead of being reverted before the user finishes typing.
 export class MetadataToolSettingTab extends PluginSettingTab {
   plugin: MetadataToolPlugin;
-  // Flushed and cleared by hide(), and cleared again by display() before it
-  // re-renders — otherwise a flush would point at an input that no longer
-  // exists.
-  private pending: PendingCommit[] = [];
+
+  // One debouncer for every field: a burst of keystrokes in a prompt is one
+  // disk write, not one per character (#177). Settings change in memory at
+  // once; hide() flushes, so closing the tab never strands an edit.
+  private readonly save = createDebouncer(() => {
+    void this.plugin.saveSettings();
+  });
 
   constructor(app: App, plugin: MetadataToolPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
-  // Obsidian does not await hide(), so each flush is fire-and-forget.
+  // Obsidian does not await hide(), so the flush is fire-and-forget.
   override hide(): void {
-    for (const p of this.pending) p.flush();
-    this.pending = [];
+    this.save.flush();
     super.hide();
   }
 
-  // The three field-name settings differ only in which key they write and what
-  // the collision Notice calls the field, so they share one builder. Returns
-  // the Setting because the caller needs it for setDisabled().
-  private addFieldNameSetting(
-    containerEl: HTMLElement,
+  // Every write goes through migrateSettings, the path a reload takes, so a
+  // control stores exactly what the next load would produce: a field name is
+  // trimmed, an emptied prompt falls back to its default. The default
+  // implementation would store the raw value.
+  override setControlValue(key: string, value: unknown): void {
+    const result = migrateSettings({ ...this.plugin.settings, [key]: value });
+    if (result.kind !== "ok") return;
+    this.plugin.settings = result.settings;
+    this.save.schedule();
+    // The truncate and title toggles disable other rows.
+    this.refreshDomState();
+  }
+
+  private fieldName(
     label: string,
-    key: "tagsFieldName" | "descriptionFieldName" | "titleFieldName",
-  ): Setting {
-    return new Setting(containerEl)
-      .setName(`${label} Field Name`)
-      .setDesc(`Frontmatter field name for ${label.toLowerCase()}`)
-      .addText((text) => {
-        text.setValue(this.plugin.settings[key]);
-        this.pending.push(
-          commitOnBlur(text.inputEl, async () => {
-            // Trimmed to match settingsMigrate's readString(nonEmpty), which
-            // treats a whitespace-only name as absent. Without it " " was
-            // truthy, appeared to stick, wrote a malformed YAML key, then
-            // silently reverted on the next plugin load (#186).
-            const name = text.getValue().trim() || DEFAULT_SETTINGS[key];
-            if (name === this.plugin.settings[key]) {
-              // Still normalize the box, so " tags " does not sit there
-              // looking like an uncommitted edit.
-              text.setValue(name);
-              return;
-            }
-            const candidate = { ...this.plugin.settings };
-            candidate[key] = name;
-            if (!areFieldNamesDistinct(candidate)) {
-              new Notice(
-                `${label} field name must differ from the other frontmatter field names`,
-              );
-              text.setValue(this.plugin.settings[key]);
-              return;
-            }
-            this.plugin.settings[key] = name;
-            text.setValue(name);
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
+    key: FieldNameKey,
+    disabled?: () => boolean,
+  ) {
+    return {
+      name: `${label} field name`,
+      desc: `Frontmatter field name for ${label.toLowerCase()}.`,
+      control: {
+        type: "text" as const,
+        key,
+        placeholder: DEFAULT_SETTINGS[key],
+        ...(disabled && { disabled }),
+        // The three names must differ, or one field's write clobbers
+        // another's in the note (#200). Checked as if titles were on: an
+        // inert title name that collides would be reset by the load path the
+        // moment it was stored (#248), so it is refused here instead.
+        validate: (value: string) =>
+          areFieldNamesDistinct({
+            ...this.plugin.settings,
+            [key]: value.trim() || DEFAULT_SETTINGS[key],
+            enableTitle: true,
+          })
+            ? undefined
+            : `Must differ from the other frontmatter field names.`,
+      },
+    };
   }
 
-  // The three write-policy settings differ only in which key they write and
-  // which vocabulary they offer, so they share one builder.
-  private addPolicySetting<
-    K extends "tagsPolicy" | "descriptionPolicy" | "titlePolicy",
-  >(
-    containerEl: HTMLElement,
-    label: string,
-    desc: string,
-    key: K,
-    labels: Record<string, string>,
-  ): Setting {
-    return new Setting(containerEl)
-      .setName(`${label} Write Policy`)
-      .setDesc(desc)
-      .addDropdown((dropdown) => {
-        for (const [value, optionLabel] of Object.entries(labels)) {
-          dropdown.addOption(value, optionLabel);
-        }
-        dropdown.setValue(this.plugin.settings[key]).onChange(async (value) => {
-          this.plugin.settings[key] = value as MetadataToolSettings[K];
-          await this.plugin.saveSettings();
-        });
-      });
+  private prompt(label: string, key: PromptKey, disabled?: () => boolean) {
+    return {
+      name: `${label} prompt`,
+      desc: `Instructions for ${label.toLowerCase()} generation, at most ${PROMPT_MAX_LENGTH} characters.`,
+      control: {
+        type: "textarea" as const,
+        key,
+        ...(disabled && { disabled }),
+        validate: (value: string) =>
+          value.length > PROMPT_MAX_LENGTH
+            ? `At most ${PROMPT_MAX_LENGTH} characters.`
+            : undefined,
+      },
+    };
   }
 
-  private addBoundedIntSetting(
-    containerEl: HTMLElement,
-    name: string,
-    desc: string,
-    noticeLabel: string,
-    key: "maxBulkFiles" | "contentTokenLimit",
-    max: number,
-  ): Setting {
-    return new Setting(containerEl)
-      .setName(name)
-      .setDesc(desc)
-      .addText((text) => {
-        text.setValue(this.plugin.settings[key].toString());
-        this.pending.push(
-          commitOnBlur(text.inputEl, async () => {
-            const parsed = parseBoundedPositiveInt(text.getValue(), max);
-            if (parsed === null) {
-              new Notice(
-                `${noticeLabel} must be a positive integer up to ${max}`,
-              );
-              text.setValue(this.plugin.settings[key].toString());
-              return;
-            }
-            // Normalize before the equality check, so "0500" tidies itself
-            // even though it commits nothing.
-            text.setValue(parsed.toString());
-            if (parsed === this.plugin.settings[key]) return;
-            this.plugin.settings[key] = parsed;
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
+  private boundedInt(max: number) {
+    return (value: number) =>
+      Number.isInteger(value) && value > 0 && value <= max
+        ? undefined
+        : `A whole number from 1 to ${max}.`;
   }
 
-  private addPromptSetting(
-    containerEl: HTMLElement,
-    label: string,
-    desc: string,
-    key: "tagsPrompt" | "descriptionPrompt" | "titlePrompt",
-    save: PendingCommit & { schedule: () => void },
-  ): Setting {
-    return new Setting(containerEl)
-      .setName(`${label} Prompt`)
-      .setDesc(desc)
-      .addTextArea((text) => {
-        text.setValue(this.plugin.settings[key]).onChange((value) => {
-          // The length check stays immediate — it can judge a partial value,
-          // unlike the blur-committed fields. Only the disk write is deferred.
-          if (value.length > PROMPT_MAX_LENGTH) {
-            new Notice(
-              `${label} prompt cannot exceed ${PROMPT_MAX_LENGTH} characters`,
-            );
-            text.setValue(this.plugin.settings[key]);
-            return;
-          }
-          this.plugin.settings[key] = value;
-          save.schedule();
-        });
-        text.inputEl.setAttr("rows", "3");
-      });
-  }
+  override getSettingDefinitions(): SettingDefinitionItem[] {
+    const settings = (): MetadataToolSettings => this.plugin.settings;
+    const truncateOff = () => !settings().truncateContent;
+    const titleOff = () => !settings().enableTitle;
 
-  override display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-    this.pending = [];
-
-    // One debouncer for every free-text field, not one each: they all run the
-    // same commit, so a burst that crosses fields collapses into a single
-    // write and hide() flushes one timer instead of racing four saveData
-    // calls against each other.
-    const save = createDebouncer(() => {
-      void this.plugin.saveSettings();
-    });
-    this.pending.push(save);
-
-    // Anthropic API Settings
-    new Setting(containerEl).setName("Anthropic API Settings").setHeading();
-
-    containerEl.createEl("p", {
-      text: "Note: When you run the metadata command, your note content is sent to the Anthropic API for processing. No data is stored by Anthropic beyond the API request.",
-      cls: "setting-item-description",
-    });
-
-    new Setting(containerEl)
-      .setName("API Key")
-      .setDesc(
-        "Your Anthropic API key. Get one at console.anthropic.com (requires an account with billing enabled)",
-      )
-      .addText((text) => {
-        text
-          .setPlaceholder("sk-ant-...")
-          .setValue(this.plugin.settings.anthropicApiKey)
-          .onChange((value) => {
-            if (value.length > API_KEY_MAX_LENGTH) {
-              new Notice(
-                `API key cannot exceed ${API_KEY_MAX_LENGTH} characters`,
-              );
-              text.setValue(this.plugin.settings.anthropicApiKey);
-              return;
-            }
-            this.plugin.settings.anthropicApiKey = value;
-            save.schedule();
-          });
-        text.inputEl.type = "password";
-      });
-
-    // A text input backed by a datalist rather than a dropdown: the known
-    // models autocomplete, but a model released after this build can be typed
-    // in without waiting for a plugin update.
-    const modelListId = "metadator-model-options";
-    const modelList = containerEl.createEl("datalist");
-    modelList.id = modelListId;
-    for (const [model, label] of Object.entries(MODEL_OPTION_LABELS)) {
-      const option = modelList.createEl("option");
-      option.value = model;
-      option.label = label;
-    }
-
-    new Setting(containerEl)
-      .setName("Model")
-      .setDesc(
-        "Model to use for metadata generation. Pick a suggestion or type any Anthropic model id.",
-      )
-      .addText((text) => {
-        text
-          .setPlaceholder(DEFAULT_SETTINGS.anthropicModel)
-          .setValue(this.plugin.settings.anthropicModel);
-        text.inputEl.setAttribute("list", modelListId);
-        // Every prefix of a model id ("claude-fable-5-") is itself malformed,
-        // which is why this field has always committed on blur.
-        this.pending.push(
-          commitOnBlur(text.inputEl, async () => {
-            const model = text.getValue().trim();
-            if (model === this.plugin.settings.anthropicModel) return;
-            if (!isModelId(model)) {
-              new Notice(
-                "Model must be an Anthropic model id, e.g. claude-sonnet-5",
-              );
-              text.setValue(this.plugin.settings.anthropicModel);
-              return;
-            }
-            this.plugin.settings.anthropicModel = model;
-            await this.plugin.saveSettings();
-          }),
-        );
-      });
-
-    new Setting(containerEl)
-      .setName("Debug Logging")
-      .setDesc(
-        "Log prompts and responses to the developer console (View → Toggle Developer Tools)",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.debugLogging)
-          .onChange(async (value) => {
-            this.plugin.settings.debugLogging = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    // Update Settings
-    new Setting(containerEl).setName("Write Policy").setHeading();
-
-    this.addPolicySetting(
-      containerEl,
-      "Tags",
-      "Always Regenerate: replace the list with the reconciled set the model returns, keeping the tags that still fit and dropping those that no longer do; Merge: add to what is there and never remove; Preserve Existing: only write when the field is empty.",
-      "tagsPolicy",
-      TAGS_POLICY_LABELS,
-    );
-
-    this.addPolicySetting(
-      containerEl,
-      "Description",
-      "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty.",
-      "descriptionPolicy",
-      SCALAR_POLICY_LABELS,
-    );
-
-    this.addPolicySetting(
-      containerEl,
-      "Title",
-      "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty. Preserve is the default because a title is often kept in sync by another plugin or relied on by a publisher.",
-      "titlePolicy",
-      SCALAR_POLICY_LABELS,
-    );
-
-    this.addBoundedIntSetting(
-      containerEl,
-      "Max Bulk Files",
-      "Confirmation gate on files-that-will-change in a single bulk run. Above this, the run is refused unless you tick the override in the confirm dialog.",
-      "Max bulk files",
-      "maxBulkFiles",
-      MAX_BULK_FILES,
-    );
-
-    new Setting(containerEl)
-      .setName("Truncate Content")
-      .setDesc("Limit content sent to API to reduce costs")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.truncateContent)
-          .onChange(async (value) => {
-            this.plugin.settings.truncateContent = value;
-            await this.plugin.saveSettings();
-            contentTokenLimitSetting.setDisabled(!value);
-            truncateMethodSetting.setDisabled(!value);
-          }),
-      );
-
-    const contentTokenLimitSetting = this.addBoundedIntSetting(
-      containerEl,
-      "Content Token Limit",
-      "Maximum number of tokens of note content sent to the API",
-      "Content token limit",
-      "contentTokenLimit",
-      MAX_CONTENT_TOKEN_LIMIT,
-    );
-
-    const truncateMethodSetting = new Setting(containerEl)
-      .setName("Truncate Method")
-      .setDesc("How to truncate long content")
-      .addDropdown((dropdown) => {
-        for (const [method, label] of Object.entries(TRUNCATE_METHOD_LABELS)) {
-          dropdown.addOption(method, label);
-        }
-        dropdown
-          .setValue(this.plugin.settings.truncateMethod)
-          .onChange(async (value) => {
-            this.plugin.settings.truncateMethod = value as TruncateMethod;
-            await this.plugin.saveSettings();
-          });
-      });
-
-    contentTokenLimitSetting.setDisabled(!this.plugin.settings.truncateContent);
-    truncateMethodSetting.setDisabled(!this.plugin.settings.truncateContent);
-
-    // Tags Settings
-    new Setting(containerEl).setName("Tags Settings").setHeading();
-
-    this.addFieldNameSetting(containerEl, "Tags", "tagsFieldName");
-    this.addPromptSetting(
-      containerEl,
-      "Tags",
-      `Instructions for tag generation (max ${PROMPT_MAX_LENGTH} chars)`,
-      "tagsPrompt",
-      save,
-    );
-
-    // Description Settings
-    new Setting(containerEl).setName("Description Settings").setHeading();
-
-    this.addFieldNameSetting(
-      containerEl,
-      "Description",
-      "descriptionFieldName",
-    );
-    this.addPromptSetting(
-      containerEl,
-      "Description",
-      `Instructions for description generation (max ${PROMPT_MAX_LENGTH} chars)`,
-      "descriptionPrompt",
-      save,
-    );
-
-    // Title Settings
-    new Setting(containerEl).setName("Title Settings").setHeading();
-
-    new Setting(containerEl)
-      .setName("Enable Title")
-      .setDesc("Generate title metadata")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableTitle)
-          .onChange(async (value) => {
-            this.plugin.settings.enableTitle = value;
-            await this.plugin.saveSettings();
-            titleFieldNameSetting.setDisabled(!value);
-            titlePromptSetting.setDisabled(!value);
-          }),
-      );
-
-    const titleFieldNameSetting = this.addFieldNameSetting(
-      containerEl,
-      "Title",
-      "titleFieldName",
-    );
-    const titlePromptSetting = this.addPromptSetting(
-      containerEl,
-      "Title",
-      `Instructions for title generation (max ${PROMPT_MAX_LENGTH} chars)`,
-      "titlePrompt",
-      save,
-    );
-
-    titleFieldNameSetting.setDisabled(!this.plugin.settings.enableTitle);
-    titlePromptSetting.setDisabled(!this.plugin.settings.enableTitle);
+    return [
+      {
+        type: "group",
+        heading: "Anthropic API",
+        items: [
+          {
+            name: "API key",
+            desc: "Your Anthropic API key, from console.anthropic.com. Kept in Obsidian's keychain on this device; only its name is saved with the plugin's settings, so each device that generates metadata needs it chosen once. Running a command sends the note's content to the Anthropic API.",
+            // No declarative secret control exists, so this row is drawn by
+            // hand; it saves through the same setControlValue as the rest.
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(settings().anthropicApiKeySecret)
+                .onChange((id) =>
+                  this.setControlValue("anthropicApiKeySecret", id),
+                );
+            },
+          },
+          {
+            name: "Model",
+            desc: "Pick a suggestion or type any Anthropic model id. A partial id is not saved.",
+            aliases: Object.values(MODEL_OPTION_LABELS),
+            // A text input backed by a datalist rather than a dropdown, so a
+            // model released after this build can be typed in. No declarative
+            // control offers suggestions, so this row is drawn by hand.
+            render: (setting) => {
+              setting.addText((text) => {
+                const listId = "metadator-model-options";
+                const list = setting.controlEl.createEl("datalist");
+                list.id = listId;
+                for (const [model, label] of Object.entries(
+                  MODEL_OPTION_LABELS,
+                )) {
+                  const option = list.createEl("option");
+                  option.value = model;
+                  option.label = label;
+                }
+                text.inputEl.setAttribute("list", listId);
+                text
+                  .setPlaceholder(DEFAULT_SETTINGS.anthropicModel)
+                  .setValue(settings().anthropicModel)
+                  .onChange((value) => {
+                    // Every prefix of a model id is itself malformed, so only
+                    // a well-formed id is stored.
+                    const model = value.trim();
+                    if (isModelId(model)) {
+                      this.setControlValue("anthropicModel", model);
+                    }
+                  });
+              });
+            },
+          },
+          {
+            name: "Debug logging",
+            desc: "Log prompts and responses to the developer console (View → Toggle Developer Tools).",
+            control: { type: "toggle", key: "debugLogging" },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: "Write policy",
+        items: [
+          {
+            name: "Tags write policy",
+            desc: "Always Regenerate: replace the list with the reconciled set the model returns, keeping the tags that still fit and dropping those that no longer do; Merge: add to what is there and never remove; Preserve Existing: only write when the field is empty.",
+            control: {
+              type: "dropdown",
+              key: "tagsPolicy",
+              options: TAGS_POLICY_LABELS,
+            },
+          },
+          {
+            name: "Description write policy",
+            desc: "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty.",
+            control: {
+              type: "dropdown",
+              key: "descriptionPolicy",
+              options: SCALAR_POLICY_LABELS,
+            },
+          },
+          {
+            name: "Title write policy",
+            desc: "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty. Preserve is the default because a title is often kept in sync by another plugin or relied on by a publisher.",
+            control: {
+              type: "dropdown",
+              key: "titlePolicy",
+              options: SCALAR_POLICY_LABELS,
+            },
+          },
+          {
+            name: "Max bulk files",
+            desc: "Confirmation gate on files-that-will-change in a single bulk run. Above this, the run is refused unless you tick the override in the confirm dialog.",
+            control: {
+              type: "number",
+              key: "maxBulkFiles",
+              min: 1,
+              max: MAX_BULK_FILES,
+              step: 1,
+              validate: this.boundedInt(MAX_BULK_FILES),
+            },
+          },
+          {
+            name: "Truncate content",
+            desc: "Limit content sent to the API to reduce costs.",
+            control: { type: "toggle", key: "truncateContent" },
+          },
+          {
+            name: "Content token limit",
+            desc: "Maximum number of tokens of note content sent to the API.",
+            control: {
+              type: "number",
+              key: "contentTokenLimit",
+              min: 1,
+              max: MAX_CONTENT_TOKEN_LIMIT,
+              step: 1,
+              validate: this.boundedInt(MAX_CONTENT_TOKEN_LIMIT),
+              disabled: truncateOff,
+            },
+          },
+          {
+            name: "Truncate method",
+            desc: "How to truncate long content.",
+            control: {
+              type: "dropdown",
+              key: "truncateMethod",
+              options: TRUNCATE_METHOD_LABELS,
+              disabled: truncateOff,
+            },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: "Tags",
+        items: [
+          this.fieldName("Tags", "tagsFieldName"),
+          this.prompt("Tags", "tagsPrompt"),
+        ],
+      },
+      {
+        type: "group",
+        heading: "Description",
+        items: [
+          this.fieldName("Description", "descriptionFieldName"),
+          this.prompt("Description", "descriptionPrompt"),
+        ],
+      },
+      {
+        type: "group",
+        heading: "Title",
+        items: [
+          {
+            name: "Enable title",
+            desc: "Generate title metadata.",
+            control: { type: "toggle", key: "enableTitle" },
+          },
+          this.fieldName("Title", "titleFieldName", titleOff),
+          this.prompt("Title", "titlePrompt", titleOff),
+        ],
+      },
+    ];
   }
 }

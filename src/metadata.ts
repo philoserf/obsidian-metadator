@@ -11,11 +11,7 @@ import { FrontmatterWriteError, isAbortError } from "./errors";
 import { acquire, release } from "./inFlight";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, normalizeTags, readExistingTags } from "./prompt";
-import type {
-  MetadataToolSettings,
-  ScalarPolicy,
-  TagsPolicy,
-} from "./settings";
+import type { MetadataConfig, ScalarPolicy, TagsPolicy } from "./settings";
 
 // "Starts with a quote and ends with a quote" is not the same as "is quoted".
 // A title that merely opens and closes with quoted phrases satisfied the old
@@ -77,7 +73,7 @@ function willWrite(
 
 export function shouldGenerate(
   frontMatter: Record<string, unknown>,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
 ): boolean {
   return (
     willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName]) ||
@@ -110,7 +106,7 @@ export interface GenerateOptions {
 export async function generateMetadataForFile(
   app: App,
   file: TFile,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   opts: GenerateOptions = {},
 ): Promise<FileResult> {
   if (file.extension !== "md") {
@@ -188,7 +184,7 @@ export async function generateMetadataForFile(
 async function addMetadataWithClaude(
   app: App,
   file: TFile,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   frontMatter: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<WriteOutcome> {

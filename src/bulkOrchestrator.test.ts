@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { App, TFile } from "obsidian";
-import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
 import { FakeNotice, FakeTFile, FakeTFolder, obsidianDoubles } from "./testDom";
 
 const mockCreate = mock();
@@ -80,9 +80,7 @@ afterEach(() => {
   BulkProgressModal.prototype.setProgress = realSetProgress;
 });
 
-function settings(
-  overrides: Partial<MetadataToolSettings> = {},
-): MetadataToolSettings {
+function settings(overrides: Partial<MetadataConfig> = {}): MetadataConfig {
   return { ...DEFAULT_SETTINGS, anthropicApiKey: "sk-test", ...overrides };
 }
 
