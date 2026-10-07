@@ -348,7 +348,7 @@ describe("callClaudeForMetadata", () => {
     };
     // A bare comma-separated string let one tag containing a comma become two,
     // and put no ceiling at all on how many came back.
-    expect(body.tools[0].input_schema.properties.tags).toEqual({
+    expect(body.tools[0]?.input_schema.properties.tags).toEqual({
       type: "array",
       items: { type: "string" },
       minItems: 1,
@@ -417,7 +417,7 @@ describe("callClaudeForMetadata", () => {
     const body = call?.[0] as {
       tools: { input_schema: { required: string[] } }[];
     };
-    expect(body.tools[0].input_schema.required).toEqual([
+    expect(body.tools[0]?.input_schema.required).toEqual([
       "tags",
       "description",
     ]);

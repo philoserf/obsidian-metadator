@@ -20,7 +20,7 @@ describe("groupErrors", () => {
       errorResult("c.md", "401 unauthorized"),
     ]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].paths).toEqual(["a.md", "b.md", "c.md"]);
+    expect(groups[0]?.paths).toEqual(["a.md", "b.md", "c.md"]);
   });
 
   test("keeps distinct reasons apart, in first-seen order", () => {
@@ -30,7 +30,7 @@ describe("groupErrors", () => {
       errorResult("c.md", "boom"),
     ]);
     expect(groups.map((g) => g.reason)).toEqual(["boom", "different"]);
-    expect(groups[0].paths).toEqual(["a.md", "c.md"]);
+    expect(groups[0]?.paths).toEqual(["a.md", "c.md"]);
   });
 
   test("ignores non-error results", () => {
@@ -56,6 +56,6 @@ describe("groupErrors", () => {
     );
     const groups = groupErrors(results);
     expect(groups).toHaveLength(1);
-    expect(groups[0].paths).toHaveLength(500);
+    expect(groups[0]?.paths).toHaveLength(500);
   });
 });

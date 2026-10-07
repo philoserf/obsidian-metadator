@@ -356,8 +356,8 @@ describe("runBulk", () => {
       const { results } = await runBulk(makeApp(), files, settings(), {
         retryDelaysMs: FAST_RETRIES,
       });
-      expect(results[0].kind).toBe("skipped");
-      expect(results[1].kind).toBe("changed");
+      expect(results[0]?.kind).toBe("skipped");
+      expect(results[1]?.kind).toBe("changed");
       // Only the un-held file reached the API.
       expect(mockCreate).toHaveBeenCalledTimes(1);
     } finally {
@@ -411,7 +411,7 @@ describe("runBulk", () => {
       { retryDelaysMs: FAST_RETRIES },
     );
 
-    expect(results[0].kind).toBe("changed");
+    expect(results[0]?.kind).toBe("changed");
     expect(halted).toBeUndefined();
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
@@ -640,9 +640,9 @@ describe("runBulk", () => {
     const app = makeApp();
     const { results } = await runBulk(app, files, settings());
     expect(results).toHaveLength(3);
-    expect(results[0].kind).toBe("changed");
-    expect(results[1].kind).toBe("error");
-    expect(results[2].kind).toBe("changed");
+    expect(results[0]?.kind).toBe("changed");
+    expect(results[1]?.kind).toBe("error");
+    expect(results[2]?.kind).toBe("changed");
   });
 
   test("retries on rate-limit error and eventually succeeds", async () => {
@@ -666,7 +666,7 @@ describe("runBulk", () => {
     const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: FAST_RETRIES,
     });
-    expect(results[0].kind).toBe("changed");
+    expect(results[0]?.kind).toBe("changed");
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
@@ -682,7 +682,7 @@ describe("runBulk", () => {
     const { results } = await runBulk(app, files, settings(), {
       retryDelaysMs: FAST_RETRIES,
     });
-    expect(results[0].kind).toBe("error");
+    expect(results[0]?.kind).toBe("error");
     expect(mockCreate).toHaveBeenCalledTimes(1 + FAST_RETRIES.length);
   });
 
@@ -694,7 +694,7 @@ describe("runBulk", () => {
       files,
       settings({ anthropicApiKey: "" }),
     );
-    expect(results[0].kind).toBe("skipped");
+    expect(results[0]?.kind).toBe("skipped");
   });
 
   test("DEFAULT_RETRY_DELAYS_MS is production default", () => {
@@ -716,9 +716,10 @@ describe("runBulk", () => {
       },
     });
     expect(results).toHaveLength(1);
-    expect(results[0].kind).toBe("skipped");
-    if (results[0].kind === "skipped") {
-      expect(results[0].reason).toContain("cancelled");
+    const first = results[0];
+    expect(first?.kind).toBe("skipped");
+    if (first?.kind === "skipped") {
+      expect(first.reason).toContain("cancelled");
     }
     expect(mockCreate).not.toHaveBeenCalled();
   });
@@ -745,7 +746,7 @@ describe("runBulk", () => {
     });
     const elapsed = Date.now() - start;
     expect(results).toHaveLength(1);
-    expect(results[0].kind).toBe("skipped");
+    expect(results[0]?.kind).toBe("skipped");
     expect(mockCreate).toHaveBeenCalledTimes(1);
     // The wait is now event-driven, so this returns on the abort itself rather
     // than at the next poll tick — far inside the 5s retry delay.
@@ -773,7 +774,7 @@ describe("runBulk", () => {
     const elapsed = Date.now() - start;
 
     expect(results).toHaveLength(1);
-    expect(results[0].kind).toBe("skipped");
+    expect(results[0]?.kind).toBe("skipped");
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(elapsed).toBeLessThan(1_000);
   });

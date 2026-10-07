@@ -99,8 +99,10 @@ export type FileResult =
   | { kind: "skipped"; file: TFile; reason: SkipReason }
   | { kind: "error"; file: TFile; reason: string; error: unknown };
 
+// `| undefined`: callers forward an optional signal, and absent and undefined
+// both mean "not cancellable".
 export interface GenerateOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export async function generateMetadataForFile(

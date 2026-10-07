@@ -246,7 +246,7 @@ describe("migrateSettings", () => {
         loadedSchemaVersion: future,
       });
       expect(captured).toHaveLength(1);
-      const message = String(captured[0][0] ?? "");
+      const message = String(captured[0]?.[0] ?? "");
       expect(message).toContain("schemaVersion=");
       expect(message).toContain("Falling back to defaults");
     } finally {

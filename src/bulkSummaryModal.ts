@@ -27,7 +27,7 @@ export function groupErrors(results: FileResult[]): ErrorGroup[] {
 
 export interface SummaryModalInfo {
   aborted: boolean;
-  halted?: BulkHalt;
+  halted?: BulkHalt | undefined;
   totalPlanned: number;
 }
 

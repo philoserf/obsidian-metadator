@@ -52,13 +52,10 @@ function indexLines(source: string, tokens: Token[]): LineInfo[] {
   for (const text of source.split("\n")) {
     const lineEnd = cursor + text.length;
     const tokenStart = t;
-    while (t < tokens.length && tokens[t].start < lineEnd) t++;
+    // Past the last token reads as Infinity, which ends the scan.
+    while ((tokens[t]?.start ?? Infinity) < lineEnd) t++;
     // The newline itself terminates this line.
-    if (
-      t < tokens.length &&
-      tokens[t].text === "\n" &&
-      tokens[t].start === lineEnd
-    ) {
+    if (tokens[t]?.text === "\n" && tokens[t]?.start === lineEnd) {
       t++;
     }
     lines.push({ text, tokenStart, tokenEnd: t });
@@ -113,7 +110,7 @@ export function truncateHeading(
     // gets an "..." with nothing actually cut. Interior newlines between
     // soft-wrapped lines are real source text and stay.
     let end = paragraphEnd;
-    while (end > paragraphStart && tokens[end - 1].text === "\n") end--;
+    while (end > paragraphStart && tokens[end - 1]?.text === "\n") end--;
     const paragraphTokens = tokens.slice(paragraphStart, end);
     const truncated = paragraphTokens.slice(0, PARAGRAPH_TOKEN_CAP);
     const suffix = truncated.length < paragraphTokens.length ? "..." : "";

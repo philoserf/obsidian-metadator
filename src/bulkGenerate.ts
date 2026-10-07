@@ -144,8 +144,10 @@ async function runFileWithRetry(
     const r = await generateMetadataForFile(app, file, settings, { signal });
     if (r.kind !== "error" || !isRetryable(r.error)) return r;
     const delays = scheduleFor(r.error, retryDelaysMs);
-    if (attempt >= delays.length) return r;
-    const delayMs = computeDelayMs(delays[attempt], r.error, random);
+    // Past the end of this kind's schedule: no retries left.
+    const baseDelayMs = delays[attempt];
+    if (baseDelayMs === undefined) return r;
+    const delayMs = computeDelayMs(baseDelayMs, r.error, random);
     if (settings.debugLogging) {
       logDebug({
         event: "claude_retry_scheduled",
@@ -187,9 +189,8 @@ export async function runBulk(
   let streakKind: HaltKind | undefined;
   let streak = 0;
 
-  for (let i = 0; i < files.length; i++) {
+  for (const [i, file] of files.entries()) {
     if (signal?.aborted) break;
-    const file = files[i];
     onProgress?.({ current: i + 1, total: files.length, file, errors });
     const result = await runFileWithRetry(
       app,
