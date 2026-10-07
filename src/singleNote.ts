@@ -3,7 +3,7 @@ import { ClaudeApiError } from "./adapters/claude";
 import { FrontmatterWriteError } from "./errors";
 import { logError } from "./logger";
 import { generateMetadataForFile, type SkipReason } from "./metadata";
-import type { MetadataToolSettings } from "./settings";
+import type { MetadataConfig } from "./settings";
 
 // The single-note presentation layer, mirroring bulkOrchestrator.ts. Every
 // user-facing sentence for this entry point lives here; metadata.ts returns
@@ -94,7 +94,7 @@ function skipNotice(reason: SkipReason): string | undefined {
 
 export async function generateMetadata(
   app: App,
-  settings: MetadataToolSettings,
+  settings: MetadataConfig,
   opts: InteractiveGenerateOptions = {},
 ): Promise<void> {
   const file = app.workspace.getActiveFile();

@@ -121,8 +121,20 @@ export class FakeTFolder {}
 export const obsidianDoubles = {
   Plugin: class Plugin {},
   Notice: FakeNotice,
-  PluginSettingTab: class PluginSettingTab {},
-  Setting: class Setting {},
+  PluginSettingTab: class PluginSettingTab {
+    hide(): void {}
+    refreshDomState(): void {}
+  },
+  // Chainable no-ops: the key row's render callback builds one, though no
+  // test runs render — the settings tab is tested as definition data.
+  SecretComponent: class SecretComponent {
+    setValue() {
+      return this;
+    }
+    onChange() {
+      return this;
+    }
+  },
   Modal: FakeModal,
   TFolder: FakeTFolder,
   TFile: FakeTFile,

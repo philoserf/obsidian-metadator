@@ -70,8 +70,9 @@ This plugin requires an Anthropic API key and transmits note content to a third-
 
 - **Note content is sent to Anthropic.** Every run transmits the note's body (frontmatter stripped, possibly truncated) and its existing tags to Anthropic's API. Do not run this plugin on notes whose contents you would not paste into a web form.
 - **The folder action sends every note in the tree.** A recursive run transmits the body of each markdown file under the folder, not only the one you have open. Check what is in a folder before running it.
-- **API key storage.** The Anthropic API key is stored in Obsidian's plugin data file (`data.json`) as plaintext. This is an Obsidian platform constraint — there is no encrypted storage API. Anyone with file system access to your vault can read the key.
-- **Recommendations:** Rotate the key periodically and set a usage cap on it in the Anthropic console. On shared devices, be aware that the key is accessible on disk.
+- **API key storage.** The key is kept in Obsidian's keychain (Settings → Keychain), which encrypts it with the operating system's secure storage; `data.json` holds only the secret's name. Obsidian does not sync keychain secrets, so choose or enter the key once on each device you run the plugin from. Requires Obsidian 1.13.0.
+- **Upgrading.** A plaintext key left in `data.json` by an earlier version is moved into the keychain on the first load and removed from `data.json`. Because that change syncs, every other device needs the key entered once.
+- **Recommendations:** Rotate the key periodically and set a usage cap on it in the Anthropic console.
 
 ## Alternatives
 

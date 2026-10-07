@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { App } from "obsidian";
-import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
 import { FakeNotice } from "./testDom";
 
 const mockCreate = mock();
@@ -55,7 +55,7 @@ function makeApp(opts: {
   } as unknown as App;
 }
 
-const settings = (o: Partial<MetadataToolSettings> = {}) => ({
+const settings = (o: Partial<MetadataConfig> = {}) => ({
   ...DEFAULT_SETTINGS,
   anthropicApiKey: "sk-test",
   ...o,

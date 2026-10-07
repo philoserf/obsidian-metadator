@@ -4,7 +4,7 @@ import { BulkConfirmModal, worstCaseApiCalls } from "./bulkConfirmModal";
 import { BulkProgressModal } from "./bulkProgressModal";
 import { BulkSummaryModal } from "./bulkSummaryModal";
 import type { SkipReason } from "./metadata";
-import { DEFAULT_SETTINGS, type MetadataToolSettings } from "./settings";
+import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
 import type { FakeEl } from "./testDom";
 
 // No mock.module("obsidian") here on purpose. test-preload.ts already installs
@@ -15,10 +15,13 @@ import type { FakeEl } from "./testDom";
 
 const app = {} as App;
 
-function settings(
-  overrides: Partial<MetadataToolSettings> = {},
-): MetadataToolSettings {
-  return { ...DEFAULT_SETTINGS, maxBulkFiles: 50, ...overrides };
+function settings(overrides: Partial<MetadataConfig> = {}): MetadataConfig {
+  return {
+    ...DEFAULT_SETTINGS,
+    anthropicApiKey: "sk-test",
+    maxBulkFiles: 50,
+    ...overrides,
+  };
 }
 
 function contentOf(modal: unknown): FakeEl {

@@ -69,7 +69,7 @@ function isScalarPolicy(value: string): value is ScalarPolicy {
 // migration mutates the raw bag in place; trust-boundary normalization runs
 // afterward in migrateSettings.
 const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
-  new Map([
+  new Map<number, (s: Record<string, unknown>) => void>([
     [
       1,
       (s) => {
@@ -126,6 +126,17 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
         delete s.updateMethod;
       },
     ],
+    [
+      4,
+      () => {
+        // 3 → 4: the API key moves from data.json to Obsidian's keychain
+        // (#281). Nothing to rewrite here: migrateSettings hands any plaintext
+        // anthropicApiKey to the plugin as legacyApiKey, whatever the version,
+        // and normalization drops it. The bump is what matters — a v3 build
+        // syncing this file goes read-only rather than saving it back without
+        // the secret's ID.
+      },
+    ],
   ]);
 
 function readSchemaVersion(raw: Record<string, unknown>): number {
@@ -163,7 +174,9 @@ export function applyMigrations(
 }
 
 export type MigrationResult =
-  | { kind: "ok"; settings: MetadataToolSettings }
+  // legacyApiKey is a plaintext key found in the file, "" when there is none.
+  // Never part of settings: the plugin moves it into secret storage.
+  | { kind: "ok"; settings: MetadataToolSettings; legacyApiKey: string }
   | { kind: "missing" }
   | { kind: "future"; loadedSchemaVersion: number };
 
@@ -207,31 +220,32 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
 
   const normalized: MetadataToolSettings = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    anthropicApiKey: readString(
-      migrated.anthropicApiKey,
-      DEFAULT_SETTINGS.anthropicApiKey,
-      { maxLength: API_KEY_MAX_LENGTH },
+    anthropicApiKeySecret: readString(
+      migrated.anthropicApiKeySecret,
+      DEFAULT_SETTINGS.anthropicApiKeySecret,
     ),
     // Accept any well-formed model id, not just the ones in the dropdown, so
     // a model released after this build survives a reload.
     anthropicModel: isModelId(anthropicModel)
       ? anthropicModel
       : DEFAULT_SETTINGS.anthropicModel,
+    // Field names are trimmed here, the one place both a load and a settings
+    // edit pass through, so " tags " cannot become a malformed YAML key (#186).
     tagsFieldName: readString(
       migrated.tagsFieldName,
       DEFAULT_SETTINGS.tagsFieldName,
       { nonEmpty: true },
-    ),
+    ).trim(),
     descriptionFieldName: readString(
       migrated.descriptionFieldName,
       DEFAULT_SETTINGS.descriptionFieldName,
       { nonEmpty: true },
-    ),
+    ).trim(),
     titleFieldName: readString(
       migrated.titleFieldName,
       DEFAULT_SETTINGS.titleFieldName,
       { nonEmpty: true },
-    ),
+    ).trim(),
     enableTitle: readBoolean(
       migrated.enableTitle,
       DEFAULT_SETTINGS.enableTitle,
@@ -316,5 +330,11 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
   }
 
-  return { kind: "ok", settings: normalized };
+  return {
+    kind: "ok",
+    settings: normalized,
+    legacyApiKey: readString(migrated.anthropicApiKey, "", {
+      maxLength: API_KEY_MAX_LENGTH,
+    }),
+  };
 }
