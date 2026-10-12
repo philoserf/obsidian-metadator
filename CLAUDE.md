@@ -69,11 +69,11 @@ Most of `src/` is self-describing. These three exist in the shape they do for re
 
 `main.js` is committed on purpose — Obsidian distributes the committed bundle, so any change to `src/` or to dependencies needs a rebuilt `main.js` committed alongside it.
 
-CI (`.github/workflows/main.yml`) enforces that: it runs `bun run build` and then `git diff --exit-code main.js`, so a stale bundle fails the PR. Bun is deliberately unpinned (`bun-version: latest`), so a bun release that shifts bundler output trips the same check. The fix is identical either way — rebuild and commit `main.js`.
+Nothing automated enforces that: run `bun run build` and confirm `git diff --exit-code main.js` is clean before committing. Bun is deliberately unpinned, so a bun release that shifts bundler output shows up the same way. The fix is identical either way — rebuild and commit `main.js`.
 
 ## Release Process
 
-Use the `release-gate` then `release-ship` skills — do not tag by hand. Pushing a bare-semver tag (`1.2.3`) triggers `.github/workflows/release.yml`, which refuses a tag that disagrees with `package.json`, `manifest.json` or `versions.json`, requires a fresh build to match the committed `main.js`, runs the tests, and attaches `main.js` + `manifest.json` to a GitHub release. Version numbers live in three files: `version-bump.ts` (wired to the `version` package script) is what propagates `package.json`'s version into `manifest.json` and adds the `version → minAppVersion` row to `versions.json`.
+Use the `release-gate` then `release-ship` skills — do not tag by hand. Tags are bare semver (`1.2.3`) and must agree with `package.json`, `manifest.json` and `versions.json`; the release carries `main.js` + `manifest.json`. Version numbers live in three files: `version-bump.ts` (wired to the `version` package script) is what propagates `package.json`'s version into `manifest.json` and adds the `version → minAppVersion` row to `versions.json`.
 
 ## Tests and Code Style
 
