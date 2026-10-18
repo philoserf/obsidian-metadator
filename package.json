@@ -1,6 +1,6 @@
 {
   "name": "metadator",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "Automatically generate metadata for Obsidian notes using AI",
   "main": "main.js",
   "author": "Mark Ayers",
@@ -21,14 +21,14 @@
     "compare-models": "bun run scripts/compare-models.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.131.0"
+    "@anthropic-ai/sdk": "^0.135.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "@types/bun": "^1.4.2",
-    "@types/node": "^26.6.4",
-    "obsidian": "^1.13.1",
-    "prettier": "^3.9.9",
+    "@types/bun": "^1.4.3",
+    "@types/node": "^26.6.5",
+    "obsidian": "^1.14.4",
+    "prettier": "^3.9.10",
     "typescript": "^7.0.2"
   }
 }

@@ -6,13 +6,15 @@ Metadator is an Obsidian plugin that fills in a note's YAML frontmatter — `tag
 `description` and `title` — from the note's prose, using the Anthropic Claude API.
 
 It is TypeScript bundled by Bun into a single `main.js`, which is what Obsidian
-loads. There are two entry points and they share everything below the UI:
+loads. There are three entry points and they share everything below the UI:
 
 - **A command**, run on the active note.
 - **A folder menu item**, run recursively over every markdown file beneath a folder.
+- **A CLI handler**, `metadator:generate path=`, run on one named note by automation
+  driving Obsidian through its `obsidian` CLI.
 
-This walkthrough follows the single-note path first, end to end, then the parts the
-folder run adds on top. Read `THEORY.md` alongside it for _why_ the code is shaped
+This walkthrough follows the single-note path first, end to end, then the CLI shell
+that reuses it, then the parts the folder run adds on top. Read `THEORY.md` alongside it for _why_ the code is shaped
 this way; this document is _how it runs_.
 
 ## Architecture
@@ -21,13 +23,15 @@ Each entry point is a thin UI shell over a headless core. The shells own every
 `Notice`; the cores return data and render nothing.
 
 ```text
-  main.ts                     plugin lifecycle, command + menu registration,
-    |                         config(): settings + key read from the keychain
+  main.ts                     plugin lifecycle, command + menu + CLI registration,
+    |                         config(): settings + key read from the keychain,
+    |                         onExternalSettingsChange: adopt a synced data.json
     +-- settingsMigrate.ts    load path: migrate, normalize, lift a plaintext key
     +-- settingsStore.ts      what to do with that result; key into the keychain
     +-- settingsTab.ts        declarative settings tab
     |
     +-- singleNote.ts         UI shell   ->  metadata.ts      one note
+    +-- cli.ts                CLI shell  ->  metadata.ts      one named note
     +-- bulkOrchestrator.ts   UI shell   ->  bulkGenerate.ts  a folder
                                                 |
   metadata.ts ------------------------------- generateMetadataForFile
@@ -41,8 +45,8 @@ Each entry point is a thin UI shell over a headless core. The shells own every
 ## Startup
 
 `onload` runs once when Obsidian loads the plugin. It creates a single
-`AbortController` for the plugin's lifetime, loads settings, and registers the two
-entry points. Both pass that controller's signal down, so `onunload` can cancel a
+`AbortController` for the plugin's lifetime, loads settings, and registers the three
+entry points. All pass that controller's signal down, so `onunload` can cancel a
 run in flight; it also clears the per-file in-flight locks, so a reload starts with
 none held.
 
@@ -62,6 +66,28 @@ none held.
         });
       },
     });
+
+    // For automation driving Obsidian through its CLI, whose `command id=` acts
+    // on the active note and prints nothing. One file per call: a bulk run's
+    // cost cap and confirmation step stay in the folder menu.
+    this.registerCliHandler(
+      "metadator:generate",
+      "Generate metadata for one note and print the result as JSON",
+      {
+        path: {
+          value: "<path>",
+          description: "Vault path of the note",
+          required: true,
+        },
+      },
+      (params) =>
+        generateForPath(
+          this.app,
+          this.config(),
+          params,
+          this.runController.signal,
+        ),
+    );
 
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, fileOrFolder) => {
@@ -97,11 +123,15 @@ none held.
       }),
     );
 
-    this.addSettingTab(new MetadataToolSettingTab(this.app, this));
+    this.settingTab = new MetadataToolSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
   }
 ```
 
-Neither entry point receives `this.settings`. They receive `this.config()`, a
+The setting tab is kept in a field rather than handed straight to `addSettingTab`,
+because `onExternalSettingsChange` needs it later (see The settings tab).
+
+No entry point receives `this.settings`. They receive `this.config()`, a
 `MetadataConfig`: the saved settings plus the API key, read out of Obsidian's
 keychain at the moment the command runs. The settings themselves hold only the
 _ID_ of a keychain secret, never the key, so nothing that writes `data.json` can
@@ -218,9 +248,93 @@ function skipNotice(reason: SkipReason): string | undefined {
 }
 ```
 
+## The CLI path
+
+The vault's automation drives Obsidian through the `obsidian` CLI, whose `command id=`
+acts on whichever note is active and prints nothing. `metadator:generate` takes a path
+and prints one JSON object, so a skill can say which note and see what happened.
+
+`src/cli.ts` is the same kind of shell as `singleNote.ts`: it resolves a `TFile`, calls
+`generateMetadataForFile`, and renders the `FileResult` — as JSON, where the command
+renders Notices. Every failure becomes a returned object, because Obsidian prints
+whatever string the handler returns and a thrown error would reach the caller as
+nothing.
+
+`src/cli.ts` — `run`
+
+```ts
+async function run(
+  app: App,
+  settings: MetadataConfig,
+  params: CliData,
+  signal?: AbortSignal,
+): Promise<CliOutput> {
+  const path = params.path;
+  if (!path || path === "true") {
+    return { status: "error", reason: "path=<vault path> is required" };
+  }
+  const file = app.vault.getFileByPath(path);
+  if (!file) {
+    return { status: "error", file: path, reason: "no such file" };
+  }
+
+  try {
+    const result = await generateMetadataForFile(app, file, settings, {
+      signal,
+    });
+    if (result.kind === "error") {
+      return { status: "error", file: path, reason: result.reason };
+    }
+    return {
+      status: result.kind,
+      file: path,
+      ...skipReason(result),
+      ...(await readFields(app, file, settings)),
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      file: path,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+```
+
+The values in the output are read back from the file, not taken from the pipeline.
+Under `merge` and `preserve` the note holds something other than the model's answer,
+and the metadata cache lags a write that has just landed. The usual read-only route,
+`processFrontMatter` with a callback that changes nothing, is out: it writes back on
+every call (#185).
+
+`src/cli.ts` — `readFields`
+
+```ts
+async function readFields(
+  app: App,
+  file: TFile,
+  settings: MetadataConfig,
+): Promise<Fields> {
+  if (file.extension !== "md") return {};
+  const info = getFrontMatterInfo(await app.vault.read(file));
+  const fm: Record<string, unknown> = info.exists
+    ? (parseYaml(info.frontmatter) ?? {})
+    : {};
+  return {
+    title: fm[settings.titleFieldName],
+    description: fm[settings.descriptionFieldName],
+    tags: fm[settings.tagsFieldName],
+  };
+}
+```
+
+`dry-run` is absent on purpose: the pipeline writes field by field as it decides, so
+reporting decisions without writing them would be a change to `metadata.ts`, not to
+this shell.
+
 ## The headless core
 
-`generateMetadataForFile` is what both entry points call. It guards, acquires a
+`generateMetadataForFile` is what all three entry points call. It guards, acquires a
 per-file lock, generates, and returns a `FileResult` — never a `Notice`. The
 `anthropicApiKey` it checks is the one `config()` resolved from the keychain, so an
 empty string here covers both "never configured" and "configured on another device".
@@ -1164,7 +1278,8 @@ than being stored and snapped back.
 Every write goes through `migrateSettings`, the same path a reload takes, so an edit
 stores exactly what the next load would produce — a field name trimmed, an emptied
 prompt back at its default. One debouncer covers the whole tab, and `hide()` flushes
-it.
+it — except when Sync replaces `data.json`, which is the one time a pending save is
+dropped instead (below).
 
 `src/settingsTab.ts` — `MetadataToolSettingTab.setControlValue`
 
@@ -1204,6 +1319,39 @@ export function apiKeyStatus(id: string, onDevice: readonly string[]): string {
 It is a pure function, but it lives in `settingsTab.ts`, which imports `obsidian` at
 module scope — so unlike `migrateApiKey` it can be exercised only under `bun test`'s
 preloaded mock, not from a script.
+
+### Settings arriving from another device
+
+When Obsidian Sync delivers a new `data.json`, Obsidian calls
+`onExternalSettingsChange`. The plugin re-runs the ordinary `loadSettings`, which is
+already safe to repeat: it writes only when `migrateApiKey` has a legacy plaintext key
+to move into the keychain, and a file from a newer version comes back as a block, as
+at startup.
+
+`src/main.ts` — `MetadataToolPlugin.onExternalSettingsChange`
+
+```ts
+  override async onExternalSettingsChange(): Promise<void> {
+    await this.settingTab.reloadSettings(() => this.loadSettings());
+  }
+```
+
+It goes through the tab because of the debouncer. A save still pending from an edit
+here would fire after the reload and write the adopted settings straight back to the
+file Sync just delivered, which Sync then carries to every device; flushing it first
+would be worse, overwriting the incoming file with the stale copy. So the pending
+save is cancelled, the settings reload, and the tab re-renders from what was adopted.
+An edit made in the debounce window loses to the synced file.
+
+`src/settingsTab.ts` — `MetadataToolSettingTab.reloadSettings`
+
+```ts
+  async reloadSettings(load: () => Promise<void>): Promise<void> {
+    this.save.cancel();
+    await load();
+    this.update();
+  }
+```
 
 ## Tests
 
@@ -1258,44 +1406,34 @@ folder run adds retry, halt and cancellation that the command has no equivalent 
 Following one to the end does not teach the other.
 
 **The key is used before it is explained.** `config()` appears in Startup, because
-that is where both entry points call it, but where the secret's ID comes from —
+that is where the entry points call it, but where the secret's ID comes from —
 `migrateApiKey` on load, or the settings tab — waits for the Settings section. The
 key has two lifetimes, persisted as a name and resolved as a value, and call order
 meets the second first.
 
 ## Build and release
 
-`main.js` is committed on purpose — Obsidian distributes the committed bundle — and
-CI rebuilds it and fails the PR on a diff, so a source change without a rebuild
-cannot merge.
+`main.js` is committed on purpose — Obsidian distributes the committed bundle. Nothing
+automated enforces a rebuild: there is no CI, and no Dependabot. The local gate is
+`bun run build` (typecheck, Biome, Prettier, bundle), `bun test`, and
+`git diff --exit-code main.js` on the result, so a source or dependency change without
+a rebuilt bundle fails before it is pushed. A Bun release that shifts bundler output
+shows up the same way, because Bun floats on purpose.
 
-`.github/workflows/main.yml` — `check` job
-
-```yaml
-      - run: bun run build
-      - run: git diff --exit-code main.js
-      - run: bun test
-```
-
-Dependabot bumps `package.json` and `bun.lock` but never rebuilds, so a second job,
-`rebuild`, runs only on Dependabot's pull requests: it rebuilds, commits `main.js`
-onto the PR branch, and dispatches CI for the new head. A Bun release that shifts
-bundler output is not covered — Bun floats on purpose — and stays a one-commit
-rebuild by hand.
-
-Pushing a bare-semver tag runs `.github/workflows/release.yml`, which refuses a tag
-that disagrees with `package.json`, `manifest.json` or `versions.json`, requires a
-fresh build to match the committed `main.js`, runs the tests, and attaches `main.js`
-and `manifest.json` to a GitHub release.
+Releases go through the `release-gate` and `release-ship` skills, not a hand-made tag.
+The gate checks that `package.json`, `manifest.json` and `versions.json` agree, that a
+fresh build matches the committed `main.js`, and that every snippet in this document
+still appears verbatim in its source. The release is a bare-semver tag carrying
+`main.js` and `manifest.json`.
 
 ## Index
 
-This pass re-checked every quoted snippet against the source and every transcript by
-re-running it, for release 4.0.0, and found nothing to file. Ten snippets had drifted
-— mostly the `MetadataToolSettings` → `MetadataConfig` signature change — and were
-re-quoted; the keychain and declarative-tab material is new. The three places the
-linear order broke down are recorded above rather than filed, because they describe
-the structure rather than a defect in it.
+This pass brought the document to release 4.1.0. The CLI path and the sync reload are
+new; Startup's `onload` was re-quoted for the CLI registration and the kept setting tab;
+Build and release was rewritten, because the CI, release and Dependabot workflows it
+described were removed. Every other snippet still matches its source verbatim. The
+three places the linear order broke down are recorded above rather than filed, because
+they describe the structure rather than a defect in it.
 
 | #   | Severity | Issue | Reference |
 | --- | -------- | ----- | --------- |

@@ -131,13 +131,14 @@ importance, one checkable and one not. If you are adding a module, know which si
 Obsidian line you are on before you write the first import, because crossing it is
 invisible until someone tries to use your code from a script.
 
-## Domain and presentation, on both entry points
+## Domain and presentation, on every entry point
 
-There are two ways in, and each is a thin UI shell over a headless core:
+There are three ways in, and each is a thin UI shell over a headless core:
 
 ```
 singleNote.ts  ─┐                        ┌─ metadata.ts      (one note)
-                ├─ every Notice lives    │
+cli.ts         ─┤  every Notice, and the │  (cli.ts: one named note, as JSON)
+                ├─ CLI's JSON, lives     │
 bulkOrchestrator.ts ─┘  in these         └─ bulkGenerate.ts   (a folder)
 ```
 
@@ -185,7 +186,7 @@ tokenizer must preserve offsets.
 
 **The two tokenizer regexes are held identical by one suite.** The v-flag build is what
 every current runtime takes; the u-flag fallback exists for older mobile WebViews and would
-otherwise never execute in CI, which is how an unbounded Latin+CJK merge once survived.
+otherwise never execute under test, which is how an unbounded Latin+CJK merge once survived.
 
 **Frontmatter field names must differ — but only the ones in use.** Two colliding names
 clobber each other in the user's _notes_, not in plugin state, and the run reports success.

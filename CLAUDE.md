@@ -13,7 +13,7 @@ The current next step for this repo is tracked in the workspace backlog at `../N
 ## Development Commands
 
 ```bash
-bun run build            # check + bundle (this is what CI runs); minified, no sourcemap
+bun run build            # check + bundle (the gate; no CI); minified, no sourcemap
 bun test src/bulkGenerate.test.ts        # one file
 bun test -t "retry"                      # one test / describe by name pattern
 bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_DEPLOY_DEST
@@ -65,7 +65,7 @@ Most of `src/` is self-describing. These three exist in the shape they do for re
 - **SDK boundary**: `@anthropic-ai/sdk` may only be imported from `src/adapters/claude.ts`. This is enforced by Biome's `noRestrictedImports` rule in `biome.json`; other modules consume the adapter's typed wrapper (`callClaudeForMetadata`, `ClaudeApiError`) so SDK types do not leak into application or domain code. Test files are excluded from the rule because they reference the SDK module name for mocking — both `mock.module("@anthropic-ai/sdk", ...)` setups and dynamic `import()` calls used to access mocked SDK error constructors.
 - **Structured logging**: when `debugLogging` is on, the request path emits structured records via `src/logger.ts` instead of prose. `logDebug` writes `console.log("[Metadator]", payload)` and `logError` writes `console.error("[Metadator]", payload)`. The payload always includes an `event` plus event-specific context drawn from `LogFields` — `file`, `model`, `requestId`, `attempt`, `durationMs`, `errorKind`, `errorMessage`, `errorName`, `errorStack`, `field`, `promptLength`, `contentLength` — rather than a single fixed set. A short hex `requestId` (`newRequestId`, 8 chars from `Math.random` — collisions are acceptable because the file path and event disambiguate, so there is deliberately no Web Crypto ladder) is minted per `addMetadataWithClaude` invocation, so a bulk retry produces a fresh requestId for each attempt; the file path is the cross-attempt joiner. Write-failure logs ride the same requestId so they correlate to the API call that produced the data. Vocabulary: `claude_request_start` / `claude_request_completed` / `claude_request_failed` (per call), `claude_retry_scheduled` (bulk retry loop), `frontmatter_write_failed`, `generation_failed`.
 
-## Build System and CI
+## Build System
 
 `main.js` is committed on purpose — Obsidian distributes the committed bundle, so any change to `src/` or to dependencies needs a rebuilt `main.js` committed alongside it.
 
