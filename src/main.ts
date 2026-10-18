@@ -1,5 +1,6 @@
 import { Notice, Plugin, TFolder } from "obsidian";
 import { runBulkForFolder } from "./bulkOrchestrator";
+import { generateForPath } from "./cli";
 import { clearInFlight } from "./inFlight";
 import { logError } from "./logger";
 import {
@@ -38,6 +39,28 @@ export default class MetadataToolPlugin extends Plugin {
         });
       },
     });
+
+    // For automation driving Obsidian through its CLI, whose `command id=` acts
+    // on the active note and prints nothing. One file per call: a bulk run's
+    // cost cap and confirmation step stay in the folder menu.
+    this.registerCliHandler(
+      "metadator:generate",
+      "Generate metadata for one note and print the result as JSON",
+      {
+        path: {
+          value: "<path>",
+          description: "Vault path of the note",
+          required: true,
+        },
+      },
+      (params) =>
+        generateForPath(
+          this.app,
+          this.config(),
+          params,
+          this.runController.signal,
+        ),
+    );
 
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, fileOrFolder) => {
