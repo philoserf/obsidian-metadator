@@ -85,8 +85,7 @@ export class BulkSummaryModal extends Modal {
 
     if (halted) {
       const note = contentEl.createEl("p", { text: haltExplanation(halted) });
-      note.style.color = "var(--text-error)";
-      note.style.fontWeight = "bold";
+      note.setCssStyles({ color: "var(--text-error)", fontWeight: "bold" });
     }
     const summary = contentEl.createEl("ul");
     summary.createEl("li", { text: `${changed} changed` });

@@ -104,6 +104,9 @@ describe("BulkConfirmModal", () => {
     expect(warning).toBeDefined();
     // 150 files x (3 bulk retries + 1) x the SDK's own requests per attempt
     expect(warning).toContain(`${worstCaseApiCalls(150)} API calls`);
+    // Through setCssStyles and a theme variable, so a theme can restyle it.
+    const warnEl = real.el.find((el) => el.textContent.includes("Large batch"));
+    expect(warnEl?.style.color).toBe("var(--text-warning)");
     real.modal.close();
     await real.promise;
   });
@@ -229,6 +232,10 @@ describe("BulkSummaryModal", () => {
     expect(headingOf(modal)).toBe("Stopped early");
     expect(text).toContain("check your API key");
     expect(text).toContain("499 not processed (stopped early)");
+    const note = contentOf(modal).find((el) =>
+      el.textContent.includes("check your API key"),
+    );
+    expect(note?.style.color).toBe("var(--text-error)");
   });
 
   test("a halt outranks the abort flag in the heading", () => {

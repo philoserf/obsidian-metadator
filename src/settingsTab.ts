@@ -27,7 +27,7 @@ export const SETTINGS_SAVE_DEBOUNCE_MS = 400;
 export function createDebouncer(
   commit: () => void,
   delayMs: number = SETTINGS_SAVE_DEBOUNCE_MS,
-): { schedule: () => void; flush: () => void } {
+): { schedule: () => void; flush: () => void; cancel: () => void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return {
     schedule() {
@@ -44,6 +44,11 @@ export function createDebouncer(
       clearTimeout(timer);
       timer = undefined;
       commit();
+    },
+    // Drops the pending commit without running it.
+    cancel() {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
     },
   };
 }
@@ -89,6 +94,19 @@ export class MetadataToolSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: MetadataToolPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  // Sync replaced data.json under a running plugin. A save still pending from
+  // an edit here would fire after the reload and write the adopted settings
+  // straight back — nothing lost, but a write the change did not need, which
+  // Sync then carries to every other device. So the save is dropped before the
+  // reload, not flushed (flushing would clobber the incoming file), and the
+  // tab re-renders from what was adopted. An edit made here in the debounce
+  // window loses to the synced file.
+  async reloadSettings(load: () => Promise<void>): Promise<void> {
+    this.save.cancel();
+    await load();
+    this.update();
   }
 
   // Obsidian does not await hide(), so the flush is fire-and-forget.
