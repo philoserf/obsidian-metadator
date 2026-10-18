@@ -143,4 +143,13 @@ export const obsidianDoubles = {
   Modal: FakeModal,
   TFolder: FakeTFolder,
   TFile: FakeTFile,
+  // Here rather than re-mocked in cli.test.ts: a module already linked against
+  // the preloaded mock cannot pick up exports added by a later mock.module.
+  // Fakes store frontmatter as JSON, which is valid YAML, so finding the block
+  // and JSON.parse is the whole of parsing.
+  getFrontMatterInfo: (content: string) => {
+    const m = /^---\n([\s\S]*?)\n---/.exec(content);
+    return { exists: m !== null, frontmatter: m?.[1] ?? "" };
+  },
+  parseYaml: (yaml: string) => JSON.parse(yaml),
 };

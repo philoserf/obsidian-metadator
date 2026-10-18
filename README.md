@@ -18,13 +18,15 @@ If you want something similar, the code is MIT-licensed — fork it and adapt. D
 
 ## How It Works
 
-There are two ways in.
+There are three ways in.
 
 **One note.** Run **Generate metadata for current note** on the active note.
 
 **A folder.** Right-click a folder and choose **Generate metadata (recursive)**. Every markdown file in the tree is scanned and sorted into those that will change and those that will not; a confirm dialog reports both counts, the write policy, and a worst-case API-call estimate that includes retries. Above `maxBulkFiles` files-that-will-change (default 500) the confirm button is disabled until you tick an override. A progress dialog can cancel mid-run, and a summary reports what changed, what was skipped and what errored. The run halts early on an authentication error, and after a streak of consecutive failures of the same kind, rather than making hundreds of doomed calls.
 
-Both paths do the same thing per note. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description. When the note already has tags, they are sent along in their own block and the model is asked to reconcile them rather than draw a fresh set.
+**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title`, `description` and `tags` as they stand after the run. One file per call; bulk runs stay in the folder menu.
+
+All three do the same thing per note. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description. When the note already has tags, they are sent along in their own block and the model is asked to reconcile them rather than draw a fresh set.
 
 The results are written to `tags`, `description` and (optionally) `title` in YAML frontmatter, each according to its own write policy.
 
