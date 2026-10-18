@@ -36,6 +36,10 @@ export class FakeEl {
     return el;
   }
 
+  setCssStyles(styles: Record<string, string>): void {
+    Object.assign(this.style, styles);
+  }
+
   createDiv(options: FakeElOptions = {}): FakeEl {
     return this.createEl("div", options);
   }
@@ -129,6 +133,7 @@ export const obsidianDoubles = {
     }
     hide(): void {}
     refreshDomState(): void {}
+    update(): void {}
   },
   // Chainable no-ops: the key row's render callback builds one, though no
   // test runs render — the settings tab is tested as definition data.

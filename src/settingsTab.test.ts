@@ -63,6 +63,18 @@ describe("createDebouncer (#177)", () => {
     expect(commits).toBe(1);
   });
 
+  test("cancel drops a pending commit without running it", async () => {
+    let commits = 0;
+    const d = createDebouncer(() => commits++, 20);
+
+    d.schedule();
+    d.cancel();
+    d.flush();
+    await tick(40);
+
+    expect(commits).toBe(0);
+  });
+
   test("a later burst schedules again after a flush", async () => {
     let commits = 0;
     const d = createDebouncer(() => commits++, 20);
@@ -86,6 +98,29 @@ describe("MetadataToolSettingTab", () => {
     const app = { secretStorage: { listSecrets: () => [] } } as unknown as App;
     return { tab: new MetadataToolSettingTab(app, plugin), plugin };
   }
+
+  test("an external reload drops a pending save, then re-renders (#292)", async () => {
+    const saves: string[] = [];
+    const { tab, plugin } = makeTab();
+    plugin.saveSettings = async () => {
+      saves.push(plugin.settings.tagsFieldName);
+    };
+    const order: string[] = [];
+    tab.update = () => order.push("update");
+
+    tab.setControlValue("tagsFieldName", "edited-here");
+    await tab.reloadSettings(async () => {
+      order.push("load");
+      plugin.settings = { ...DEFAULT_SETTINGS, tagsFieldName: "synced" };
+    });
+    tab.hide(); // flushes anything still pending
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Without the cancel, hide() would write the adopted settings straight
+    // back to the file Sync just delivered.
+    expect(saves).toEqual([]);
+    expect(order).toEqual(["load", "update"]);
+  });
 
   function rows(tab: MetadataToolSettingTab): SettingDefinition[] {
     return tab

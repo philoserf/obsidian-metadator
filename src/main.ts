@@ -25,6 +25,7 @@ export default class MetadataToolPlugin extends Plugin {
   // can be tested without a Plugin; this field is only where the answer is
   // kept between the two calls.
   private writesBlocked = false;
+  private settingTab!: MetadataToolSettingTab;
 
   override async onload(): Promise<void> {
     this.runController = new AbortController();
@@ -96,7 +97,16 @@ export default class MetadataToolPlugin extends Plugin {
       }),
     );
 
-    this.addSettingTab(new MetadataToolSettingTab(this.app, this));
+    this.settingTab = new MetadataToolSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
+  }
+
+  // loadSettings writes only when the synced file carries a legacy plaintext
+  // key to move into the keychain, so an ordinary change is adopted without a
+  // write and cannot bounce data.json between devices. A file from a newer
+  // version is adopted as a block, exactly as at load.
+  override async onExternalSettingsChange(): Promise<void> {
+    await this.settingTab.reloadSettings(() => this.loadSettings());
   }
 
   override onunload(): void {

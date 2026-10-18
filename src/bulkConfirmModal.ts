@@ -84,8 +84,7 @@ export class BulkConfirmModal extends Modal {
       const warn = contentEl.createEl("p", {
         text: `⚠ Large batch — ${willChange} notes, up to ${worstCaseApiCalls(willChange)} API calls if rate limits force retries`,
       });
-      warn.style.color = "var(--text-warning)";
-      warn.style.fontWeight = "bold";
+      warn.setCssStyles({ color: "var(--text-warning)", fontWeight: "bold" });
     }
 
     const exceedsCap = exceedsBulkCap(willChange, settings);
@@ -94,8 +93,7 @@ export class BulkConfirmModal extends Modal {
       const cap = contentEl.createEl("p", {
         text: `⛔ Exceeds the configured limit of ${settings.maxBulkFiles} files. Raise "Max Bulk Files" in Settings → Metadator, or check the box below to override for this run only.`,
       });
-      cap.style.color = "var(--text-error)";
-      cap.style.fontWeight = "bold";
+      cap.setCssStyles({ color: "var(--text-error)", fontWeight: "bold" });
 
       const overrideRow = contentEl.createDiv();
       overrideEl = overrideRow.createEl("input", {
@@ -105,7 +103,7 @@ export class BulkConfirmModal extends Modal {
         text: ` I understand and want to proceed with ${willChange} files`,
         attr: { for: "metadator-override-cap" },
       });
-      label.style.marginLeft = "0.4em";
+      label.setCssStyles({ marginLeft: "0.4em" });
     }
 
     const buttons = contentEl.createDiv({ cls: "modal-button-container" });
