@@ -1,5 +1,27 @@
 # Changelog
 
+## 4.1.0
+
+Automation can now run Metadator on a named note, and settings synced from another device take effect without a restart.
+
+### Added
+
+- **`metadator:generate` CLI handler.** `obsidian metadator:generate path="Inbox/Note.md"` runs the single-note path on the named file and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when nothing changed, and the note's `title`, `description` and `tags` as read back from disk after the run. One file per call; bulk runs stay in the folder menu. (#291)
+
+### Fixed
+
+- **Settings synced from another device are adopted live.** Before this, a running plugin kept its old settings until restart, and its next save wrote that stale copy back over the synced file. Now the synced file is reloaded without a write: a save still pending from an edit on this device is dropped rather than flushed, and an open settings tab re-renders. A file from a newer plugin version blocks writes exactly as at startup. (#292)
+
+### Changed
+
+- The bulk modals' warning and error text is styled through `setCssStyles` with theme variables instead of direct `.style` assignments. (#292)
+
+### Internal
+
+- CI, release and Dependabot workflows removed; the local gate (`bun run build`, `bun test`, a clean `main.js` diff) is the only check, and releases go through the release skills. (#294, #295)
+- Type-checking uses `bun --check` instead of `tsc --noEmit`. (#296)
+- `@anthropic-ai/sdk` 0.131.0 → 0.135.0, which adds `@opentelemetry/api` as a dependency; `main.js` grows from about 249 KB to 350 KB, nearly all of it inside the SDK. Dev tooling: `obsidian` 1.14.4 (types only; `minAppVersion` stays 1.13.0), `@types/bun` 1.4.3, `@types/node` 26.6.5, `prettier` 3.9.10.
+
 ## 4.0.0
 
 The API key leaves plaintext `data.json` for Obsidian's keychain, and the settings tab is rebuilt on Obsidian's declarative settings API. Both need Obsidian 1.13.0, so they ship together.
