@@ -1415,7 +1415,7 @@ meets the second first.
 
 `main.js` is committed on purpose — Obsidian distributes the committed bundle. Nothing
 automated enforces a rebuild: there is no CI, and no Dependabot. The local gate is
-`bun run build` (typecheck, Biome, Prettier, bundle), `bun test`, and
+`bun run build` (typecheck, Biome, `bun fmt`, bundle), `bun test`, and
 `git diff --exit-code main.js` on the result, so a source or dependency change without
 a rebuilt bundle fails before it is pushed. A Bun release that shifts bundler output
 shows up the same way, because Bun floats on purpose.
