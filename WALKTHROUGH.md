@@ -1428,10 +1428,12 @@ still appears verbatim in its source. The release is a bare-semver tag carrying
 
 ## Index
 
-This pass brought the document to release 4.1.0. The CLI path and the sync reload are
-new; Startup's `onload` was re-quoted for the CLI registration and the kept setting tab;
-Build and release was rewritten, because the CI, release and Dependabot workflows it
-described were removed. Every other snippet still matches its source verbatim. The
+This pass brought the document to release 4.1.1. Nothing under `src/` changed since
+4.1.0 — the release moves the SDK to 1.3.0 and swaps Prettier for `bun fmt` — so every
+snippet still matches its source verbatim. The 4.1.0 pass added the CLI path and the
+sync reload, re-quoted Startup's `onload` for the CLI registration and the kept setting
+tab, and rewrote Build and release after the CI, release and Dependabot workflows were
+removed. The
 three places the linear order broke down are recorded above rather than filed, because
 they describe the structure rather than a defect in it.
 

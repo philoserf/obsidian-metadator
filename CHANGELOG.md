@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.1.1
+
+The Anthropic SDK moves to its first major release, which pins a newer API version. Nothing Metadator sends is affected.
+
+### Changed
+
+- **`@anthropic-ai/sdk` 0.135.0 → 1.3.0.** Requests now go out with `anthropic-version: 2026-10-21` instead of `2023-06-01`. That API version rejects `temperature`, `top_p` and `top_k`; the adapter sends none of them. A live `bun run compare-models` run on the built-in sample note returned tags, description and title from `claude-sonnet-5`, `claude-opus-5`, `claude-fable-5-1` and `claude-haiku-4-5`. `main.js` grows from about 352 KB to 385 KB, the growth inside the SDK. (#302, #303)
+
+### Internal
+
+- Markdown is formatted and checked with `bun fmt` instead of Prettier; it reads the existing `.prettierrc.json` and `.prettierignore`, and `prettier` leaves `devDependencies`. (#300, #301)
+- Dev tooling: `@biomejs/biome` 2.6.3, `@types/bun` 1.4.4. (#303)
+
 ## 4.1.0
 
 Automation can now run Metadator on a named note, and settings synced from another device take effect without a restart.

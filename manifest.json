@@ -1,7 +1,7 @@
 {
   "id": "metadator",
   "name": "Metadator",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "minAppVersion": "1.13.0",
   "description": "Automatically generate metadata for your notes using AI",
   "author": "Mark Ayers",
