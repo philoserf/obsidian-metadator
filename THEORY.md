@@ -190,8 +190,9 @@ otherwise never execute under test, which is how an unbounded Latin+CJK merge on
 
 **Frontmatter field names must differ — but only the ones in use.** Two colliding names
 clobber each other in the user's _notes_, not in plugin state, and the run reports success.
-When title generation is off, `titleFieldName` is inert and must not be counted, or fixing
-an unused value destroys two that were fine.
+A field that is switched off has an inert name that must not be counted, or fixing an
+unused value destroys names that were fine. Since 4.2.0 that holds for tags and description
+as well as title.
 
 **A newer `data.json` makes this install read-only.** No backup sits behind that rule. The
 decision is in `settingsStore.ts` as a pure function so it can be tested at all.
@@ -208,7 +209,9 @@ which is all that can be done about it from inside the plugin.
 Schema v4 is the read-only rule used on purpose. Its migration rewrites nothing; the bump
 exists so that a 3.x install syncing the same file sees a newer schema and stops writing,
 instead of saving the file back without the secret's ID. A version bump with an empty
-migration is a legitimate tool here, not an oversight.
+migration is a legitimate tool here, not an oversight. Schema v5 uses it again: its
+migration only adds the tags and description toggles, and the bump keeps a v4 build from
+saving the file back without them, which would turn tag generation silently back on.
 
 ## What it accommodates, and what it does not
 

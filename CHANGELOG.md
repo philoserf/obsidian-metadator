@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 4.2.0
 
 Tags and description can be switched off, the way title already could.
 

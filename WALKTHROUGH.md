@@ -164,6 +164,11 @@ key. Those were duplicated with the headless core five lines later, purely so th
 layer could word them itself; with typed skip reasons it renders them from the
 result instead. Only the no-file guard stays, because there is no file to pass.
 
+One guard comes before even that one. With tags, description and title all switched
+off there is nothing to ask for, and that is a fact about the settings, not the note.
+`shouldGenerate` would refuse too, but as `already_populated`, which sends the user
+looking at a note that is fine.
+
 `src/singleNote.ts` — `generateMetadata`
 
 ```ts
@@ -172,6 +177,14 @@ export async function generateMetadata(
   settings: MetadataConfig,
   opts: InteractiveGenerateOptions = {},
 ): Promise<void> {
+  // A configuration problem, not a property of the note, so it is reported
+  // before anything else. shouldGenerate would also refuse, but as
+  // "already populated", which sends the user looking at the note (#305).
+  if (!anyFieldEnabled(settings)) {
+    new Notice(NO_FIELDS_ENABLED_MESSAGE, 8000);
+    return;
+  }
+
   const file = app.workspace.getActiveFile();
   if (!file) {
     new Notice("Please open a file first");
@@ -258,7 +271,8 @@ and prints one JSON object, so a skill can say which note and see what happened.
 `generateMetadataForFile`, and renders the `FileResult` — as JSON, where the command
 renders Notices. Every failure becomes a returned object, because Obsidian prints
 whatever string the handler returns and a thrown error would reach the caller as
-nothing.
+nothing. With every field off it returns an error rather than a skip, carrying the same
+message the command shows, so a skill looping over paths stops instead of moving on.
 
 `src/cli.ts` — `run`
 
@@ -269,6 +283,11 @@ async function run(
   params: CliData,
   signal?: AbortSignal,
 ): Promise<CliOutput> {
+  // An error, not a skip: nothing about the file was consulted, and a skill
+  // driving the CLI should stop rather than move on to the next path (#305).
+  if (!anyFieldEnabled(settings)) {
+    return { status: "error", reason: NO_FIELDS_ENABLED_MESSAGE };
+  }
   const path = params.path;
   if (!path || path === "true") {
     return { status: "error", reason: "path=<vault path> is required" };
@@ -443,7 +462,9 @@ export function acquire(path: string): boolean {
 
 `shouldGenerate` decides whether to spend money at all. Only a `preserve` field can
 make a request pointless — every other policy writes whatever comes back — so the
-question is whether _any_ enabled field would write.
+question is whether _any_ enabled field would write. A disabled field never writes,
+so with all three off this is false for every note — the backstop behind the
+entry points' own up-front refusal.
 
 `src/metadata.ts` — `willWrite`, `shouldGenerate`
 
@@ -459,15 +480,34 @@ export function shouldGenerate(
   frontMatter: Record<string, unknown>,
   settings: MetadataConfig,
 ): boolean {
+  const fields = enabledFields(settings);
   return (
-    willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName]) ||
-    willWrite(
-      settings.descriptionPolicy,
-      frontMatter[settings.descriptionFieldName],
-    ) ||
-    (settings.enableTitle &&
+    (fields.has("tags") &&
+      willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName])) ||
+    (fields.has("description") &&
+      willWrite(
+        settings.descriptionPolicy,
+        frontMatter[settings.descriptionFieldName],
+      )) ||
+    (fields.has("title") &&
       willWrite(settings.titlePolicy, frontMatter[settings.titleFieldName]))
   );
+}
+```
+
+Which fields are on has one definition, `enabledFields` in `settings.ts`. The tool
+schema, validation, the prompt, the write loop, the folder run's pre-scan and the
+confirm modal all read it, so no two of them can disagree.
+
+`src/settings.ts` — `enabledFields`, `anyFieldEnabled`
+
+```ts
+export function enabledFields(settings: FieldToggles): Set<MetadataField> {
+  return new Set(METADATA_FIELDS.filter((f) => settings[FIELD_ENABLE_KEY[f]]));
+}
+
+export function anyFieldEnabled(settings: FieldToggles): boolean {
+  return enabledFields(settings).size > 0;
 }
 ```
 
@@ -667,30 +707,30 @@ containing a comma silently became two, and nothing capped how many came back.
 `maxItems` is a sanity ceiling on one response, not the target count — that lives in
 the user's editable prompt.
 
+The schema takes the set of enabled fields. A disabled field is not declared and not
+required, so the model is never asked for it, and validation does not demand it.
+
 `src/adapters/claude.ts` — `buildToolSchema`
 
 ```ts
-function buildToolSchema(includeTitle: boolean) {
-  const properties: Record<string, JsonSchemaProperty> = {
+export function buildToolSchema(fields: ReadonlySet<MetadataField>) {
+  const properties: Record<string, JsonSchemaProperty> = {};
+  const required: MetadataField[] = [];
+  if (fields.has("tags")) {
     // An array rather than one comma-separated string: splitting on commas
     // meant a tag containing a comma silently became two, which the default
     // tagsPrompt had to instruct around. The bounds cap what a single
     // regeneration can contribute to a note's tag list.
-    tags: {
+    properties.tags = {
       type: "array",
       items: { type: "string" },
       minItems: 1,
       maxItems: MAX_TAGS_PER_RESPONSE,
       description:
         "Tags describing the article, one per array element. Follow the user's tag instructions.",
-    },
-    description: {
-      type: "string",
-      description:
-        "Brief summary of the article. Follow the user's description instructions.",
-    },
-  };
-  const required = ["tags", "description"];
+    };
+    required.push("tags");
+  }
   ...
 ```
 
@@ -720,18 +760,26 @@ A model returning `["", "  "]` passes validation and is truthy, but normalizes t
 `[]` — which the append path once wrote as an empty tags array while reporting
 success.
 
+Every write is also guarded on the same `enabledFields` set that built the tool
+schema. A disabled field is never written, and a value the note already holds for it
+is left as it is, not deleted.
+
 `src/metadata.ts` — `addMetadataWithClaude`
 
 ```ts
   const updates: FieldUpdate[] = [];
+  // Every write below is guarded on the same set that built the tool schema,
+  // so a disabled field is never written and its existing value is left as it
+  // is — not deleted (#305).
+  const fields = enabledFields(settings);
 
   // Guarded on the normalized result, not the raw field. A model returning
   // ["", "  "] satisfies validateMetadataInput but normalizeTags yields [] —
   // which the append path then wrote as an empty tags array and reported as a
   // change, so the user was told "Metadata updated successfully" for content
   // that did not exist (#161).
-  const tags = normalizeTags(metadata.tags);
-  if (tags.length > 0) {
+  const tags = normalizeTags(metadata.tags ?? []);
+  if (fields.has("tags") && tags.length > 0) {
     updates.push({
       kind: "list",
       fieldName: settings.tagsFieldName,
@@ -742,11 +790,12 @@ success.
   // Same shape as the tags guard: judge the value that would actually be
   // written, not the raw string. validateMetadataInput only checks that these
   // are strings, so "   " reaches here as truthy and wrote a blank description.
-  if (metadata.description.trim() !== "") {
+  const description = metadata.description ?? "";
+  if (fields.has("description") && description.trim() !== "") {
     updates.push({
       kind: "scalar",
       fieldName: settings.descriptionFieldName,
-      value: metadata.description,
+      value: description,
       policy: settings.descriptionPolicy,
     });
   }
@@ -754,7 +803,7 @@ success.
   // unwraps to "". Guarding on metadata.title instead let that through and
   // wrote an empty title while reporting "Metadata updated successfully".
   const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
-  if (settings.enableTitle && title !== "") {
+  if (fields.has("title") && title !== "") {
     updates.push({
       kind: "scalar",
       fieldName: settings.titleFieldName,
@@ -841,7 +890,11 @@ collection, a confirm gate, a retry and halt policy, and progress reporting.
 `collectCandidates` walks the tree and sorts once over the whole result — sorting
 per level would order each folder's children but still interleave subtrees.
 `classifyCandidates` then splits them on `shouldGenerate`, which is what makes every
-downstream number "files that will change" rather than "files scanned".
+downstream number "files that will change" rather than "files scanned". Because
+`shouldGenerate` reads only the enabled fields, a note missing just a disabled field
+counts as a skip. With every field off the orchestrator refuses before the pre-scan,
+which would otherwise class the whole folder as skip and report the notes as already
+having metadata.
 
 `src/bulkGenerate.ts` — `classifyCandidates`
 
@@ -1128,9 +1181,9 @@ console.log("fresh install".padEnd(24), JSON.stringify(migrateSettings(null)));
 ```
 
 ```text
-v2 preserve_existing     tags=preserve desc=preserve title=preserve | v4
-v2 always_regenerate     tags=regenerate desc=regenerate title=regenerate | v4
-v0 legacy bag            tags=preserve desc=preserve title=preserve | v4
+v2 preserve_existing     tags=preserve desc=preserve title=preserve | v5
+v2 always_regenerate     tags=regenerate desc=regenerate title=regenerate | v5
+v0 legacy bag            tags=preserve desc=preserve title=preserve | v5
 fresh install            {"kind":"missing"}
 ```
 
@@ -1153,12 +1206,12 @@ console.log(
 );
 console.log(
   "recovers on an in-version load:",
-  !decideLoad(migrateSettings({ schemaVersion: 4 })).writesBlocked,
+  !decideLoad(migrateSettings({ schemaVersion: 5 })).writesBlocked,
 );
 ```
 
 ```text
-[Metadator] data.json schemaVersion=99 is newer than this plugin (4). Falling back to defaults to avoid corrupting your data.
+[Metadator] data.json schemaVersion=99 is newer than this plugin (5). Falling back to defaults to avoid corrupting your data.
 writes blocked: true
 save decision : "refuse"
 recovers on an in-version load: true
@@ -1257,7 +1310,7 @@ for (const [label, held, preset] of [
 
 ```text
 legacyApiKey  : "sk-ant-old"
-key in bag    : false | v4
+key in bag    : false | v5
 empty keychain           -> id="anthropic-api-key" save=true keychain=["anthropic-api-key"]
 same key already shared  -> id="anthropic-api-key" save=true keychain=["anthropic-api-key"]
 different key shared     -> id="metadator-anthropic-api-key" save=true keychain=["anthropic-api-key","metadator-anthropic-api-key"]
@@ -1267,13 +1320,36 @@ ID already set (synced)  -> id="anthropic-api-key" save=true keychain=[]
 The last row is the second-device case, and it is why the settings tab has to say
 more than "API key": the secret's _name_ arrived with `data.json`, its value did not.
 
+### Field toggles
+
+Version 5 gives tags and description the on/off toggle title already had. The
+migration sets both on, so an upgrade changes nothing, and as with version 4 the bump
+is the point: a v4 build syncing the same `data.json` would save it back without the
+new keys, and tag generation would quietly turn back on. Seeing version 5, that build
+goes read-only.
+
+`src/settingsMigrate.ts` — `MIGRATIONS`, the entry producing version 5
+
+```ts
+        if (s.enableTags === undefined) s.enableTags = true;
+        if (s.enableDescription === undefined) s.enableDescription = true;
+```
+
+The three field names must differ, or the writes clobber each other in the note. The
+check is made only among the enabled fields. A disabled field whose name collides is
+reset to its default on load, leaving the names in use alone, so that turning it back
+on later cannot trip the stricter branch and reset the others with it. This rule
+covered only title before version 5.
+
 ### The settings tab
 
 The tab is declarative (Obsidian 1.13.0). `getSettingDefinitions` returns five groups
 of rows — Anthropic API, Write policy, Tags, Description, Title — and Obsidian renders
 them, indexes them for settings search, and hands each change to `setControlValue`.
 Rows validate inline: an invalid value shows a message and stores nothing, rather
-than being stored and snapped back.
+than being stored and snapped back. The Tags, Description and Title groups each open
+with an enable toggle, and turning one off greys out that field's name, prompt and
+write policy rows.
 
 Every write goes through `migrateSettings`, the same path a reload takes, so an edit
 stores exactly what the next load would produce — a field name trimmed, an emptied
@@ -1289,7 +1365,7 @@ dropped instead (below).
     if (result.kind !== "ok") return;
     this.plugin.settings = result.settings;
     this.save.schedule();
-    // The truncate and title toggles disable other rows.
+    // The truncate and field toggles disable other rows.
     this.refreshDomState();
   }
 ```
@@ -1428,9 +1504,11 @@ still appears verbatim in its source. The release is a bare-semver tag carrying
 
 ## Index
 
-This pass brought the document to release 4.1.1. Nothing under `src/` changed since
-4.1.0 — the release moves the SDK to 1.3.0 and swaps Prettier for `bun fmt` — so every
-snippet still matches its source verbatim. The 4.1.0 pass added the CLI path and the
+This pass brought the document to release 4.2.0, which adds the tags and description
+toggles. It re-quoted the command's and the CLI's all-off guard, `shouldGenerate`,
+`buildToolSchema` and the write loop, added `enabledFields` and the version 5
+migration, and re-ran the transcripts that print a schema version. The 4.1.1 pass
+changed no snippets. The 4.1.0 pass added the CLI path and the
 sync reload, re-quoted Startup's `onload` for the CLI registration and the kept setting
 tab, and rewrote Build and release after the CI, release and Dependabot workflows were
 removed. The
