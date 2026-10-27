@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { App } from "obsidian";
-import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  type MetadataConfig,
+  NO_FIELDS_ENABLED_MESSAGE,
+} from "./settings";
 
 const mockCreate = mock();
 mock.module("@anthropic-ai/sdk", () => {
@@ -150,5 +154,21 @@ describe("metadator:generate", () => {
       file: "Inbox/X.md",
       reason: "not_markdown",
     });
+  });
+});
+
+describe("metadator:generate with all three fields disabled (#305)", () => {
+  test("returns an error naming the settings and makes no API call", async () => {
+    const out = await run(
+      makeApp({}),
+      settings({
+        enableTags: false,
+        enableDescription: false,
+        enableTitle: false,
+      }),
+    );
+
+    expect(out).toEqual({ status: "error", reason: NO_FIELDS_ENABLED_MESSAGE });
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

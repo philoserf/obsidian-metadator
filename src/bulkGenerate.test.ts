@@ -281,6 +281,52 @@ describe("classifyCandidates", () => {
     );
     expect(withoutTitle.willChange).toHaveLength(0);
   });
+
+  // The pre-scan is what the folder run counts and caps on, so a disabled
+  // field must not make a note look like it will change (#305).
+  test("ignores a missing tags or description field when that field is off", () => {
+    const f = file("bare.md");
+    const app = makeApp(new Map([["bare.md", { title: "T" }]]));
+    const preserveAll = {
+      tagsPolicy: "preserve",
+      descriptionPolicy: "preserve",
+      titlePolicy: "preserve",
+    } as const;
+
+    expect(
+      classifyCandidates(
+        app,
+        [f],
+        settings({ ...preserveAll, enableTags: false }),
+      ).willChange,
+    ).toHaveLength(1);
+    expect(
+      classifyCandidates(
+        app,
+        [f],
+        settings({
+          ...preserveAll,
+          enableTags: false,
+          enableDescription: false,
+        }),
+      ).willChange,
+    ).toHaveLength(0);
+  });
+
+  test("with every field off nothing will change, whatever the policies", () => {
+    const f = file("bare.md");
+    const app = makeApp(new Map([["bare.md", {}]]));
+    const result = classifyCandidates(
+      app,
+      [f],
+      settings({
+        enableTags: false,
+        enableDescription: false,
+        enableTitle: false,
+      }),
+    );
+    expect(result.willChange).toHaveLength(0);
+  });
 });
 
 describe("runBulk", () => {

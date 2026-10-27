@@ -226,7 +226,37 @@ describe("MetadataToolSettingTab", () => {
     expect(isDisabled(tab, "truncateMethod")).toBe(true);
     expect(isDisabled(tab, "titleFieldName")).toBe(true);
     expect(isDisabled(tab, "titlePrompt")).toBe(true);
+    expect(isDisabled(tab, "titlePolicy")).toBe(true);
     expect(isDisabled(tab, "tagsPrompt")).toBe(false);
+  });
+
+  test("each field has a toggle (#305)", () => {
+    const { tab } = makeTab();
+    for (const key of ["enableTags", "enableDescription", "enableTitle"]) {
+      expect(control(tab, key).type).toBe("toggle");
+    }
+  });
+
+  test("the tags toggle disables the tags name, prompt and policy (#305)", () => {
+    const { tab } = makeTab({ enableTags: false });
+    expect(isDisabled(tab, "tagsFieldName")).toBe(true);
+    expect(isDisabled(tab, "tagsPrompt")).toBe(true);
+    expect(isDisabled(tab, "tagsPolicy")).toBe(true);
+    expect(isDisabled(tab, "descriptionPrompt")).toBe(false);
+    expect(isDisabled(tab, "titlePrompt")).toBe(false);
+  });
+
+  test("the description toggle disables the description name, prompt and policy (#305)", () => {
+    const { tab } = makeTab({ enableDescription: false });
+    expect(isDisabled(tab, "descriptionFieldName")).toBe(true);
+    expect(isDisabled(tab, "descriptionPrompt")).toBe(true);
+    expect(isDisabled(tab, "descriptionPolicy")).toBe(true);
+    expect(isDisabled(tab, "tagsPrompt")).toBe(false);
+  });
+
+  test("refuses a colliding tags name even while tags are off (#305)", async () => {
+    const { tab } = makeTab({ enableTags: false });
+    expect(await validate(tab, "tagsFieldName", "description")).toBeTruthy();
   });
 });
 

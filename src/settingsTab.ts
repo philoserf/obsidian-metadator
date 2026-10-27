@@ -124,7 +124,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     if (result.kind !== "ok") return;
     this.plugin.settings = result.settings;
     this.save.schedule();
-    // The truncate and title toggles disable other rows.
+    // The truncate and field toggles disable other rows.
     this.refreshDomState();
   }
 
@@ -142,13 +142,15 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         placeholder: DEFAULT_SETTINGS[key],
         ...(disabled && { disabled }),
         // The three names must differ, or one field's write clobbers
-        // another's in the note (#200). Checked as if titles were on: an
-        // inert title name that collides would be reset by the load path the
-        // moment it was stored (#248), so it is refused here instead.
+        // another's in the note (#200). Checked as if every field were on: an
+        // inert name that collides would be reset by the load path the moment
+        // it was stored (#248), so it is refused here instead.
         validate: (value: string) =>
           areFieldNamesDistinct({
             ...this.plugin.settings,
             [key]: value.trim() || DEFAULT_SETTINGS[key],
+            enableTags: true,
+            enableDescription: true,
             enableTitle: true,
           })
             ? undefined
@@ -183,6 +185,10 @@ export class MetadataToolSettingTab extends PluginSettingTab {
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const settings = (): MetadataToolSettings => this.plugin.settings;
     const truncateOff = () => !settings().truncateContent;
+    // A field that is off is never asked for or written, so its name, prompt
+    // and policy rows have nothing to configure (#305).
+    const tagsOff = () => !settings().enableTags;
+    const descriptionOff = () => !settings().enableDescription;
     const titleOff = () => !settings().enableTitle;
 
     return [
@@ -260,6 +266,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               type: "dropdown",
               key: "tagsPolicy",
               options: TAGS_POLICY_LABELS,
+              disabled: tagsOff,
             },
           },
           {
@@ -269,6 +276,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               type: "dropdown",
               key: "descriptionPolicy",
               options: SCALAR_POLICY_LABELS,
+              disabled: descriptionOff,
             },
           },
           {
@@ -278,6 +286,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               type: "dropdown",
               key: "titlePolicy",
               options: SCALAR_POLICY_LABELS,
+              disabled: titleOff,
             },
           },
           {
@@ -326,16 +335,26 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         type: "group",
         heading: "Tags",
         items: [
-          this.fieldName("Tags", "tagsFieldName"),
-          this.prompt("Tags", "tagsPrompt"),
+          {
+            name: "Enable tags",
+            desc: "Generate tags metadata. When off, tags are not requested and an existing value is left as it is.",
+            control: { type: "toggle", key: "enableTags" },
+          },
+          this.fieldName("Tags", "tagsFieldName", tagsOff),
+          this.prompt("Tags", "tagsPrompt", tagsOff),
         ],
       },
       {
         type: "group",
         heading: "Description",
         items: [
-          this.fieldName("Description", "descriptionFieldName"),
-          this.prompt("Description", "descriptionPrompt"),
+          {
+            name: "Enable description",
+            desc: "Generate description metadata. When off, a description is not requested and an existing value is left as it is.",
+            control: { type: "toggle", key: "enableDescription" },
+          },
+          this.fieldName("Description", "descriptionFieldName", descriptionOff),
+          this.prompt("Description", "descriptionPrompt", descriptionOff),
         ],
       },
       {
@@ -344,7 +363,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         items: [
           {
             name: "Enable title",
-            desc: "Generate title metadata.",
+            desc: "Generate title metadata. When off, a title is not requested and an existing value is left as it is.",
             control: { type: "toggle", key: "enableTitle" },
           },
           this.fieldName("Title", "titleFieldName", titleOff),

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { App } from "obsidian";
-import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  type MetadataConfig,
+  NO_FIELDS_ENABLED_MESSAGE,
+} from "./settings";
 import { FakeNotice } from "./testDom";
 
 const mockCreate = mock();
@@ -149,5 +153,23 @@ describe("no skip is silent (#237)", () => {
     await generateMetadata(makeApp({ file: null }), settings());
 
     expect(shown()).toEqual(["Please open a file first"]);
+  });
+});
+
+// A configuration problem, said as one: the "already populated" skip the
+// pipeline would otherwise report sends the user looking at the note (#305).
+describe("all three fields disabled", () => {
+  test("shows a notice naming the settings and makes no API call", async () => {
+    await generateMetadata(
+      makeApp({}),
+      settings({
+        enableTags: false,
+        enableDescription: false,
+        enableTitle: false,
+      }),
+    );
+
+    expect(shown()).toEqual([NO_FIELDS_ENABLED_MESSAGE]);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

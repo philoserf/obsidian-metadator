@@ -1,4 +1,4 @@
-import type { MetadataToolSettings } from "./settings";
+import { enabledFields, type MetadataToolSettings } from "./settings";
 
 export interface PromptParts {
   system: string;
@@ -18,17 +18,22 @@ export function buildPrompt(
   delimiter = "article",
   existingTags: readonly string[] = [],
 ): PromptParts {
+  const fields = enabledFields(settings);
   const systemParts = [
     "Generate metadata for the provided article and submit it via the submit_metadata tool. Field requirements:",
-    "",
-    `1. Tags: ${settings.tagsPrompt}`,
-    "",
-    `2. Description: ${settings.descriptionPrompt}`,
   ];
 
-  if (settings.enableTitle) {
-    systemParts.push("", `3. Title: ${settings.titlePrompt}`);
+  // Only the enabled fields' instructions, numbered in order, so a disabled
+  // field is never mentioned to the model (#305).
+  const sections: string[] = [];
+  if (fields.has("tags")) sections.push(`Tags: ${settings.tagsPrompt}`);
+  if (fields.has("description")) {
+    sections.push(`Description: ${settings.descriptionPrompt}`);
   }
+  if (fields.has("title")) sections.push(`Title: ${settings.titlePrompt}`);
+  sections.forEach((section, i) => {
+    systemParts.push("", `${i + 1}. ${section}`);
+  });
 
   systemParts.push(
     "",
@@ -49,7 +54,9 @@ export function buildPrompt(
   // content to describe and never instructions to follow, and these are
   // neither. They get their own block, carrying the same per-request suffix so
   // a tag cannot close the wrapper (#204).
-  if (existingTags.length > 0) {
+  //
+  // Not sent when tags are off: there is nothing for the model to reconcile.
+  if (fields.has("tags") && existingTags.length > 0) {
     const tagsDelimiter = `current-tags-${delimiter}`;
     systemParts.push(
       "",

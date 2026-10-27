@@ -810,3 +810,95 @@ describe("existing tags reach the request (#251)", () => {
     expect(sentUserMessage()).toContain("from-keywords");
   });
 });
+
+// A disabled field is never written, and whatever the note already holds for
+// it is left exactly as it is — not deleted, not overwritten (#305).
+describe("disabled fields are not written (#305)", () => {
+  beforeEach(() => {
+    mockCreate.mockClear();
+  });
+
+  test("tags disabled: existing tags are untouched even if the model volunteers some", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["new"], description: "desc", title: "T" }),
+    );
+    const { app, fm } = makeApp({ frontmatter: { tags: ["old"] } });
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as never,
+      makeSettings({ enableTags: false }),
+    );
+
+    expect(result.kind).toBe("changed");
+    expect(fm.tags).toEqual(["old"]);
+    expect(fm.description).toBe("desc");
+  });
+
+  test("tags disabled: a note without tags does not gain them", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["new"], description: "desc", title: "T" }),
+    );
+    const { app, fm } = makeApp({});
+
+    await generateMetadataForFile(
+      app,
+      makeFile() as never,
+      makeSettings({ enableTags: false }),
+    );
+
+    expect("tags" in fm).toBe(false);
+  });
+
+  test("description disabled: the existing description is untouched", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["a"], description: "new", title: "T" }),
+    );
+    const { app, fm } = makeApp({ frontmatter: { description: "keep" } });
+
+    await generateMetadataForFile(
+      app,
+      makeFile() as never,
+      makeSettings({ enableDescription: false }),
+    );
+
+    expect(fm.description).toBe("keep");
+    expect(fm.tags).toEqual(["a"]);
+  });
+
+  test("a missing disabled field does not make a note worth a call", async () => {
+    const { app } = makeApp({
+      frontmatter: { description: "d", title: "t" },
+    });
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as never,
+      makeSettings({ ...PRESERVE_ALL, enableTags: false }),
+    );
+
+    expect(result).toMatchObject({
+      kind: "skipped",
+      reason: "already_populated",
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test("all three disabled: no API call and nothing written", async () => {
+    const { app, writes } = makeApp({});
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as never,
+      makeSettings({
+        enableTags: false,
+        enableDescription: false,
+        enableTitle: false,
+      }),
+    );
+
+    expect(result.kind).toBe("skipped");
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(writes()).toBe(0);
+  });
+});

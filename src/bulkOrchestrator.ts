@@ -8,7 +8,11 @@ import {
 } from "./bulkGenerate";
 import { BulkProgressModal } from "./bulkProgressModal";
 import { BulkSummaryModal } from "./bulkSummaryModal";
-import type { MetadataConfig } from "./settings";
+import {
+  anyFieldEnabled,
+  type MetadataConfig,
+  NO_FIELDS_ENABLED_MESSAGE,
+} from "./settings";
 
 export interface RunBulkForFolderOptions {
   signal?: AbortSignal;
@@ -20,6 +24,13 @@ export async function runBulkForFolder(
   settings: MetadataConfig,
   opts: RunBulkForFolderOptions = {},
 ): Promise<void> {
+  // Before the pre-scan: with every field off it would classify the whole
+  // folder as skip and say the notes "already have metadata" (#305).
+  if (!anyFieldEnabled(settings)) {
+    new Notice(NO_FIELDS_ENABLED_MESSAGE, 8000);
+    return;
+  }
+
   if (!settings.anthropicApiKey) {
     new Notice(
       "Please configure your Anthropic API key in Settings → Metadator",

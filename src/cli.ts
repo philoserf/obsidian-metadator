@@ -6,7 +6,11 @@ import {
   type TFile,
 } from "obsidian";
 import { type FileResult, generateMetadataForFile } from "./metadata";
-import type { MetadataConfig } from "./settings";
+import {
+  anyFieldEnabled,
+  type MetadataConfig,
+  NO_FIELDS_ENABLED_MESSAGE,
+} from "./settings";
 
 interface Fields {
   title?: unknown;
@@ -42,6 +46,11 @@ async function run(
   params: CliData,
   signal?: AbortSignal,
 ): Promise<CliOutput> {
+  // An error, not a skip: nothing about the file was consulted, and a skill
+  // driving the CLI should stop rather than move on to the next path (#305).
+  if (!anyFieldEnabled(settings)) {
+    return { status: "error", reason: NO_FIELDS_ENABLED_MESSAGE };
+  }
   const path = params.path;
   if (!path || path === "true") {
     return { status: "error", reason: "path=<vault path> is required" };

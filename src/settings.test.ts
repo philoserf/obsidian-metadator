@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  anyFieldEnabled,
   areFieldNamesDistinct,
   DEFAULT_SETTINGS,
+  enabledFields,
   isModelId,
   MAX_BULK_FILES,
   MAX_CONTENT_TOKEN_LIMIT,
@@ -16,6 +18,8 @@ const names = (over: Partial<FieldNames> = {}): FieldNames => ({
   tagsFieldName: "tags",
   descriptionFieldName: "description",
   titleFieldName: "title",
+  enableTags: true,
+  enableDescription: true,
   enableTitle: true,
   ...over,
 });
@@ -105,6 +109,64 @@ describe("areFieldNamesDistinct with title generation off", () => {
     expect(
       areFieldNamesDistinct(
         names({ enableTitle: true, titleFieldName: "tags" }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("enabledFields (#305)", () => {
+  test("all three are on by default", () => {
+    expect([...enabledFields(DEFAULT_SETTINGS)]).toEqual([
+      "tags",
+      "description",
+      "title",
+    ]);
+    expect(anyFieldEnabled(DEFAULT_SETTINGS)).toBe(true);
+  });
+
+  test("lists only the fields switched on, in prompt order", () => {
+    expect([
+      ...enabledFields({
+        enableTags: false,
+        enableDescription: true,
+        enableTitle: true,
+      }),
+    ]).toEqual(["description", "title"]);
+  });
+
+  test("with all three off there is nothing to generate", () => {
+    const off = {
+      enableTags: false,
+      enableDescription: false,
+      enableTitle: false,
+    };
+    expect(enabledFields(off).size).toBe(0);
+    expect(anyFieldEnabled(off)).toBe(false);
+  });
+});
+
+// The #248 rule, generalized: any disabled field's name is inert.
+describe("areFieldNamesDistinct with tags or description off (#305)", () => {
+  test("a colliding but inert tagsFieldName is not a collision", () => {
+    expect(
+      areFieldNamesDistinct(
+        names({ enableTags: false, tagsFieldName: "description" }),
+      ),
+    ).toBe(true);
+  });
+
+  test("a colliding but inert descriptionFieldName is not a collision", () => {
+    expect(
+      areFieldNamesDistinct(
+        names({ enableDescription: false, descriptionFieldName: "title" }),
+      ),
+    ).toBe(true);
+  });
+
+  test("the names still in use must remain distinct", () => {
+    expect(
+      areFieldNamesDistinct(
+        names({ enableTags: false, titleFieldName: "description" }),
       ),
     ).toBe(false);
   });

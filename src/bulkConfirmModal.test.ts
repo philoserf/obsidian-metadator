@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { REQUESTS_PER_ATTEMPT } from "./adapters/claude";
-import { worstCaseApiCalls } from "./bulkConfirmModal";
+import { worstCaseApiCalls, writePolicySummary } from "./bulkConfirmModal";
 import { DEFAULT_RETRY_DELAYS_MS } from "./retryPolicy";
+import { DEFAULT_SETTINGS } from "./settings";
 
 describe("worstCaseApiCalls", () => {
   test("counts the bulk retry schedule and the SDK's own retries", () => {
@@ -16,5 +17,23 @@ describe("worstCaseApiCalls", () => {
 
   test("still counts the SDK retries when the bulk schedule is empty", () => {
     expect(worstCaseApiCalls(7, [])).toBe(7 * REQUESTS_PER_ATTEMPT);
+  });
+});
+
+describe("writePolicySummary (#305)", () => {
+  test("lists every field's policy when all are on", () => {
+    expect(writePolicySummary(DEFAULT_SETTINGS)).toBe(
+      "tags: regenerate · description: regenerate · title: preserve",
+    );
+  });
+
+  test("leaves out the fields that are off", () => {
+    expect(
+      writePolicySummary({
+        ...DEFAULT_SETTINGS,
+        enableTags: false,
+        enableTitle: false,
+      }),
+    ).toBe("description: regenerate");
   });
 });
