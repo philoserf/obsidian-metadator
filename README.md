@@ -28,9 +28,15 @@ There are three ways in.
 
 All three do the same thing per note. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description. When the note already has tags, they are sent along in their own block and the model is asked to reconcile them rather than draw a fresh set.
 
-The results are written to `tags`, `description` and (optionally) `title` in YAML frontmatter, each according to its own write policy.
+The results are written to `tags`, `description` and `title` in YAML frontmatter — whichever of the three are switched on — each according to its own write policy.
 
-Three groups of settings shape what happens on each run.
+Four groups of settings shape what happens on each run.
+
+### Fields
+
+Each field has its own switch: `enableTags`, `enableDescription` and `enableTitle`, all on by default. A field that is off is left out of the prompt and the tool schema, so the model is never asked for it, and it is never written — an existing value in the note stays exactly as it is, neither overwritten nor deleted. Its field name, prompt and write policy are grayed out in the settings tab, and its field name no longer counts when the plugin checks that the three names differ.
+
+With all three off there is nothing to generate. The command and the folder action say so in a notice, and `metadator:generate` returns an error; none of them calls the API.
 
 ### Write policy
 
@@ -61,10 +67,6 @@ Large notes are truncated before being sent to Claude so prompt size stays bound
 | `heading`             | Outline plus the first paragraph under each heading |
 
 Truncation can be disabled entirely (`truncateContent: false`), in which case the full note is sent.
-
-### Title generation
-
-Title generation is toggleable (`enableTitle`). When disabled, the plugin omits the title field from both the prompt and the frontmatter write — so an existing `title` in the note is never touched.
 
 ## Privacy
 

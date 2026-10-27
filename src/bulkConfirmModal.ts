@@ -2,7 +2,11 @@ import { type App, Modal } from "obsidian";
 import { REQUESTS_PER_ATTEMPT } from "./adapters/claude";
 import { exceedsBulkCap } from "./bulkGenerate";
 import { DEFAULT_RETRY_DELAYS_MS } from "./retryPolicy";
-import type { MetadataConfig } from "./settings";
+import {
+  enabledFields,
+  type MetadataConfig,
+  type MetadataToolSettings,
+} from "./settings";
 
 const LARGE_BATCH_THRESHOLD = 100;
 
@@ -15,6 +19,19 @@ export function worstCaseApiCalls(
   retryDelaysMs: readonly number[] = DEFAULT_RETRY_DELAYS_MS,
 ): number {
   return willChange * (retryDelaysMs.length + 1) * REQUESTS_PER_ATTEMPT;
+}
+
+// The confirm modal's policy line: one entry per enabled field, in prompt
+// order. A disabled field is never written, so it has no policy to show.
+export function writePolicySummary(settings: MetadataToolSettings): string {
+  const fields = enabledFields(settings);
+  const parts: string[] = [];
+  if (fields.has("tags")) parts.push(`tags: ${settings.tagsPolicy}`);
+  if (fields.has("description")) {
+    parts.push(`description: ${settings.descriptionPolicy}`);
+  }
+  if (fields.has("title")) parts.push(`title: ${settings.titlePolicy}`);
+  return parts.join(" · ");
 }
 
 export interface BulkConfirmResult {
@@ -70,11 +87,10 @@ export class BulkConfirmModal extends Modal {
     // tags policy can *remove* tags, and title can overwrite, so what this run
     // will do to existing values is the thing worth reading before approving
     // hundreds of billed calls across a folder.
-    const titlePolicy = settings.enableTitle
-      ? settings.titlePolicy
-      : "disabled";
+    // Only the enabled fields: a disabled one is not written, so it has no
+    // policy worth reading here (#305).
     contentEl.createEl("p", {
-      text: `Write policy — tags: ${settings.tagsPolicy} · description: ${settings.descriptionPolicy} · title: ${titlePolicy}`,
+      text: `Write policy — ${writePolicySummary(settings)}`,
     });
 
     // Gauged on willChange, not total: a folder of 500 already-tagged notes

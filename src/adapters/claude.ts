@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { isAbortError } from "../errors";
-import type { MetadataConfig } from "../settings";
+import {
+  enabledFields,
+  type MetadataConfig,
+  type MetadataField,
+} from "../settings";
 
 // Output budget for the model's tool-use response (tags + description + title).
 // Distinct from settings.contentTokenLimit, which bounds the input note content.
@@ -64,9 +68,11 @@ export function parseRetryAfterMs(
   return undefined;
 }
 
+// A field is present exactly when it was enabled for the request: a disabled
+// field is neither declared in the tool schema nor read from the response.
 export interface MetadataFields {
-  tags: string[];
-  description: string;
+  tags?: string[];
+  description?: string;
   title?: string;
 }
 
@@ -92,28 +98,36 @@ type JsonSchemaProperty =
       description: string;
     };
 
-function buildToolSchema(includeTitle: boolean) {
-  const properties: Record<string, JsonSchemaProperty> = {
+// Only the enabled fields are declared, and every declared field is required.
+// A disabled field is absent from both lists, so the model is never asked for
+// it (#305). Exported for tests.
+export function buildToolSchema(fields: ReadonlySet<MetadataField>) {
+  const properties: Record<string, JsonSchemaProperty> = {};
+  const required: MetadataField[] = [];
+  if (fields.has("tags")) {
     // An array rather than one comma-separated string: splitting on commas
     // meant a tag containing a comma silently became two, which the default
     // tagsPrompt had to instruct around. The bounds cap what a single
     // regeneration can contribute to a note's tag list.
-    tags: {
+    properties.tags = {
       type: "array",
       items: { type: "string" },
       minItems: 1,
       maxItems: MAX_TAGS_PER_RESPONSE,
       description:
         "Tags describing the article, one per array element. Follow the user's tag instructions.",
-    },
-    description: {
+    };
+    required.push("tags");
+  }
+  if (fields.has("description")) {
+    properties.description = {
       type: "string",
       description:
         "Brief summary of the article. Follow the user's description instructions.",
-    },
-  };
-  const required = ["tags", "description"];
-  if (includeTitle) {
+    };
+    required.push("description");
+  }
+  if (fields.has("title")) {
     properties.title = {
       type: "string",
       description:
@@ -164,34 +178,38 @@ function classifyError(error: unknown): ClaudeApiError {
   return new ClaudeApiError("unknown", message);
 }
 
-function validateMetadataInput(
+// Exported for tests.
+export function validateMetadataInput(
   input: unknown,
-  includeTitle: boolean,
+  fields: ReadonlySet<MetadataField>,
 ): MetadataFields {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new ClaudeApiError("api", "Tool input was not an object");
   }
   const obj = input as Record<string, unknown>;
-  if (
-    !Array.isArray(obj.tags) ||
-    obj.tags.some((tag) => typeof tag !== "string")
-  ) {
-    throw new ClaudeApiError(
-      "api",
-      "Tool input field 'tags' is missing or not an array of strings",
-    );
+  const out: MetadataFields = {};
+  if (fields.has("tags")) {
+    if (
+      !Array.isArray(obj.tags) ||
+      obj.tags.some((tag) => typeof tag !== "string")
+    ) {
+      throw new ClaudeApiError(
+        "api",
+        "Tool input field 'tags' is missing or not an array of strings",
+      );
+    }
+    out.tags = obj.tags;
   }
-  if (typeof obj.description !== "string") {
-    throw new ClaudeApiError(
-      "api",
-      "Tool input field 'description' is missing or not a string",
-    );
+  if (fields.has("description")) {
+    if (typeof obj.description !== "string") {
+      throw new ClaudeApiError(
+        "api",
+        "Tool input field 'description' is missing or not a string",
+      );
+    }
+    out.description = obj.description;
   }
-  const out: MetadataFields = {
-    tags: obj.tags,
-    description: obj.description,
-  };
-  if (includeTitle) {
+  if (fields.has("title")) {
     if (typeof obj.title !== "string") {
       throw new ClaudeApiError(
         "api",
@@ -200,13 +218,13 @@ function validateMetadataInput(
     }
     out.title = obj.title;
   }
-  // No `else` branch: when title generation is off, buildToolSchema does not
-  // declare `title` at all, so a volunteered one is already off-schema and
-  // metadata.ts guards its write on the same enableTitle that made
-  // includeTitle false — the value could never be read. Validating it anyway
-  // meant a non-string title failed the whole generation, discarding the tags
-  // and description that arrived correctly, over a field the user switched
-  // off. An off-schema title is now ignored, like every other unexpected key.
+  // No `else` branches: a disabled field is not declared by buildToolSchema,
+  // so a volunteered one is already off-schema, and metadata.ts guards its
+  // write on the same enabledFields that built this set — the value could
+  // never be read. Validating it anyway meant a malformed value failed the
+  // whole generation, discarding the fields that arrived correctly, over a
+  // field the user switched off. An off-schema field is ignored, like every
+  // other unexpected key.
   return out;
 }
 
@@ -248,7 +266,8 @@ export async function callClaudeForMetadata(
 ): Promise<MetadataFields> {
   const anthropic = getClient(settings.anthropicApiKey);
 
-  const tool = buildToolSchema(settings.enableTitle);
+  const fields = enabledFields(settings);
+  const tool = buildToolSchema(fields);
   const autoToolChoice = usesAutoToolChoice(settings.anthropicModel);
 
   let message: Awaited<ReturnType<typeof anthropic.messages.create>>;
@@ -318,5 +337,5 @@ export async function callClaudeForMetadata(
     }
     throw new ClaudeApiError("api", "Model did not call the metadata tool");
   }
-  return validateMetadataInput(toolUse.input, settings.enableTitle);
+  return validateMetadataInput(toolUse.input, fields);
 }

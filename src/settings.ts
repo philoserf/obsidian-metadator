@@ -20,7 +20,7 @@ export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in settingsMigrate.ts. Each migration's key is the schema version it produces.
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export interface MetadataToolSettings {
   schemaVersion: number;
@@ -36,7 +36,10 @@ export interface MetadataToolSettings {
   descriptionFieldName: string;
   titleFieldName: string;
 
-  // Feature toggles
+  // Feature toggles, one per field. A field that is off is not asked for, not
+  // in the prompt, and never written (#305).
+  enableTags: boolean;
+  enableDescription: boolean;
   enableTitle: boolean;
   debugLogging: boolean;
 
@@ -70,6 +73,48 @@ export type MetadataConfig = MetadataToolSettings & { anthropicApiKey: string };
 const MODEL_ID_PATTERN = /^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MODEL_ID_MAX_LENGTH = 100;
 
+// The three generated fields, in prompt order.
+export type MetadataField = "tags" | "description" | "title";
+export const METADATA_FIELDS: readonly MetadataField[] = [
+  "tags",
+  "description",
+  "title",
+];
+
+// Each field's settings keys, so code that walks the fields names them once.
+export const FIELD_NAME_KEY = {
+  tags: "tagsFieldName",
+  description: "descriptionFieldName",
+  title: "titleFieldName",
+} as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
+
+export const FIELD_ENABLE_KEY = {
+  tags: "enableTags",
+  description: "enableDescription",
+  title: "enableTitle",
+} as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
+
+type FieldToggles = Pick<
+  MetadataToolSettings,
+  "enableTags" | "enableDescription" | "enableTitle"
+>;
+
+// The one answer to "which fields does a run generate?". The command, the CLI
+// handler, the folder run, the tool schema, the prompt and the write loop all
+// read it, so no two of them can disagree about a field being on (#305).
+export function enabledFields(settings: FieldToggles): Set<MetadataField> {
+  return new Set(METADATA_FIELDS.filter((f) => settings[FIELD_ENABLE_KEY[f]]));
+}
+
+export function anyFieldEnabled(settings: FieldToggles): boolean {
+  return enabledFields(settings).size > 0;
+}
+
+// What every entry point says when all three are off. One string, so the
+// Notice and the CLI error name the same settings.
+export const NO_FIELDS_ENABLED_MESSAGE =
+  "Nothing to generate: Enable tags, Enable description and Enable title are all off in Settings → Metadator.";
+
 // The three frontmatter field names must differ. If two collide, the writes
 // clobber each other in the user's note rather than in plugin state: tags is
 // written as an array and then the description overwrites the same key with a
@@ -77,19 +122,18 @@ const MODEL_ID_MAX_LENGTH = 100;
 //
 // Shared so the load-time and edit-time rules cannot drift apart, the same
 // reason isEmptyValue lives on its own.
-export function areFieldNamesDistinct(names: {
-  tagsFieldName: string;
-  descriptionFieldName: string;
-  titleFieldName: string;
-  enableTitle: boolean;
-}): boolean {
-  // Only the names actually in use. When enableTitle is false, titleFieldName
-  // is inert — shouldGenerate does not consult it, buildPrompt omits the title
-  // instruction, and the write loop never queues a title update — so a stale
-  // value there cannot clobber anything and must not be treated as if it
-  // could (#248).
-  const inUse = [names.tagsFieldName, names.descriptionFieldName];
-  if (names.enableTitle) inUse.push(names.titleFieldName);
+export function areFieldNamesDistinct(
+  names: Pick<
+    MetadataToolSettings,
+    "tagsFieldName" | "descriptionFieldName" | "titleFieldName"
+  > &
+    FieldToggles,
+): boolean {
+  // Only the names actually in use. A disabled field's name is inert —
+  // shouldGenerate does not consult it, buildPrompt omits its instruction, and
+  // the write loop never queues an update for it — so a stale value there
+  // cannot clobber anything and must not be treated as if it could (#248).
+  const inUse = [...enabledFields(names)].map((f) => names[FIELD_NAME_KEY[f]]);
   return new Set(inUse).size === inUse.length;
 }
 
@@ -162,6 +206,8 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   descriptionFieldName: "description",
   titleFieldName: "title",
 
+  enableTags: true,
+  enableDescription: true,
   enableTitle: true,
   debugLogging: false,
 

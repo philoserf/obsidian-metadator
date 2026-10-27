@@ -11,7 +11,12 @@ import { FrontmatterWriteError, isAbortError } from "./errors";
 import { acquire, release } from "./inFlight";
 import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt, normalizeTags, readExistingTags } from "./prompt";
-import type { MetadataConfig, ScalarPolicy, TagsPolicy } from "./settings";
+import {
+  enabledFields,
+  type MetadataConfig,
+  type ScalarPolicy,
+  type TagsPolicy,
+} from "./settings";
 
 // "Starts with a quote and ends with a quote" is not the same as "is quoted".
 // A title that merely opens and closes with quoted phrases satisfied the old
@@ -62,8 +67,10 @@ export type SkipReason =
 
 // A `preserve` field is the only one that can make a request pointless: every
 // other policy writes whatever comes back. So the question is whether any
-// enabled field would write, and a note where all three are preserved and all
-// three are populated is the one case worth not billing a call for.
+// enabled field would write, and a note where every enabled field is preserved
+// and populated is the one case worth not billing a call for. A disabled field
+// never writes, so it never makes a request worth sending — with all three off
+// this is false for every note, and no entry point reaches the API (#305).
 function willWrite(
   policy: TagsPolicy | ScalarPolicy,
   existing: unknown,
@@ -75,13 +82,16 @@ export function shouldGenerate(
   frontMatter: Record<string, unknown>,
   settings: MetadataConfig,
 ): boolean {
+  const fields = enabledFields(settings);
   return (
-    willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName]) ||
-    willWrite(
-      settings.descriptionPolicy,
-      frontMatter[settings.descriptionFieldName],
-    ) ||
-    (settings.enableTitle &&
+    (fields.has("tags") &&
+      willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName])) ||
+    (fields.has("description") &&
+      willWrite(
+        settings.descriptionPolicy,
+        frontMatter[settings.descriptionFieldName],
+      )) ||
+    (fields.has("title") &&
       willWrite(settings.titlePolicy, frontMatter[settings.titleFieldName]))
   );
 }
@@ -314,14 +324,18 @@ async function addMetadataWithClaude(
   }
 
   const updates: FieldUpdate[] = [];
+  // Every write below is guarded on the same set that built the tool schema,
+  // so a disabled field is never written and its existing value is left as it
+  // is — not deleted (#305).
+  const fields = enabledFields(settings);
 
   // Guarded on the normalized result, not the raw field. A model returning
   // ["", "  "] satisfies validateMetadataInput but normalizeTags yields [] —
   // which the append path then wrote as an empty tags array and reported as a
   // change, so the user was told "Metadata updated successfully" for content
   // that did not exist (#161).
-  const tags = normalizeTags(metadata.tags);
-  if (tags.length > 0) {
+  const tags = normalizeTags(metadata.tags ?? []);
+  if (fields.has("tags") && tags.length > 0) {
     updates.push({
       kind: "list",
       fieldName: settings.tagsFieldName,
@@ -332,11 +346,12 @@ async function addMetadataWithClaude(
   // Same shape as the tags guard: judge the value that would actually be
   // written, not the raw string. validateMetadataInput only checks that these
   // are strings, so "   " reaches here as truthy and wrote a blank description.
-  if (metadata.description.trim() !== "") {
+  const description = metadata.description ?? "";
+  if (fields.has("description") && description.trim() !== "") {
     updates.push({
       kind: "scalar",
       fieldName: settings.descriptionFieldName,
-      value: metadata.description,
+      value: description,
       policy: settings.descriptionPolicy,
     });
   }
@@ -344,7 +359,7 @@ async function addMetadataWithClaude(
   // unwraps to "". Guarding on metadata.title instead let that through and
   // wrote an empty title while reporting "Metadata updated successfully".
   const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
-  if (settings.enableTitle && title !== "") {
+  if (fields.has("title") && title !== "") {
     updates.push({
       kind: "scalar",
       fieldName: settings.titleFieldName,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_SETTINGS } from "../settings";
+import { DEFAULT_SETTINGS, type MetadataField } from "../settings";
 
 // Mock error classes matching the Anthropic SDK shape
 class MockAuthenticationError extends Error {
@@ -53,12 +53,14 @@ mock.module("@anthropic-ai/sdk", () => {
 });
 
 const {
+  buildToolSchema,
   callClaudeForMetadata,
   ClaudeApiError,
   MAX_TAGS_PER_RESPONSE,
   parseRetryAfterMs,
   resetClientCache,
   usesAutoToolChoice,
+  validateMetadataInput,
 } = await import("./claude");
 
 const settings = {
@@ -684,5 +686,79 @@ describe("client caching (#207)", () => {
     });
 
     expect(keys).toEqual(["sk-test-key", "sk-different"]);
+  });
+});
+
+// A disabled field is not asked for: absent from the schema's properties and
+// from `required`, so the model has nothing to fill in (#305).
+describe("buildToolSchema and validateMetadataInput per enabled-field subset", () => {
+  const ALL: MetadataField[] = ["tags", "description", "title"];
+  const subsets: MetadataField[][] = [];
+  for (let mask = 1; mask < 1 << ALL.length; mask++) {
+    subsets.push(ALL.filter((_, i) => mask & (1 << i)));
+  }
+  const full = { tags: ["a"], description: "d", title: "t" };
+
+  test("buildToolSchema omits tags when tags are disabled", () => {
+    const schema = buildToolSchema(
+      new Set<MetadataField>(["description", "title"]),
+    ).input_schema;
+    expect("tags" in schema.properties).toBe(false);
+    expect(schema.required).not.toContain("tags");
+    expect(schema.required).toEqual(["description", "title"]);
+  });
+
+  for (const subset of subsets) {
+    const label = subset.join("+");
+
+    test(`schema declares and requires exactly ${label}`, () => {
+      const schema = buildToolSchema(new Set(subset)).input_schema;
+      expect(Object.keys(schema.properties).sort()).toEqual([...subset].sort());
+      expect([...schema.required].sort()).toEqual([...subset].sort());
+    });
+
+    test(`validation returns exactly ${label} and ignores the rest`, () => {
+      const out = validateMetadataInput(full, new Set(subset));
+      expect(Object.keys(out).sort()).toEqual([...subset].sort());
+    });
+
+    test(`validation requires each of ${label}`, () => {
+      for (const missing of subset) {
+        const input: Record<string, unknown> = { ...full };
+        delete input[missing];
+        expect(() => validateMetadataInput(input, new Set(subset))).toThrow(
+          `'${missing}'`,
+        );
+      }
+    });
+  }
+
+  test("a malformed disabled field does not fail the generation", () => {
+    const out = validateMetadataInput(
+      { tags: "not-an-array", description: 7, title: "t" },
+      new Set<MetadataField>(["title"]),
+    );
+    expect(out).toEqual({ title: "t" });
+  });
+
+  test("callClaudeForMetadata sends the schema the settings enable", async () => {
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ description: "d" }));
+
+    const result = await callClaudeForMetadata("s", "u", {
+      ...settings,
+      enableTags: false,
+      enableTitle: false,
+    });
+
+    const body = mockCreate.mock.calls.at(-1)?.[0] as {
+      tools: {
+        input_schema: { properties: object; required: string[] };
+      }[];
+    };
+    expect(body.tools[0]?.input_schema.required).toEqual(["description"]);
+    expect(Object.keys(body.tools[0]?.input_schema.properties ?? {})).toEqual([
+      "description",
+    ]);
+    expect(result).toEqual({ description: "d" });
   });
 });

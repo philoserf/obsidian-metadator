@@ -3,9 +3,12 @@ import {
   areFieldNamesDistinct,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
+  enabledFields,
+  FIELD_NAME_KEY,
   isModelId,
   MAX_BULK_FILES,
   MAX_CONTENT_TOKEN_LIMIT,
+  METADATA_FIELDS,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
   SCALAR_POLICY_LABELS,
@@ -137,6 +140,20 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
         // the secret's ID.
       },
     ],
+    [
+      5,
+      (s) => {
+        // 4 → 5: tags and description get on/off toggles beside enableTitle
+        // (#305). Both default on, so an upgrade changes nothing. The bump is
+        // the point, as with v4: a v4 build on another device (say, the iPad
+        // a note is published from) syncing this file would otherwise save it
+        // back without the new keys, and with them gone tag generation would
+        // silently turn back on. Seeing a future version, that build goes
+        // read-only instead.
+        if (s.enableTags === undefined) s.enableTags = true;
+        if (s.enableDescription === undefined) s.enableDescription = true;
+      },
+    ],
   ]);
 
 function readSchemaVersion(raw: Record<string, unknown>): number {
@@ -246,6 +263,11 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       DEFAULT_SETTINGS.titleFieldName,
       { nonEmpty: true },
     ).trim(),
+    enableTags: readBoolean(migrated.enableTags, DEFAULT_SETTINGS.enableTags),
+    enableDescription: readBoolean(
+      migrated.enableDescription,
+      DEFAULT_SETTINGS.enableDescription,
+    ),
     enableTitle: readBoolean(
       migrated.enableTitle,
       DEFAULT_SETTINGS.enableTitle,
@@ -314,20 +336,27 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     normalized.tagsFieldName = DEFAULT_SETTINGS.tagsFieldName;
     normalized.descriptionFieldName = DEFAULT_SETTINGS.descriptionFieldName;
     normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
-  } else if (
-    !normalized.enableTitle &&
-    (normalized.titleFieldName === normalized.tagsFieldName ||
-      normalized.titleFieldName === normalized.descriptionFieldName)
-  ) {
-    // The in-use names are fine and only the inert one collides. Resetting all
-    // three here would destroy two valid settings to fix a value nothing reads
-    // — the bug this replaces. Normalizing it anyway, rather than leaving it,
-    // so that turning title generation back on later does not then trip the
-    // branch above and take the other two down with it.
-    console.warn(
-      `[Metadator] titleFieldName "${normalized.titleFieldName}" collides with another field name; resetting it to "${DEFAULT_SETTINGS.titleFieldName}". Title generation is off, so the other names are unaffected.`,
+  } else {
+    // The in-use names are fine and only an inert one collides. Resetting all
+    // three here would destroy valid settings to fix a value nothing reads —
+    // the bug this replaces. Normalizing it anyway, rather than leaving it,
+    // so that turning that field back on later does not then trip the branch
+    // above and take the others down with it. Collisions are judged against
+    // the names as loaded, so two disabled fields sharing a name both reset.
+    const enabled = enabledFields(normalized);
+    const loadedNames = METADATA_FIELDS.map(
+      (f) => normalized[FIELD_NAME_KEY[f]],
     );
-    normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
+    for (const field of METADATA_FIELDS) {
+      if (enabled.has(field)) continue;
+      const key = FIELD_NAME_KEY[field];
+      const name = normalized[key];
+      if (loadedNames.filter((n) => n === name).length < 2) continue;
+      console.warn(
+        `[Metadator] ${key} "${name}" collides with another field name; resetting it to "${DEFAULT_SETTINGS[key]}". ${field[0]?.toUpperCase()}${field.slice(1)} generation is off, so the other names are unaffected.`,
+      );
+      normalized[key] = DEFAULT_SETTINGS[key];
+    }
   }
 
   return {

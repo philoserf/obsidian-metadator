@@ -138,6 +138,8 @@ describe("migrateSettings", () => {
       tagsFieldName: "keywords",
       descriptionFieldName: "summary",
       titleFieldName: "headline",
+      enableTags: false,
+      enableDescription: false,
       enableTitle: false,
       debugLogging: true,
       truncateContent: false,
@@ -578,5 +580,110 @@ describe("field-name collision while title generation is off (#248)", () => {
     });
 
     expect(settings.titleFieldName).toBe("headline");
+  });
+});
+
+describe("schema v5: tags and description toggles (#305)", () => {
+  test("a v4 file gains both toggles, on", () => {
+    const settings = ok({ schemaVersion: 4, enableTitle: false });
+
+    expect(settings.schemaVersion).toBe(5);
+    expect(settings.enableTags).toBe(true);
+    expect(settings.enableDescription).toBe(true);
+    expect(settings.enableTitle).toBe(false);
+  });
+
+  test("the v5 migration keeps values already present", () => {
+    const migrated = applyMigrations(
+      { enableTags: false, enableDescription: false },
+      4,
+    );
+    expect(migrated.enableTags).toBe(false);
+    expect(migrated.enableDescription).toBe(false);
+  });
+
+  test("the toggles survive a reload at the current version", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTags: false,
+      enableDescription: false,
+    });
+    expect(settings.enableTags).toBe(false);
+    expect(settings.enableDescription).toBe(false);
+  });
+
+  test("a non-boolean toggle falls back to on", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTags: "false",
+      enableDescription: 0,
+    });
+    expect(settings.enableTags).toBe(true);
+    expect(settings.enableDescription).toBe(true);
+  });
+});
+
+describe("field-name collision with any field disabled (#305)", () => {
+  test("tags off: keeps the names in use and resets only tagsFieldName", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTags: false,
+      tagsFieldName: "summary",
+      descriptionFieldName: "summary",
+      titleFieldName: "headline",
+    });
+
+    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(settings.descriptionFieldName).toBe("summary");
+    expect(settings.titleFieldName).toBe("headline");
+  });
+
+  test("description off: keeps the names in use and resets only descriptionFieldName", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableDescription: false,
+      tagsFieldName: "keywords",
+      descriptionFieldName: "headline",
+      titleFieldName: "headline",
+    });
+
+    expect(settings.tagsFieldName).toBe("keywords");
+    expect(settings.descriptionFieldName).toBe(
+      DEFAULT_SETTINGS.descriptionFieldName,
+    );
+    expect(settings.titleFieldName).toBe("headline");
+  });
+
+  test("two disabled fields sharing a name both reset; the in-use one stays", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTags: false,
+      enableDescription: false,
+      tagsFieldName: "x",
+      descriptionFieldName: "x",
+      titleFieldName: "headline",
+    });
+
+    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(settings.descriptionFieldName).toBe(
+      DEFAULT_SETTINGS.descriptionFieldName,
+    );
+    expect(settings.titleFieldName).toBe("headline");
+  });
+
+  test("an in-use collision still resets all three", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableTags: false,
+      tagsFieldName: "keywords",
+      descriptionFieldName: "summary",
+      titleFieldName: "summary",
+    });
+
+    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(settings.descriptionFieldName).toBe(
+      DEFAULT_SETTINGS.descriptionFieldName,
+    );
+    expect(settings.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
   });
 });

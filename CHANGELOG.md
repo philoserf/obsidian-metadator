@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Tags and description can be switched off, the way title already could.
+
+### Added
+
+- **`enableTags` and `enableDescription` settings.** Each sits beside `enableTitle`, and all three default on, so an upgrade changes nothing. A field that is off is absent from the prompt and the `submit_metadata` tool schema, is not validated as required, and is never written; an existing value in the note is left as it is, not deleted. The folder run's pre-scan ignores a disabled field, so a note missing only that field no longer counts as one that will change, and the confirm dialog lists policies only for the enabled fields. In the settings tab, turning a field off greys out its field name, prompt and write policy. (#305)
+- **All three fields off is refused up front.** The command and the folder action show a notice naming the three settings, and `metadator:generate` returns an error with the same text; none of them calls the API. (#305)
+
+### Changed
+
+- **Settings schema v5.** The migration adds `enableTags` and `enableDescription`, both on. The bump is what matters, as with v4: a v4 build on another device syncing `data.json` would otherwise save it back without the new keys, and tag generation would silently turn back on. Seeing a newer version, that build goes read-only instead. (#305)
+- **The field-name collision rule covers every disabled field, not only title.** Only the enabled fields' names must differ; a disabled field whose name collides is reset to its default on load without touching the names in use. (#305)
+- The title write policy is now grayed out in the settings tab when title generation is off, like its field name and prompt. (#305)
+
 ## 4.1.1
 
 The Anthropic SDK moves to its first major release, which pins a newer API version. Nothing Metadator sends is affected.

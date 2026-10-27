@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { App, TFile } from "obsidian";
-import { DEFAULT_SETTINGS, type MetadataConfig } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  type MetadataConfig,
+  NO_FIELDS_ENABLED_MESSAGE,
+} from "./settings";
 import { FakeNotice, FakeTFile, FakeTFolder, obsidianDoubles } from "./testDom";
 
 const mockCreate = mock();
@@ -313,5 +317,29 @@ describe("runBulkForFolder cap enforcement", () => {
     );
 
     expect(mockCreate).toHaveBeenCalled();
+  });
+});
+
+describe("runBulkForFolder with all three fields disabled (#305)", () => {
+  test("shows a notice naming the settings and makes no API call", async () => {
+    let confirmOpened = false;
+    BulkConfirmModal.prototype.openAndAwait = async () => {
+      confirmOpened = true;
+      return { confirmed: true, capOverridden: false };
+    };
+
+    await runBulkForFolder(
+      makeApp(),
+      folderOf("a.md", "b.md"),
+      settings({
+        enableTags: false,
+        enableDescription: false,
+        enableTitle: false,
+      }),
+    );
+
+    expect(FakeNotice.messages).toEqual([NO_FIELDS_ENABLED_MESSAGE]);
+    expect(confirmOpened).toBe(false);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

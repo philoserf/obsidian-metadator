@@ -3,7 +3,11 @@ import { ClaudeApiError } from "./adapters/claude";
 import { FrontmatterWriteError } from "./errors";
 import { logError } from "./logger";
 import { generateMetadataForFile, type SkipReason } from "./metadata";
-import type { MetadataConfig } from "./settings";
+import {
+  anyFieldEnabled,
+  type MetadataConfig,
+  NO_FIELDS_ENABLED_MESSAGE,
+} from "./settings";
 
 // The single-note presentation layer, mirroring bulkOrchestrator.ts. Every
 // user-facing sentence for this entry point lives here; metadata.ts returns
@@ -97,6 +101,14 @@ export async function generateMetadata(
   settings: MetadataConfig,
   opts: InteractiveGenerateOptions = {},
 ): Promise<void> {
+  // A configuration problem, not a property of the note, so it is reported
+  // before anything else. shouldGenerate would also refuse, but as
+  // "already populated", which sends the user looking at the note (#305).
+  if (!anyFieldEnabled(settings)) {
+    new Notice(NO_FIELDS_ENABLED_MESSAGE, 8000);
+    return;
+  }
+
   const file = app.workspace.getActiveFile();
   if (!file) {
     new Notice("Please open a file first");

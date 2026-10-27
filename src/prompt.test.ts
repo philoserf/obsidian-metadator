@@ -97,6 +97,53 @@ describe("buildPrompt", () => {
   });
 });
 
+// A disabled field's instructions never reach the model, and the remaining
+// sections are numbered without a gap (#305).
+describe("buildPrompt with fields disabled", () => {
+  const baseSettings = { ...DEFAULT_SETTINGS };
+
+  test("omits the tags section when tags are disabled", () => {
+    const { system } = buildPrompt("c", { ...baseSettings, enableTags: false });
+    expect(system).not.toContain("Tags:");
+    expect(system).not.toContain(baseSettings.tagsPrompt);
+    expect(system).toContain("1. Description:");
+    expect(system).toContain("2. Title:");
+  });
+
+  test("omits the description section when description is disabled", () => {
+    const { system } = buildPrompt("c", {
+      ...baseSettings,
+      enableDescription: false,
+    });
+    expect(system).not.toContain("Description:");
+    expect(system).not.toContain(baseSettings.descriptionPrompt);
+    expect(system).toContain("1. Tags:");
+    expect(system).toContain("2. Title:");
+  });
+
+  test("a single enabled field is section 1", () => {
+    const { system } = buildPrompt("c", {
+      ...baseSettings,
+      enableTags: false,
+      enableDescription: false,
+      enableTitle: true,
+    });
+    expect(system).toContain("1. Title:");
+    expect(system).not.toContain("2.");
+  });
+
+  test("does not send current tags when tags are disabled", () => {
+    const { system, userMessage } = buildPrompt(
+      "c",
+      { ...baseSettings, enableTags: false },
+      "article",
+      ["kept"],
+    );
+    expect(userMessage).not.toContain("kept");
+    expect(system).not.toContain("current tags");
+  });
+});
+
 describe("buildPrompt delimiter (#204)", () => {
   const settings = { ...DEFAULT_SETTINGS };
 
