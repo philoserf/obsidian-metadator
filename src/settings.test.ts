@@ -14,10 +14,8 @@ type FieldNames = Parameters<typeof areFieldNamesDistinct>[0];
 // Typed to the function's own parameter, so a typo'd override key is a compile
 // error rather than a test that passes without exercising anything.
 const names = (over: Partial<FieldNames> = {}): FieldNames => ({
-  tagsFieldName: "tags",
   descriptionFieldName: "description",
   titleFieldName: "title",
-  enableTags: true,
   enableDescription: true,
   enableTitle: true,
   ...over,
@@ -28,27 +26,13 @@ describe("areFieldNamesDistinct", () => {
     expect(areFieldNamesDistinct(DEFAULT_SETTINGS)).toBe(true);
   });
 
-  test("three different names pass", () => {
+  test("two different names pass", () => {
     expect(areFieldNamesDistinct(names())).toBe(true);
   });
 
-  test("any colliding pair fails", () => {
-    expect(areFieldNamesDistinct(names({ descriptionFieldName: "tags" }))).toBe(
-      false,
-    );
-    expect(areFieldNamesDistinct(names({ titleFieldName: "tags" }))).toBe(
-      false,
-    );
+  test("a colliding pair fails", () => {
     expect(
       areFieldNamesDistinct(names({ titleFieldName: "description" })),
-    ).toBe(false);
-  });
-
-  test("all three colliding fails", () => {
-    expect(
-      areFieldNamesDistinct(
-        names({ descriptionFieldName: "tags", titleFieldName: "tags" }),
-      ),
     ).toBe(false);
   });
 });
@@ -58,7 +42,6 @@ describe("DEFAULT_SETTINGS satisfies its own validators", () => {
   // shows the value but refuses to save it back, and migrateSettings falls back
   // to a default that is itself invalid.
   const prompts = [
-    ["tagsPrompt", DEFAULT_SETTINGS.tagsPrompt],
     ["descriptionPrompt", DEFAULT_SETTINGS.descriptionPrompt],
     ["titlePrompt", DEFAULT_SETTINGS.titlePrompt],
   ] as const;
@@ -84,71 +67,13 @@ describe("DEFAULT_SETTINGS satisfies its own validators", () => {
 // titleFieldName is inert when title generation is off — shouldGenerate does
 // not consult it, buildPrompt omits the title instruction, and the write loop
 // never queues a title update. A stale value there cannot clobber anything, so
-// treating it as a collision destroyed two valid settings to fix one nothing
-// reads (#248).
-describe("areFieldNamesDistinct with title generation off", () => {
+// treating it as a collision destroyed valid settings to fix one nothing reads
+// (#248). The same holds for any disabled field (#305).
+describe("areFieldNamesDistinct with a field off", () => {
   test("a colliding but inert titleFieldName is not a collision", () => {
     expect(
       areFieldNamesDistinct(
-        names({ enableTitle: false, titleFieldName: "tags" }),
-      ),
-    ).toBe(true);
-  });
-
-  test("the two names still in use must remain distinct", () => {
-    expect(
-      areFieldNamesDistinct(
-        names({ enableTitle: false, descriptionFieldName: "tags" }),
-      ),
-    ).toBe(false);
-  });
-
-  test("with title generation on it is a collision again", () => {
-    expect(
-      areFieldNamesDistinct(
-        names({ enableTitle: true, titleFieldName: "tags" }),
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("enabledFields (#305)", () => {
-  test("all three are on by default", () => {
-    expect([...enabledFields(DEFAULT_SETTINGS)]).toEqual([
-      "tags",
-      "description",
-      "title",
-    ]);
-    expect(anyFieldEnabled(DEFAULT_SETTINGS)).toBe(true);
-  });
-
-  test("lists only the fields switched on, in prompt order", () => {
-    expect([
-      ...enabledFields({
-        enableTags: false,
-        enableDescription: true,
-        enableTitle: true,
-      }),
-    ]).toEqual(["description", "title"]);
-  });
-
-  test("with all three off there is nothing to generate", () => {
-    const off = {
-      enableTags: false,
-      enableDescription: false,
-      enableTitle: false,
-    };
-    expect(enabledFields(off).size).toBe(0);
-    expect(anyFieldEnabled(off)).toBe(false);
-  });
-});
-
-// The #248 rule, generalized: any disabled field's name is inert.
-describe("areFieldNamesDistinct with tags or description off (#305)", () => {
-  test("a colliding but inert tagsFieldName is not a collision", () => {
-    expect(
-      areFieldNamesDistinct(
-        names({ enableTags: false, tagsFieldName: "description" }),
+        names({ enableTitle: false, titleFieldName: "description" }),
       ),
     ).toBe(true);
   });
@@ -161,11 +86,33 @@ describe("areFieldNamesDistinct with tags or description off (#305)", () => {
     ).toBe(true);
   });
 
-  test("the names still in use must remain distinct", () => {
+  test("with both fields on it is a collision again", () => {
     expect(
       areFieldNamesDistinct(
-        names({ enableTags: false, titleFieldName: "description" }),
+        names({ enableTitle: true, titleFieldName: "description" }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("enabledFields (#305)", () => {
+  test("both are on by default", () => {
+    expect([...enabledFields(DEFAULT_SETTINGS)]).toEqual([
+      "description",
+      "title",
+    ]);
+    expect(anyFieldEnabled(DEFAULT_SETTINGS)).toBe(true);
+  });
+
+  test("lists only the fields switched on, in prompt order", () => {
+    expect([
+      ...enabledFields({ enableDescription: false, enableTitle: true }),
+    ]).toEqual(["title"]);
+  });
+
+  test("with both off there is nothing to generate", () => {
+    const off = { enableDescription: false, enableTitle: false };
+    expect(enabledFields(off).size).toBe(0);
+    expect(anyFieldEnabled(off)).toBe(false);
   });
 });

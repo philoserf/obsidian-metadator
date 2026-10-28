@@ -10,12 +10,11 @@ import { isEmptyValue } from "./emptyValue";
 import { FrontmatterWriteError, isAbortError } from "./errors";
 import { acquire, release } from "./inFlight";
 import { logDebug, logError, newRequestId } from "./logger";
-import { buildPrompt, normalizeTags, readExistingTags } from "./prompt";
+import { buildPrompt } from "./prompt";
 import {
   enabledFields,
   type MetadataConfig,
-  type ScalarPolicy,
-  type TagsPolicy,
+  type WritePolicy,
 } from "./settings";
 
 // "Starts with a quote and ends with a quote" is not the same as "is quoted".
@@ -69,12 +68,9 @@ export type SkipReason =
 // other policy writes whatever comes back. So the question is whether any
 // enabled field would write, and a note where every enabled field is preserved
 // and populated is the one case worth not billing a call for. A disabled field
-// never writes, so it never makes a request worth sending — with all three off
-// this is false for every note, and no entry point reaches the API (#305).
-function willWrite(
-  policy: TagsPolicy | ScalarPolicy,
-  existing: unknown,
-): boolean {
+// never writes, so it never makes a request worth sending — with both off this
+// is false for every note, and no entry point reaches the API (#305).
+function willWrite(policy: WritePolicy, existing: unknown): boolean {
   return policy === "preserve" ? isEmptyValue(existing) : true;
 }
 
@@ -84,8 +80,6 @@ export function shouldGenerate(
 ): boolean {
   const fields = enabledFields(settings);
   return (
-    (fields.has("tags") &&
-      willWrite(settings.tagsPolicy, frontMatter[settings.tagsFieldName])) ||
     (fields.has("description") &&
       willWrite(
         settings.descriptionPolicy,
@@ -215,7 +209,6 @@ async function addMetadataWithClaude(
     contentStr,
     settings,
     `article-${requestId}`,
-    readExistingTags(frontMatter[settings.tagsFieldName]),
   );
 
   if (settings.debugLogging) {
@@ -269,36 +262,18 @@ async function addMetadataWithClaude(
   let hasChanges = false;
 
   // Each field carries its own policy, so the write method is decided per
-  // field rather than from one global flag (#252). `kind` is what separates a
-  // list from a scalar: the three policies are spelled identically across the
-  // fields on purpose, so `regenerate` alone cannot say which write to use.
-  type FieldUpdate =
-    | { kind: "list"; fieldName: string; value: string[]; policy: TagsPolicy }
-    | {
-        kind: "scalar";
-        fieldName: string;
-        value: string;
-        policy: ScalarPolicy;
-      };
+  // field rather than from one global flag (#252).
+  interface FieldUpdate {
+    fieldName: string;
+    value: string;
+    policy: WritePolicy;
+  }
 
   // `preserve` re-checks emptiness against the live frontmatter inside
   // processFrontMatter rather than the `frontMatter` snapshot, which was taken
   // before a request that can run for REQUEST_TIMEOUT_MS — otherwise a value
-  // the user typed during the call gets overwritten (#178). `merge` needs no
-  // such guard because it unions with the live value, so a concurrent edit
-  // survives either way; `regenerate` is asked for explicitly.
-  function methodFor(
-    u: FieldUpdate,
-  ): "append" | "replace" | "update" | "update_if_empty" {
-    if (u.policy === "preserve") return "update_if_empty";
-    if (u.policy === "merge") return "append";
-    // One policy, two writes. A list is replaced wholesale — "replace" is the
-    // array-typed counterpart of "update", because "update" is typed for a
-    // scalar and would write the list as a comma-joined string, after which
-    // Obsidian stops indexing the field (#230).
-    return u.kind === "list" ? "replace" : "update";
-  }
-
+  // the user typed during the call gets overwritten (#178). `regenerate` is
+  // asked for explicitly.
   async function writeField(u: FieldUpdate): Promise<boolean> {
     try {
       return await updateFrontMatter(
@@ -306,7 +281,7 @@ async function addMetadataWithClaude(
         file,
         u.fieldName,
         u.value,
-        methodFor(u),
+        u.policy === "preserve" ? "update_if_empty" : "update",
       );
     } catch (error) {
       logError({
@@ -329,27 +304,12 @@ async function addMetadataWithClaude(
   // is — not deleted (#305).
   const fields = enabledFields(settings);
 
-  // Guarded on the normalized result, not the raw field. A model returning
-  // ["", "  "] satisfies validateMetadataInput but normalizeTags yields [] —
-  // which the append path then wrote as an empty tags array and reported as a
-  // change, so the user was told "Metadata updated successfully" for content
-  // that did not exist (#161).
-  const tags = normalizeTags(metadata.tags ?? []);
-  if (fields.has("tags") && tags.length > 0) {
-    updates.push({
-      kind: "list",
-      fieldName: settings.tagsFieldName,
-      value: tags,
-      policy: settings.tagsPolicy,
-    });
-  }
-  // Same shape as the tags guard: judge the value that would actually be
-  // written, not the raw string. validateMetadataInput only checks that these
-  // are strings, so "   " reaches here as truthy and wrote a blank description.
+  // Judge the value that would actually be written, not the raw string.
+  // validateMetadataInput only checks that these are strings, so "   " reaches
+  // here as truthy and wrote a blank description.
   const description = metadata.description ?? "";
   if (fields.has("description") && description.trim() !== "") {
     updates.push({
-      kind: "scalar",
       fieldName: settings.descriptionFieldName,
       value: description,
       policy: settings.descriptionPolicy,
@@ -361,7 +321,6 @@ async function addMetadataWithClaude(
   const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
   if (fields.has("title") && title !== "") {
     updates.push({
-      kind: "scalar",
       fieldName: settings.titleFieldName,
       value: title,
       policy: settings.titlePolicy,

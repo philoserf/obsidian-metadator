@@ -1,6 +1,6 @@
 // Obsidian returns the raw file from vault reads, frontmatter included, and the
 // prompt only ever wants the note body. Left in, a note with many properties
-// and a long existing tag list spends its whole token budget on YAML before any
+// and long list values spends its whole token budget on YAML before any
 // prose is considered — and under the `heading` strategy that YAML is handed to
 // the model inside a "Body:" section as though it were prose (#164).
 //

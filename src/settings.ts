@@ -17,7 +17,7 @@ export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in settingsMigrate.ts. Each migration's key is the schema version it produces.
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 export interface MetadataToolSettings {
   schemaVersion: number;
@@ -29,13 +29,11 @@ export interface MetadataToolSettings {
   anthropicModel: string;
 
   // Field names in frontmatter
-  tagsFieldName: string;
   descriptionFieldName: string;
   titleFieldName: string;
 
   // Feature toggles, one per field. A field that is off is not asked for, not
   // in the prompt, and never written (#305).
-  enableTags: boolean;
   enableDescription: boolean;
   enableTitle: boolean;
   debugLogging: boolean;
@@ -46,12 +44,10 @@ export interface MetadataToolSettings {
   truncateMethod: TruncateMethod;
 
   // Write policy, one per field
-  tagsPolicy: TagsPolicy;
-  descriptionPolicy: ScalarPolicy;
-  titlePolicy: ScalarPolicy;
+  descriptionPolicy: WritePolicy;
+  titlePolicy: WritePolicy;
 
   // Prompts
-  tagsPrompt: string;
   descriptionPrompt: string;
   titlePrompt: string;
 }
@@ -66,30 +62,27 @@ export type MetadataConfig = MetadataToolSettings & { anthropicApiKey: string };
 const MODEL_ID_PATTERN = /^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MODEL_ID_MAX_LENGTH = 100;
 
-// The three generated fields, in prompt order.
-export type MetadataField = "tags" | "description" | "title";
+// The two generated fields, in prompt order.
+export type MetadataField = "description" | "title";
 export const METADATA_FIELDS: readonly MetadataField[] = [
-  "tags",
   "description",
   "title",
 ];
 
 // Each field's settings keys, so code that walks the fields names them once.
 export const FIELD_NAME_KEY = {
-  tags: "tagsFieldName",
   description: "descriptionFieldName",
   title: "titleFieldName",
 } as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
 
 export const FIELD_ENABLE_KEY = {
-  tags: "enableTags",
   description: "enableDescription",
   title: "enableTitle",
 } as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
 
 type FieldToggles = Pick<
   MetadataToolSettings,
-  "enableTags" | "enableDescription" | "enableTitle"
+  "enableDescription" | "enableTitle"
 >;
 
 // The one answer to "which fields does a run generate?". The command, the CLI
@@ -103,23 +96,20 @@ export function anyFieldEnabled(settings: FieldToggles): boolean {
   return enabledFields(settings).size > 0;
 }
 
-// What every entry point says when all three are off. One string, so the
+// What every entry point says when both are off. One string, so the
 // Notice and the CLI error name the same settings.
 export const NO_FIELDS_ENABLED_MESSAGE =
-  "Nothing to generate: Enable tags, Enable description and Enable title are all off in Settings → Metadator.";
+  "Nothing to generate: Enable description and Enable title are both off in Settings → Metadator.";
 
-// The three frontmatter field names must differ. If two collide, the writes
-// clobber each other in the user's note rather than in plugin state: tags is
-// written as an array and then the description overwrites the same key with a
-// string, the run reports success, and nothing surfaces the loss (#200).
+// The two frontmatter field names must differ. If they collide, the writes
+// clobber each other in the user's note rather than in plugin state: the
+// description is written and then the title overwrites the same key, the run
+// reports success, and nothing surfaces the loss (#200).
 //
 // Shared so the load-time and edit-time rules cannot drift apart, the same
 // reason isEmptyValue lives on its own.
 export function areFieldNamesDistinct(
-  names: Pick<
-    MetadataToolSettings,
-    "tagsFieldName" | "descriptionFieldName" | "titleFieldName"
-  > &
+  names: Pick<MetadataToolSettings, "descriptionFieldName" | "titleFieldName"> &
     FieldToggles,
 ): boolean {
   // Only the names actually in use. A disabled field's name is inert —
@@ -160,34 +150,18 @@ export const TRUNCATE_METHOD_LABELS: Record<TruncateMethod, string> = {
   heading: "Headings + Summaries",
 };
 
-// One policy per field, because the three fields are different kinds of value
-// and a single global setting could not serve them (#252). `tags` is a set that
-// wants reconciling against what is already there; `description` is a cheap
-// scalar that is fine to replace; `title` is a scalar that is often
-// externally synced and load-bearing, so it defaults to being left alone.
-//
-// These records are the enumerations — see the note above MODEL_OPTION_LABELS.
-// All three share one vocabulary so "always regenerate" is a single idea you
-// turn on per field, rather than a behavior wearing a different name on each.
-// `regenerate` means the same thing everywhere — replace what is there with
-// what the model returned — even though the write differs by value kind: a
-// list is replaced wholesale, a scalar is overwritten.
-export const TAGS_POLICY_LABELS = {
-  regenerate: "Always Regenerate",
-  merge: "Merge",
-  preserve: "Preserve Existing",
-};
-
-export type TagsPolicy = keyof typeof TAGS_POLICY_LABELS;
-
-// The scalars offer the same two, minus `merge`, which is meaningless for a
-// value that is not a set.
-export const SCALAR_POLICY_LABELS = {
+// One policy per field, because the two fields are kept differently (#252):
+// `description` is cheap and disposable, so it is fine to replace; `title` is
+// often externally synced and load-bearing, so it defaults to being left
+// alone. One vocabulary for both, so "always regenerate" is a single idea you
+// turn on per field. This record is the enumeration — see the note above
+// MODEL_OPTION_LABELS.
+export const WRITE_POLICY_LABELS = {
   regenerate: "Always Regenerate",
   preserve: "Preserve Existing",
 };
 
-export type ScalarPolicy = keyof typeof SCALAR_POLICY_LABELS;
+export type WritePolicy = keyof typeof WRITE_POLICY_LABELS;
 
 export const DEFAULT_SETTINGS: MetadataToolSettings = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -195,11 +169,9 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   anthropicApiKeySecret: "",
   anthropicModel: "claude-sonnet-5",
 
-  tagsFieldName: "tags",
   descriptionFieldName: "description",
   titleFieldName: "title",
 
-  enableTags: true,
   enableDescription: true,
   enableTitle: true,
   debugLogging: false,
@@ -208,27 +180,20 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   contentTokenLimit: 1000,
   truncateMethod: "head_only",
 
-  // Defaults differ per field on purpose. tags regenerate because a list that
-  // can never be pruned is the problem #252 exists to fix; description
-  // regenerates because it is cheap and disposable; title preserves because it
-  // is frequently kept in sync by another plugin or relied on by a publisher,
-  // and rewriting it silently changes a note's public identity.
-  tagsPolicy: "regenerate",
+  // Defaults differ per field on purpose. description regenerates because it
+  // is cheap and disposable; title preserves because it is frequently kept in
+  // sync by another plugin or relied on by a publisher, and rewriting it
+  // silently changes a note's public identity.
   descriptionPolicy: "regenerate",
   titlePolicy: "preserve",
 
   // These are starting points a user is expected to edit, so they are written
   // as rules a model can actually check itself against rather than adjectives
-  // ("concise but useful") that it cannot. Each one also closes a failure this
-  // codebase has had to handle downstream:
-  //
-  // - Obsidian frontmatter tags carry no leading "#". Tags arrive as an array,
-  //   so a comma inside one is no longer a hazard worth spending prompt on;
-  // - titles came back wrapped in quotation marks often enough that
-  //   stripSurroundingQuotes exists to unwrap them. Saying so here is a fix at
-  //   the source; that function stays as a backstop.
-  tagsPrompt:
-    "Select 3-5 tags. Exactly one names the kind of note — choose from reference, howto, journal, meeting, idea, project. The rest name what the note is about. Use lowercase with hyphens instead of spaces (e.g. knowledge-management). Do not prefix a tag with #. Skip terms too generic to narrow a search, such as notes, general, or misc.",
+  // ("concise but useful") that it cannot. The title prompt also closes a
+  // failure this codebase has had to handle downstream: titles came back
+  // wrapped in quotation marks often enough that stripSurroundingQuotes exists
+  // to unwrap them. Saying so here is a fix at the source; that function stays
+  // as a backstop.
   descriptionPrompt:
     'Write 1-2 sentences, at most 40 words, saying what the note covers and its most useful specifics. Begin with the subject itself — no "This note...", "This article..." or similar preamble. Do not restate the title. Use plain present-tense prose.',
   titlePrompt:

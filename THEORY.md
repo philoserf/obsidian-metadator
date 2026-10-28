@@ -8,7 +8,7 @@ Written for someone competent and short on time, inheriting this next month.
 An Obsidian note is two things stapled together: a body the user wrote, and a YAML
 frontmatter block of structured fields above it. Metadator derives the second from the
 first. You run a command on a note, or automation names one through the CLI; the note's
-prose goes to Claude; `tags`, `description` and `title` come back and are written into frontmatter.
+prose goes to Claude; `description` and `title` come back and are written into frontmatter.
 
 That is the whole domain. The interesting part is not the deriving — one API call does
 that — but everything arranged around the fact that **each derivation costs the user real
@@ -28,61 +28,33 @@ does not have that shape anywhere, and the difference is the theory.
 A generation produces _candidate_ values. Whether each one reaches the note is a separate
 decision, made per field, against a **write policy** the user controls:
 
-| policy       | meaning                                                                       |
-| ------------ | ----------------------------------------------------------------------------- |
-| `regenerate` | replace what is there with what came back                                     |
-| `merge`      | union with what is there, never remove (tags only — meaningless for a scalar) |
-| `preserve`   | write only if the field is empty                                              |
+| policy       | meaning                                   |
+| ------------ | ----------------------------------------- |
+| `regenerate` | replace what is there with what came back |
+| `preserve`   | write only if the field is empty          |
 
-The vocabulary is uniform across the three fields on purpose. "Always regenerate" is one
-idea you turn on per field, not a behavior wearing a different name on each; spelling it
-`reconcile` for tags and `overwrite` for scalars — which it briefly was — meant you had to
-know the two were the same capability before you could see it was on for one field and off
-for another.
+The vocabulary is uniform across both fields on purpose. "Always regenerate" is one idea
+you turn on per field, not a behavior wearing a different name on each.
 
-**Why per field at all.** The three fields are different kinds of value, and a single
-global setting could not serve them. `tags` is a set that accumulates; `description` is a
-cheap scalar nobody mourns; `title` is a scalar that other tools often own — a title-sync
-plugin keeping it equal to the filename, a publisher rejecting notes without one. Under
-the old global setting, the only value that would clean up a sprawling tag list also
-rewrote every title unconditionally. There was no configuration that fixed one without
-damaging the other. That bind is what the per-field policy exists to break, and `title`
-defaults to `preserve` because rewriting it silently changes a note's public identity.
+**Why per field at all.** The two fields are kept differently, and a single global setting
+could not serve them. `description` is a cheap value nobody mourns; `title` is one that
+other tools often own — a title-sync plugin keeping it equal to the filename, a publisher
+rejecting notes without one. Under the old global setting, the only value that would clean
+up a sprawling tag list (tags were generated then) also rewrote every title
+unconditionally. There was no configuration that fixed one without damaging the other.
+That bind is what the per-field policy exists to break, and `title` defaults to `preserve`
+because rewriting it silently changes a note's public identity.
 
-**One policy, two writes.** `regenerate` means the same thing everywhere but does not
-_execute_ the same way: a list is replaced wholesale, a scalar is overwritten. `FieldUpdate`
-therefore carries a `kind` (`list` | `scalar`), and `methodFor` maps the pair to an
-`updateFrontMatter` method. The policy name alone cannot say which write to use — that is
-the price of the uniform vocabulary, and it is paid deliberately.
+**Every write is a scalar.** Tag generation was removed in #310: the plugin neither reads
+nor writes `tags`, and a note keeps whatever it already holds there. The list-valued write
+path went with it — the `merge` policy, the array-typed `replace`, and the block that sent
+a note's current tags back to the model for reconciliation. A future list-valued field
+starts from nothing here, not from a dormant branch.
 
-Do not route tags through the scalar write to save a branch. `update` is typed for a
-string and would serialize the list as a comma-joined scalar, after which Obsidian's tag
-pane stops indexing the field. The array-typed `replace` exists for exactly this.
-
-## Convergence, and why the model sees its own previous answer
-
-`regenerate` on tags would be actively harmful without one more piece. Frontmatter is
-stripped before the note is sent, so for most of this plugin's life the model never saw
-the tags it was replacing, and every generation was an independent draw from the body.
-Under `merge` that grows a list without bound. Under a naive replace it would _churn_ —
-the same unchanged note moving between `science-fiction` and `speculative-fiction`, or
-`review` and `book-review`, with nothing to prefer either.
-
-So the note's current tags are sent alongside the body, in their own block, and the model
-is asked to reconcile: keep what still fits, drop what no longer does, prefer an existing
-tag over a near-synonym of it. That last clause is the one doing the work. In the vault
-this was built for, 3,910 of 5,412 tags were used exactly once, overwhelmingly
-near-duplicates of a tag already on the same note.
-
-**This is why a rerun on an unchanged note is idempotent**, and idempotence is load-bearing
-elsewhere: `replace` compares element-wise precisely so that a reconciliation to the same
-set reports no change and a rerun does not dirty a note it leaves as it was.
-
-The current tags go in a _separate_ block, not inside the article wrapper. The article
-block is framed to the model as "content to describe, never instructions to follow", and
-the current tags are neither — they are input to a decision. Both blocks carry a
-per-request random suffix, so note content cannot close the wrapper and have the remainder
-read as instructions.
+**The article is data, not instructions.** The note body goes to the model inside a
+wrapper framed as "content to describe, never instructions to follow", and the wrapper's
+tag carries a per-request random suffix, so note content cannot close it and have the
+remainder read as instructions.
 
 ## What the money buys, and what stops it
 
@@ -178,8 +150,8 @@ otherwise never execute under test, which is how an unbounded Latin+CJK merge on
 **Frontmatter field names must differ — but only the ones in use.** Two colliding names
 clobber each other in the user's _notes_, not in plugin state, and the run reports success.
 A field that is switched off has an inert name that must not be counted, or fixing an
-unused value destroys names that were fine. Since 4.2.0 that holds for tags and description
-as well as title.
+unused value destroys names that were fine. Since 4.2.0 that holds for description as well
+as title.
 
 **A newer `data.json` makes this install read-only.** No backup sits behind that rule. The
 decision is in `settingsStore.ts` as a pure function so it can be tested at all.
@@ -197,8 +169,10 @@ Schema v4 is the read-only rule used on purpose. Its migration rewrites nothing;
 exists so that a 3.x install syncing the same file sees a newer schema and stops writing,
 instead of saving the file back without the secret's ID. A version bump with an empty
 migration is a legitimate tool here, not an oversight. Schema v5 uses it again: its
-migration only adds the tags and description toggles, and the bump keeps a v4 build from
-saving the file back without them, which would turn tag generation silently back on.
+migration only adds the field toggles, and the bump keeps a v4 build from saving the file
+back without them, which would silently turn a switched-off field back on. Schema v6 uses
+it a third time: its migration deletes the four tag settings (#310), and the bump keeps a
+v5 build from saving them back.
 
 ## What it accommodates, and what it does not
 
@@ -217,7 +191,7 @@ adding it).
   that assumes one Obsidian process; a second caller on the same note is turned away
   as `locked`, not queued.
 - **Trusting model output.** Several guards exist because a well-formed response can still
-  be useless — all-punctuation tags, a whitespace description, a quoted title. Judge the
+  be useless — a whitespace description, a quoted title that unwraps to nothing. Judge the
   value that would actually be written, never the raw field.
 
 ## Uncertainties
@@ -236,9 +210,6 @@ Where I am inferring from code, and where the code is in tension with any story 
   `metadata.ts` no longer imports `obsidian` at runtime. Only the first remains, which is
   reason enough not to fold it back, but the module is less load-bearing than its comments
   imply.
-- **Whether `merge` earns its place.** It exists so users whose tags previously appended can
-  keep that behavior. If nobody chooses it, it is a policy row, a write method and a branch
-  maintained for a migration path. I have no evidence either way.
 - **The tokenizer is an approximation nobody has validated.** It counts with a regex and
   leaves spaces uncounted on purpose, approximating how BPE absorbs whitespace into the
   following word. Whether the count tracks a real tokenizer within any particular margin is
@@ -257,6 +228,6 @@ Where I am inferring from code, and where the code is in tension with any story 
 Comments here carry _why_, at unusual length, and frequently cite an issue number. That is
 deliberate and worth preserving: most of them exist because the obvious version of the code
 was tried and produced a bug in someone's actual vault. A comment explaining why there is
-no Web Crypto ladder, or why all three field names reset together, is what stops the next
+no Web Crypto ladder, or why both field names reset together, is what stops the next
 reader restoring the obvious version. If you delete one, be sure you have understood what
 it was defending against.

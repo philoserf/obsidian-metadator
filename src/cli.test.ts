@@ -73,9 +73,7 @@ const run = async (app: App, s: MetadataConfig, params = {}) =>
 
 describe("metadator:generate", () => {
   test("writes the note and prints what it now holds", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUse({ tags: ["a", "b"], description: "d", title: "T" }),
-    );
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
 
     const out = await run(makeApp({}), settings({ enableTitle: true }));
 
@@ -84,21 +82,31 @@ describe("metadator:generate", () => {
       file: "Inbox/X.md",
       title: "T",
       description: "d",
-      tags: ["a", "b"],
     });
   });
 
-  test("prints the note's values, not the model's, under merge", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUse({ tags: ["new"], description: "d", title: "T" }),
-    );
+  test("prints the note's values, not the model's, under preserve", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
 
     const out = await run(
-      makeApp({ frontmatter: { tags: ["old"] } }),
-      settings({ tagsPolicy: "merge" }),
+      makeApp({ frontmatter: { title: "Kept" } }),
+      settings({ titlePolicy: "preserve" }),
     );
 
-    expect(out.tags).toEqual(["old", "new"]);
+    expect(out.title).toBe("Kept");
+    expect(out.description).toBe("d");
+  });
+
+  // Tag generation is gone (#310): a note's existing tags are neither
+  // rewritten nor reported.
+  test("leaves a note's tags alone and does not print them", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
+    const app = makeApp({ frontmatter: { tags: ["old"] } });
+
+    const out = await run(app, settings());
+
+    expect(out).not.toHaveProperty("tags");
+    expect(await app.vault.read({} as never)).toContain('"tags":["old"]');
   });
 
   test("a missing key is a returned skip, not a throw", async () => {
@@ -109,9 +117,7 @@ describe("metadator:generate", () => {
   });
 
   test("a failed write comes back as an error", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUse({ tags: ["a"], description: "d", title: "T" }),
-    );
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
 
     const out = await run(makeApp({ failWrites: true }), settings());
 
@@ -157,12 +163,11 @@ describe("metadator:generate", () => {
   });
 });
 
-describe("metadator:generate with all three fields disabled (#305)", () => {
+describe("metadator:generate with both fields disabled (#305)", () => {
   test("returns an error naming the settings and makes no API call", async () => {
     const out = await run(
       makeApp({}),
       settings({
-        enableTags: false,
         enableDescription: false,
         enableTitle: false,
       }),

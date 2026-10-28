@@ -27,7 +27,7 @@ describe("decideLoad", () => {
   });
 
   test("an in-version load leaves writes enabled and keeps the settings", () => {
-    const loaded = { ...DEFAULT_SETTINGS, tagsFieldName: "keywords" };
+    const loaded = { ...DEFAULT_SETTINGS, descriptionFieldName: "summary" };
     const decision = decideLoad({
       kind: "ok",
       settings: loaded,
@@ -35,7 +35,7 @@ describe("decideLoad", () => {
     });
 
     expect(decision.writesBlocked).toBe(false);
-    expect(decision.settings.tagsFieldName).toBe("keywords");
+    expect(decision.settings.descriptionFieldName).toBe("summary");
     expect(decision.notice).toBeUndefined();
   });
 
@@ -71,9 +71,11 @@ describe("decideLoad", () => {
       settings: loaded,
       legacyApiKey: "",
     });
-    decision.settings.tagsFieldName = "mutated";
+    decision.settings.descriptionFieldName = "mutated";
 
-    expect(loaded.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(loaded.descriptionFieldName).toBe(
+      DEFAULT_SETTINGS.descriptionFieldName,
+    );
   });
 
   test("every MigrationResult kind is handled", () => {

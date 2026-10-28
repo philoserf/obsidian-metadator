@@ -72,9 +72,7 @@ const shown = () =>
 
 describe("one write failure is reported once, and named (#239)", () => {
   test("produces exactly one notice, not one per field", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUse({ tags: ["a"], description: "d", title: "T" }),
-    );
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
 
     await generateMetadata(makeApp({ failWrites: true }), settings());
 
@@ -84,9 +82,7 @@ describe("one write failure is reported once, and named (#239)", () => {
   });
 
   test("names the write failure instead of calling it an unexpected error", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUse({ tags: ["a"], description: "d", title: "T" }),
-    );
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
 
     await generateMetadata(makeApp({ failWrites: true }), settings());
 
@@ -102,13 +98,12 @@ describe("one write failure is reported once, and named (#239)", () => {
 describe("no skip is silent (#237)", () => {
   test("a fully populated note says so instead of nothing", async () => {
     const app = makeApp({
-      frontmatter: { tags: ["t"], description: "d", title: "T" },
+      frontmatter: { description: "d", title: "T" },
     });
 
     await generateMetadata(
       app,
       settings({
-        tagsPolicy: "preserve",
         descriptionPolicy: "preserve",
         titlePolicy: "preserve",
       }),
@@ -123,7 +118,7 @@ describe("no skip is silent (#237)", () => {
   // nothing at all.
   test("a billed call that writes nothing says the request was billed", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUse({ tags: ["", "  "], description: "   ", title: "" }),
+      toolUse({ description: "   ", title: "" }),
     );
 
     await generateMetadata(makeApp({}), settings());
@@ -158,12 +153,11 @@ describe("no skip is silent (#237)", () => {
 
 // A configuration problem, said as one: the "already populated" skip the
 // pipeline would otherwise report sends the user looking at the note (#305).
-describe("all three fields disabled", () => {
+describe("both fields disabled", () => {
   test("shows a notice naming the settings and makes no API call", async () => {
     await generateMetadata(
       makeApp({}),
       settings({
-        enableTags: false,
         enableDescription: false,
         enableTitle: false,
       }),

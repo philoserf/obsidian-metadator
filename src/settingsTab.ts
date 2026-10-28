@@ -13,9 +13,8 @@ import {
   type MetadataToolSettings,
   MODEL_OPTION_LABELS,
   PROMPT_MAX_LENGTH,
-  SCALAR_POLICY_LABELS,
-  TAGS_POLICY_LABELS,
   TRUNCATE_METHOD_LABELS,
+  WRITE_POLICY_LABELS,
 } from "./settings";
 import { migrateSettings } from "./settingsMigrate";
 import { SHARED_KEY_ID } from "./settingsStore";
@@ -72,8 +71,8 @@ export function apiKeyStatus(id: string, onDevice: readonly string[]): string {
     : `This device's keychain has no secret named "${id}". Add your key in Settings → Keychain under that name, or choose another secret here.`;
 }
 
-type FieldNameKey = "tagsFieldName" | "descriptionFieldName" | "titleFieldName";
-type PromptKey = "tagsPrompt" | "descriptionPrompt" | "titlePrompt";
+type FieldNameKey = "descriptionFieldName" | "titleFieldName";
+type PromptKey = "descriptionPrompt" | "titlePrompt";
 
 // Declarative settings (Obsidian 1.13.0, #282). Obsidian renders the
 // definitions, indexes every row for settings search, and hands each control
@@ -140,20 +139,19 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         key,
         placeholder: DEFAULT_SETTINGS[key],
         ...(disabled && { disabled }),
-        // The three names must differ, or one field's write clobbers
-        // another's in the note (#200). Checked as if every field were on: an
+        // The two names must differ, or one field's write clobbers the
+        // other's in the note (#200). Checked as if every field were on: an
         // inert name that collides would be reset by the load path the moment
         // it was stored (#248), so it is refused here instead.
         validate: (value: string) =>
           areFieldNamesDistinct({
             ...this.plugin.settings,
             [key]: value.trim() || DEFAULT_SETTINGS[key],
-            enableTags: true,
             enableDescription: true,
             enableTitle: true,
           })
             ? undefined
-            : `Must differ from the other frontmatter field names.`,
+            : `Must differ from the other frontmatter field name.`,
       },
     };
   }
@@ -186,7 +184,6 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     const truncateOff = () => !settings().truncateContent;
     // A field that is off is never asked for or written, so its name, prompt
     // and policy rows have nothing to configure (#305).
-    const tagsOff = () => !settings().enableTags;
     const descriptionOff = () => !settings().enableDescription;
     const titleOff = () => !settings().enableTitle;
 
@@ -259,22 +256,12 @@ export class MetadataToolSettingTab extends PluginSettingTab {
         heading: "Write policy",
         items: [
           {
-            name: "Tags write policy",
-            desc: "Always Regenerate: replace the list with the reconciled set the model returns, keeping the tags that still fit and dropping those that no longer do; Merge: add to what is there and never remove; Preserve Existing: only write when the field is empty.",
-            control: {
-              type: "dropdown",
-              key: "tagsPolicy",
-              options: TAGS_POLICY_LABELS,
-              disabled: tagsOff,
-            },
-          },
-          {
             name: "Description write policy",
             desc: "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty.",
             control: {
               type: "dropdown",
               key: "descriptionPolicy",
-              options: SCALAR_POLICY_LABELS,
+              options: WRITE_POLICY_LABELS,
               disabled: descriptionOff,
             },
           },
@@ -284,7 +271,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             control: {
               type: "dropdown",
               key: "titlePolicy",
-              options: SCALAR_POLICY_LABELS,
+              options: WRITE_POLICY_LABELS,
               disabled: titleOff,
             },
           },
@@ -316,19 +303,6 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               disabled: truncateOff,
             },
           },
-        ],
-      },
-      {
-        type: "group",
-        heading: "Tags",
-        items: [
-          {
-            name: "Enable tags",
-            desc: "Generate tags metadata. When off, tags are not requested and an existing value is left as it is.",
-            control: { type: "toggle", key: "enableTags" },
-          },
-          this.fieldName("Tags", "tagsFieldName", tagsOff),
-          this.prompt("Tags", "tagsPrompt", tagsOff),
         ],
       },
       {

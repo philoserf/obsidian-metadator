@@ -1,5 +1,5 @@
 // Dev tool: sends the same note content to the live Anthropic API once per
-// configurable model and prints the resulting tags/description/title side
+// configurable model and prints the resulting description and title side
 // by side. Not part of `bun test` — it costs money, hits the network, and
 // has nothing deterministic to assert. Run with:
 //
@@ -61,9 +61,6 @@ async function main() {
         settings,
       );
       const durationMs = Date.now() - startedAt;
-      if (metadata.tags) {
-        console.log(`  tags:        ${metadata.tags.join(", ")}`);
-      }
       if (metadata.description !== undefined) {
         console.log(`  description: ${metadata.description}`);
       }

@@ -6,7 +6,7 @@ import {
   type MetadataField,
 } from "../settings";
 
-// Output budget for the model's tool-use response (tags + description + title).
+// Output budget for the model's tool-use response (description + title).
 // Distinct from settings.contentTokenLimit, which bounds the input note content.
 const MAX_RESPONSE_TOKENS = 2048;
 // Models on the auto-tool-choice path think before answering, and thinking
@@ -54,7 +54,6 @@ export class ClaudeApiError extends Error {
 // A field is present exactly when it was enabled for the request: a disabled
 // field is neither declared in the tool schema nor read from the response.
 export interface MetadataFields {
-  tags?: string[];
   description?: string;
   title?: string;
 }
@@ -65,21 +64,10 @@ export interface CallClaudeOptions {
   signal?: AbortSignal | undefined;
 }
 
-// A sanity ceiling on one response, not the target count — that lives in the
-// user's editable tagsPrompt, which defaults to 3-5 but is theirs to change.
-// A schema bound tight enough to match the default would silently block a user
-// who edits the prompt to ask for eight; this one only catches a runaway.
-export const MAX_TAGS_PER_RESPONSE = 12;
-
-type JsonSchemaProperty =
-  | { type: "string"; description: string }
-  | {
-      type: "array";
-      items: { type: "string" };
-      minItems: number;
-      maxItems: number;
-      description: string;
-    };
+interface JsonSchemaProperty {
+  type: "string";
+  description: string;
+}
 
 // Only the enabled fields are declared, and every declared field is required.
 // A disabled field is absent from both lists, so the model is never asked for
@@ -87,21 +75,6 @@ type JsonSchemaProperty =
 export function buildToolSchema(fields: ReadonlySet<MetadataField>) {
   const properties: Record<string, JsonSchemaProperty> = {};
   const required: MetadataField[] = [];
-  if (fields.has("tags")) {
-    // An array rather than one comma-separated string: splitting on commas
-    // meant a tag containing a comma silently became two, which the default
-    // tagsPrompt had to instruct around. The bounds cap what a single
-    // regeneration can contribute to a note's tag list.
-    properties.tags = {
-      type: "array",
-      items: { type: "string" },
-      minItems: 1,
-      maxItems: MAX_TAGS_PER_RESPONSE,
-      description:
-        "Tags describing the article, one per array element. Follow the user's tag instructions.",
-    };
-    required.push("tags");
-  }
   if (fields.has("description")) {
     properties.description = {
       type: "string",
@@ -163,18 +136,6 @@ export function validateMetadataInput(
   }
   const obj = input as Record<string, unknown>;
   const out: MetadataFields = {};
-  if (fields.has("tags")) {
-    if (
-      !Array.isArray(obj.tags) ||
-      obj.tags.some((tag) => typeof tag !== "string")
-    ) {
-      throw new ClaudeApiError(
-        "api",
-        "Tool input field 'tags' is missing or not an array of strings",
-      );
-    }
-    out.tags = obj.tags;
-  }
   if (fields.has("description")) {
     if (typeof obj.description !== "string") {
       throw new ClaudeApiError(
