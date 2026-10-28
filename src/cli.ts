@@ -12,14 +12,14 @@ import {
 } from "./metadata";
 import {
   anyFieldEnabled,
+  FIELD_NAME_KEY,
+  METADATA_FIELDS,
   type MetadataConfig,
+  type MetadataField,
   NO_FIELDS_ENABLED_MESSAGE,
 } from "./settings";
 
-interface Fields {
-  title?: unknown;
-  description?: unknown;
-}
+type Fields = Partial<Record<MetadataField, unknown>>;
 
 // What `obsidian metadator:generate` prints: one JSON object, so a skill can
 // parse the outcome instead of scraping a sentence. `reason` on a skip is the
@@ -118,8 +118,10 @@ async function readFields(
   const fm: Record<string, unknown> = info.exists
     ? (parseYaml(info.frontmatter) ?? {})
     : {};
-  return {
-    title: fm[settings.titleFieldName],
-    description: fm[settings.descriptionFieldName],
-  };
+  return Object.fromEntries(
+    METADATA_FIELDS.map((field) => [
+      field,
+      fm[settings[FIELD_NAME_KEY[field]]],
+    ]),
+  );
 }

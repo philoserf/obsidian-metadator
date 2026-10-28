@@ -140,6 +140,11 @@ describe("migrateSettings", () => {
       titlePolicy: "regenerate",
       descriptionPrompt: "d",
       titlePrompt: "h",
+      eyebrowFieldName: "form",
+      enableEyebrow: true,
+      eyebrowPolicy: "regenerate",
+      eyebrowPrompt: "e",
+      eyebrowValues: ["Letter", "Speech"],
     };
 
     expect(ok(validLoaded)).toEqual({ ...DEFAULT_SETTINGS, ...validLoaded });
@@ -550,15 +555,15 @@ describe("schema v6: tag generation removed (#310)", () => {
 
   test("the v6 migration deletes the four tag keys from the raw bag", () => {
     const migrated = applyMigrations(v5, 5);
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     for (const key of tagKeys) expect(migrated).not.toHaveProperty(key);
     expect(migrated.descriptionFieldName).toBe("summary");
     expect(migrated.descriptionPolicy).toBe("preserve");
   });
 
-  test("a v5 file loads at v6 without them, other settings kept", () => {
+  test("a v5 file loads without them, other settings kept", () => {
     const settings = ok(v5);
-    expect(settings.schemaVersion).toBe(6);
+    expect(settings.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     for (const key of tagKeys) expect(settings).not.toHaveProperty(key);
     expect(settings.descriptionFieldName).toBe("summary");
     expect(settings.descriptionPolicy).toBe("preserve");
@@ -567,5 +572,49 @@ describe("schema v6: tag generation removed (#310)", () => {
   test("an older file carrying tag keys loses them too", () => {
     const settings = ok({ schemaVersion: 2, tagsPolicy: "merge" });
     for (const key of tagKeys) expect(settings).not.toHaveProperty(key);
+  });
+});
+
+describe("schema v7: the eyebrow choice field (#308)", () => {
+  test("a v6 file loads at v7 with the eyebrow field off and defaulted", () => {
+    const settings = ok({ schemaVersion: 6, descriptionPolicy: "preserve" });
+    expect(settings.schemaVersion).toBe(7);
+    expect(settings.enableEyebrow).toBe(false);
+    expect(settings.eyebrowFieldName).toBe("eyebrow");
+    expect(settings.eyebrowPolicy).toBe("preserve");
+    expect(settings.eyebrowValues).toEqual(["Poem", "Fiction", "Quotation"]);
+    expect(settings.descriptionPolicy).toBe("preserve");
+  });
+
+  test("values are trimmed and de-duplicated, and empties dropped", () => {
+    expect(
+      ok({ eyebrowValues: [" Poem ", "Poem", "", "Fiction"] }).eyebrowValues,
+    ).toEqual(["Poem", "Fiction"]);
+  });
+
+  test("a list that cannot work falls back whole to the default", () => {
+    for (const eyebrowValues of [
+      [],
+      ["", "  "],
+      "Poem, Fiction",
+      [1, 2],
+      Array.from({ length: 21 }, (_, i) => `v${i}`),
+      ["x".repeat(51)],
+    ]) {
+      expect(ok({ eyebrowValues }).eyebrowValues).toEqual(
+        DEFAULT_SETTINGS.eyebrowValues,
+      );
+    }
+  });
+
+  test("an eyebrow name that collides with an enabled field resets them all", () => {
+    const settings = ok({
+      enableEyebrow: true,
+      eyebrowFieldName: "title",
+      descriptionFieldName: "summary",
+    });
+    expect(settings.eyebrowFieldName).toBe("eyebrow");
+    expect(settings.titleFieldName).toBe("title");
+    expect(settings.descriptionFieldName).toBe("description");
   });
 });

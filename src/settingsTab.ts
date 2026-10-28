@@ -7,6 +7,9 @@ import {
 import type MetadataToolPlugin from "./main";
 import {
   areFieldNamesDistinct,
+  CHOICE_VALUE_MAX_LENGTH,
+  CHOICE_VALUES_KEY,
+  CHOICE_VALUES_MAX,
   DEFAULT_SETTINGS,
   isModelId,
   MAX_CONTENT_TOKEN_LIMIT,
@@ -70,8 +73,22 @@ export function apiKeyStatus(id: string, onDevice: readonly string[]): string {
     : `This device's keychain has no secret named "${id}". Add your key in Settings → Keychain under that name, or choose another secret here.`;
 }
 
-type FieldNameKey = "descriptionFieldName" | "titleFieldName";
-type PromptKey = "descriptionPrompt" | "titlePrompt";
+type FieldNameKey =
+  | "descriptionFieldName"
+  | "titleFieldName"
+  | "eyebrowFieldName";
+type PromptKey = "descriptionPrompt" | "titlePrompt" | "eyebrowPrompt";
+type ChoiceValuesKey =
+  (typeof CHOICE_VALUES_KEY)[keyof typeof CHOICE_VALUES_KEY];
+const CHOICE_KEYS: ReadonlySet<string> = new Set(
+  Object.values(CHOICE_VALUES_KEY),
+);
+
+// A choice list is edited as one comma-separated line. Splitting here and
+// nowhere else means the stored value is always the array the load path reads.
+function splitChoices(value: string): string[] {
+  return value.split(",").map((v) => v.trim());
+}
 
 // Declarative settings (Obsidian 1.13.0, #282). Obsidian renders the
 // definitions, indexes every row for settings search, and hands each control
@@ -116,8 +133,19 @@ export class MetadataToolSettingTab extends PluginSettingTab {
   // control stores exactly what the next load would produce: a field name is
   // trimmed, an emptied prompt falls back to its default. The default
   // implementation would store the raw value.
+  override getControlValue(key: string): unknown {
+    const value = (this.plugin.settings as unknown as Record<string, unknown>)[
+      key
+    ];
+    return Array.isArray(value) ? value.join(", ") : value;
+  }
+
   override setControlValue(key: string, value: unknown): void {
-    const result = migrateSettings({ ...this.plugin.settings, [key]: value });
+    const stored =
+      CHOICE_KEYS.has(key) && typeof value === "string"
+        ? splitChoices(value)
+        : value;
+    const result = migrateSettings({ ...this.plugin.settings, [key]: stored });
     if (result.kind !== "ok") return;
     this.plugin.settings = result.settings;
     this.save.schedule();
@@ -148,9 +176,10 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             [key]: value.trim() || DEFAULT_SETTINGS[key],
             enableDescription: true,
             enableTitle: true,
+            enableEyebrow: true,
           })
             ? undefined
-            : `Must differ from the other frontmatter field name.`,
+            : `Must differ from the other frontmatter field names.`,
       },
     };
   }
@@ -171,6 +200,33 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     };
   }
 
+  private choices(
+    label: string,
+    key: ChoiceValuesKey,
+    disabled?: () => boolean,
+  ) {
+    return {
+      name: `${label} values`,
+      desc: `The values ${label.toLowerCase()} may take, separated by commas. The model picks one or none; anything else it returns is not written.`,
+      control: {
+        type: "text" as const,
+        key,
+        placeholder: DEFAULT_SETTINGS[key].join(", "),
+        ...(disabled && { disabled }),
+        validate: (value: string) => {
+          const values = splitChoices(value).filter((v) => v !== "");
+          if (values.length === 0) return "At least one value.";
+          if (values.length > CHOICE_VALUES_MAX) {
+            return `At most ${CHOICE_VALUES_MAX} values.`;
+          }
+          return values.some((v) => v.length > CHOICE_VALUE_MAX_LENGTH)
+            ? `Each value at most ${CHOICE_VALUE_MAX_LENGTH} characters.`
+            : undefined;
+        },
+      },
+    };
+  }
+
   private boundedInt(max: number) {
     return (value: number) =>
       Number.isInteger(value) && value > 0 && value <= max
@@ -185,6 +241,7 @@ export class MetadataToolSettingTab extends PluginSettingTab {
     // and policy rows have nothing to configure (#305).
     const descriptionOff = () => !settings().enableDescription;
     const titleOff = () => !settings().enableTitle;
+    const eyebrowOff = () => !settings().enableEyebrow;
 
     return [
       {
@@ -275,6 +332,16 @@ export class MetadataToolSettingTab extends PluginSettingTab {
             },
           },
           {
+            name: "Eyebrow write policy",
+            desc: "Always Regenerate: replace on every run; Preserve Existing: only write when the field is empty. Preserve is the default because a form set by hand is a decision.",
+            control: {
+              type: "dropdown",
+              key: "eyebrowPolicy",
+              options: WRITE_POLICY_LABELS,
+              disabled: eyebrowOff,
+            },
+          },
+          {
             name: "Truncate content",
             desc: "Limit content sent to the API to reduce costs.",
             control: { type: "toggle", key: "truncateContent" },
@@ -328,6 +395,20 @@ export class MetadataToolSettingTab extends PluginSettingTab {
           },
           this.fieldName("Title", "titleFieldName", titleOff),
           this.prompt("Title", "titlePrompt", titleOff),
+        ],
+      },
+      {
+        type: "group",
+        heading: "Eyebrow",
+        items: [
+          {
+            name: "Enable eyebrow",
+            desc: "Name a note's form from a fixed list, such as Poem, Fiction or Quotation, and write nothing when none applies. When off, an eyebrow is not requested and an existing value is left as it is.",
+            control: { type: "toggle", key: "enableEyebrow" },
+          },
+          this.fieldName("Eyebrow", "eyebrowFieldName", eyebrowOff),
+          this.choices("Eyebrow", "eyebrowValues", eyebrowOff),
+          this.prompt("Eyebrow", "eyebrowPrompt", eyebrowOff),
         ],
       },
     ];

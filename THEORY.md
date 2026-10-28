@@ -8,7 +8,7 @@ Written for someone competent and short on time, inheriting this next month.
 An Obsidian note is two things stapled together: a body the user wrote, and a YAML
 frontmatter block of structured fields above it. Metadator derives the second from the
 first. You run a command on a note, or automation names one through the CLI; the note's
-prose goes to Claude; `description` and `title` come back and are written into frontmatter.
+prose goes to Claude; `description`, `title` and, when it is on, a choice-field `eyebrow` come back and are written into frontmatter.
 
 That is the whole domain. The interesting part is not the deriving — one API call does
 that — but everything arranged around the fact that **each derivation costs the user real

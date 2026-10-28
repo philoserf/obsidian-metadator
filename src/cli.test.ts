@@ -234,3 +234,77 @@ describe("metadator:generate dry-run", () => {
     expect(out.status).toBe("error");
   });
 });
+
+describe("metadator:generate with the eyebrow field (#308)", () => {
+  const on = (o: Partial<MetadataConfig> = {}) =>
+    settings({ enableEyebrow: true, ...o });
+
+  test("writes a listed value", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUse({ description: "d", title: "T", eyebrow: "Poem" }),
+    );
+
+    const out = await run(makeApp({}), on());
+
+    expect(out).toMatchObject({ status: "changed", eyebrow: "Poem" });
+  });
+
+  test("writes nothing for an essay, and the other fields still land", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUse({ description: "d", title: "T", eyebrow: "" }),
+    );
+    const app = makeApp({});
+
+    const out = await run(app, on());
+
+    expect(out).toEqual({
+      status: "changed",
+      file: "Inbox/X.md",
+      title: "T",
+      description: "d",
+    });
+    expect(await app.vault.read({} as never)).not.toContain("eyebrow");
+  });
+
+  test("never writes an off-list value", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUse({ description: "d", title: "T", eyebrow: "Essay" }),
+    );
+    const app = makeApp({});
+
+    await run(app, on());
+
+    expect(await app.vault.read({} as never)).not.toContain("Essay");
+  });
+
+  test("keeps a hand-set value under preserve", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUse({ description: "d", title: "T", eyebrow: "Poem" }),
+    );
+
+    const out = await run(
+      makeApp({ frontmatter: { eyebrow: "Fiction" } }),
+      on(),
+    );
+
+    expect(out.eyebrow).toBe("Fiction");
+  });
+
+  test("a dry run proposes it", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUse({ description: "d", title: "T", eyebrow: "Quotation" }),
+    );
+
+    const out = await run(makeApp({}), on({ titlePolicy: "regenerate" }), {
+      "dry-run": "true",
+    });
+
+    expect(out).toEqual({
+      status: "preview",
+      file: "Inbox/X.md",
+      title: "T",
+      description: "d",
+      eyebrow: "Quotation",
+    });
+  });
+});

@@ -13,7 +13,11 @@ import { logDebug, logError, newRequestId } from "./logger";
 import { buildPrompt } from "./prompt";
 import {
   enabledFields,
+  FIELD_NAME_KEY,
+  FIELD_POLICY_KEY,
+  METADATA_FIELDS,
   type MetadataConfig,
+  type MetadataField,
   type WritePolicy,
 } from "./settings";
 
@@ -79,14 +83,13 @@ export function shouldGenerate(
   settings: MetadataConfig,
 ): boolean {
   const fields = enabledFields(settings);
-  return (
-    (fields.has("description") &&
+  return METADATA_FIELDS.some(
+    (field) =>
+      fields.has(field) &&
       willWrite(
-        settings.descriptionPolicy,
-        frontMatter[settings.descriptionFieldName],
-      )) ||
-    (fields.has("title") &&
-      willWrite(settings.titlePolicy, frontMatter[settings.titleFieldName]))
+        settings[FIELD_POLICY_KEY[field]],
+        frontMatter[settings[FIELD_NAME_KEY[field]]],
+      ),
   );
 }
 
@@ -104,10 +107,10 @@ type NotWritten =
 
 export type FileResult = { kind: "changed"; file: TFile } | NotWritten;
 
-// The values a run would write, keyed by field ("title", "description"), not
+// The values a run would write, keyed by field ("title", "eyebrow"), not
 // by the configured frontmatter name. A field left out would not be written:
 // disabled, preserved and already populated, or blank in the model's answer.
-export type Proposed = Partial<Record<"title" | "description", string>>;
+export type Proposed = Partial<Record<MetadataField, string>>;
 
 // A dry run makes the same billed call and writes nothing. Its own result type,
 // so the command — which never previews — cannot be handed a preview.
@@ -317,28 +320,15 @@ function planUpdates(
   // not deleted (#305).
   const fields = enabledFields(settings);
 
-  // Judge the value that would actually be written, not the raw string.
-  // validateMetadataInput only checks that these are strings, so "   " reaches
-  // here as truthy and wrote a blank description.
-  const description = metadata.description ?? "";
-  if (fields.has("description") && description.trim() !== "") {
+  for (const field of METADATA_FIELDS) {
+    if (!fields.has(field)) continue;
+    const value = writableValue(field, metadata[field]);
+    if (value === "") continue;
     updates.push({
-      field: "description",
-      fieldName: settings.descriptionFieldName,
-      value: description,
-      policy: settings.descriptionPolicy,
-    });
-  }
-  // stripSurroundingQuotes trims and can empty the string outright — `""`
-  // unwraps to "". Guarding on metadata.title instead let that through and
-  // wrote an empty title while reporting "Metadata updated successfully".
-  const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
-  if (fields.has("title") && title !== "") {
-    updates.push({
-      field: "title",
-      fieldName: settings.titleFieldName,
-      value: title,
-      policy: settings.titlePolicy,
+      field,
+      fieldName: settings[FIELD_NAME_KEY[field]],
+      value,
+      policy: settings[FIELD_POLICY_KEY[field]],
     });
   }
 
@@ -351,6 +341,18 @@ function planUpdates(
     (u) =>
       !(u.policy === "preserve" && !isEmptyValue(frontMatter[u.fieldName])),
   );
+}
+
+// The value that would actually be written, or "" for nothing. Judged on that,
+// not the raw string: validateMetadataInput only checks that free-text fields
+// are strings, so "   " reached the write as truthy and wrote a blank
+// description. stripSurroundingQuotes trims and can empty a title outright —
+// `""` unwraps to "" — which once wrote an empty title while reporting
+// success. A choice field arrives already checked against its list, or absent.
+function writableValue(field: MetadataField, raw: string | undefined): string {
+  if (raw === undefined) return "";
+  if (field === "title") return stripSurroundingQuotes(raw);
+  return raw.trim() === "" ? "" : raw;
 }
 
 async function writeUpdates(

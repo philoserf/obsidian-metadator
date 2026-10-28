@@ -16,8 +16,10 @@ type FieldNames = Parameters<typeof areFieldNamesDistinct>[0];
 const names = (over: Partial<FieldNames> = {}): FieldNames => ({
   descriptionFieldName: "description",
   titleFieldName: "title",
+  eyebrowFieldName: "eyebrow",
   enableDescription: true,
   enableTitle: true,
+  enableEyebrow: true,
   ...over,
 });
 
@@ -106,12 +108,20 @@ describe("enabledFields (#305)", () => {
 
   test("lists only the fields switched on, in prompt order", () => {
     expect([
-      ...enabledFields({ enableDescription: false, enableTitle: true }),
+      ...enabledFields({
+        enableDescription: false,
+        enableTitle: true,
+        enableEyebrow: false,
+      }),
     ]).toEqual(["title"]);
   });
 
-  test("with both off there is nothing to generate", () => {
-    const off = { enableDescription: false, enableTitle: false };
+  test("with every field off there is nothing to generate", () => {
+    const off = {
+      enableDescription: false,
+      enableTitle: false,
+      enableEyebrow: false,
+    };
     expect(enabledFields(off).size).toBe(0);
     expect(anyFieldEnabled(off)).toBe(false);
   });

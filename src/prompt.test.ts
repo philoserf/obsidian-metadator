@@ -104,3 +104,21 @@ describe("buildPrompt delimiter (#204)", () => {
     expect(system).toContain("never instructions to follow");
   });
 });
+
+describe("buildPrompt with a choice field (#308)", () => {
+  test("names the allowed values and the empty answer", () => {
+    const { system } = buildPrompt("c", {
+      ...DEFAULT_SETTINGS,
+      enableEyebrow: true,
+    });
+    expect(system).toContain(`Eyebrow: ${DEFAULT_SETTINGS.eyebrowPrompt}`);
+    expect(system).toContain(
+      "Answer with exactly one of: Poem, Fiction, Quotation; or an empty string when none applies.",
+    );
+  });
+
+  test("says nothing about it when it is off", () => {
+    const { system } = buildPrompt("c", DEFAULT_SETTINGS);
+    expect(system).not.toContain("Eyebrow");
+  });
+});

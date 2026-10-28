@@ -10,7 +10,7 @@ This is personal tooling, not a general-purpose plugin. It is opinionated in way
 
 - **Single user.** The only known installation is the maintainer's. Breaking changes can ship without migration paths (see `CHANGELOG.md` — 2.0.0 renamed `maxTokens` to `contentTokenLimit`, 2.0.1 dropped all pre-2.0 settings migrations).
 - **Paid API required.** The plugin calls Anthropic's Claude API. You supply and pay for your own API key; there is no free tier, no provider abstraction and no local-model path — swapping in another API means rewriting `src/adapters/claude.ts`.
-- **Frontmatter only.** Generated `description` and `title` are written to YAML frontmatter via Obsidian's `processFrontMatter()`. There is no body-content mode.
+- **Frontmatter only.** Generated `description`, `title` and `eyebrow` are written to YAML frontmatter via Obsidian's `processFrontMatter()`. There is no body-content mode.
 - **No tags.** Tag generation was removed (#310). The plugin neither reads nor writes `tags`; whatever a note already holds there is left alone.
 - **One note per action.** There is no folder or bulk run (removed in #311); covering many notes means scripting the CLI below, one billed call per note.
 - **No issue triage for feature requests.** Bugs are welcome; feature requests from other users will almost always be closed as out-of-scope.
@@ -23,28 +23,31 @@ There are two ways in.
 
 **One note.** Run **Generate metadata for current note** on the active note.
 
-**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title` and `description` as they stand after the run. One file per call. Add `dry-run` to see what would be written without writing it: `status` is `preview` and only the fields a run would write appear, with the values it would write. The call is still made and billed.
+**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title`, `description` and `eyebrow` as they stand after the run. One file per call. Add `dry-run` to see what would be written without writing it: `status` is `preview` and only the fields a run would write appear, with the values it would write. The call is still made and billed.
 
 Both do the same thing. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description.
 
-The results are written to `description` and `title` in YAML frontmatter — whichever are switched on — each according to its own write policy.
+The results are written to `description`, `title` and `eyebrow` in YAML frontmatter — whichever are switched on — each according to its own write policy.
 
 Three groups of settings shape what happens on each run.
 
 ### Fields
 
-Each field has its own switch: `enableDescription` and `enableTitle`, both on by default. A field that is off is left out of the prompt and the tool schema, so the model is never asked for it, and it is never written — an existing value in the note stays exactly as it is, neither overwritten nor deleted. Its field name, prompt and write policy are grayed out in the settings tab, and its field name no longer counts when the plugin checks that the two names differ.
+Each field has its own switch: `enableDescription` and `enableTitle`, both on by default, and `enableEyebrow`, off by default. A field that is off is left out of the prompt and the tool schema, so the model is never asked for it, and it is never written — an existing value in the note stays exactly as it is, neither overwritten nor deleted. Its field name, prompt and write policy are grayed out in the settings tab, and its field name no longer counts when the plugin checks that the names differ.
 
-With both off there is nothing to generate. The command says so in a notice, and `metadator:generate` returns an error; neither calls the API.
+**`eyebrow` is a choice field.** It names a note's form from a fixed list, `Poem`, `Fiction` and `Quotation` by default (`eyebrowValues`, edited as one comma-separated line), and most notes, essays above all, get no value at all. The tool schema offers the list plus an empty answer for none; anything else the model returns is not written, and never costs the other fields their answers. With it on, a note without an eyebrow is never "already populated", since an absent eyebrow is a valid state, so every run makes a call.
+
+With every field off there is nothing to generate. The command says so in a notice, and `metadator:generate` returns an error; neither calls the API.
 
 ### Write policy
 
-One policy per field, because the two fields are kept differently: a description is cheap to replace, while a title is often owned by something else. Both offer the same choice, so "always regenerate" is one idea you turn on per field rather than a behavior wearing a different name on each.
+One policy per field, because the fields are kept differently: a description is cheap to replace, while a title or a form is often a decision made elsewhere. All offer the same choice, so "always regenerate" is one idea you turn on per field rather than a behavior wearing a different name on each.
 
 | Field         | Options                   | Default      |
 | ------------- | ------------------------- | ------------ |
 | `description` | `regenerate` · `preserve` | `regenerate` |
 | `title`       | `regenerate` · `preserve` | `preserve`   |
+| `eyebrow`     | `regenerate` · `preserve` | `preserve`   |
 
 - **`regenerate`** replaces what is there with what the model returned.
 - **`preserve`** writes only when the field is empty, re-checking at write time so a value typed during the request is not clobbered.
