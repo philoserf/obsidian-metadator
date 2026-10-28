@@ -2,12 +2,6 @@ import type { TruncateMethod } from "./content/truncate";
 
 export const PROMPT_MAX_LENGTH = 1000;
 
-// Anthropic keys are "sk-ant-" plus roughly a hundred characters, so this is
-// generous while still catching a stray paste of a whole file (#158). The key
-// itself now lives in Obsidian's keychain (#281); this bounds only the legacy
-// plaintext value a pre-v4 data.json can carry into the migration.
-export const API_KEY_MAX_LENGTH = 256;
-
 // Ceiling for the numeric setting. Without one "positive integer" was the only
 // rule, so an all-digit paste became a precision-lossy double that still
 // satisfied n > 0 (#184). Context windows currently run 200k-1M tokens, so a

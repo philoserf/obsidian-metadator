@@ -1,5 +1,4 @@
 import {
-  API_KEY_MAX_LENGTH,
   areFieldNamesDistinct,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
@@ -118,11 +117,11 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
       4,
       () => {
         // 3 → 4: the API key moves from data.json to Obsidian's keychain
-        // (#281). Nothing to rewrite here: migrateSettings hands any plaintext
-        // anthropicApiKey to the plugin as legacyApiKey, whatever the version,
-        // and normalization drops it. The bump is what matters — a v3 build
-        // syncing this file goes read-only rather than saving it back without
-        // the secret's ID.
+        // (#281). Nothing to rewrite here: normalization drops a plaintext
+        // anthropicApiKey. The bump is what matters — a v3 build syncing this
+        // file goes read-only rather than saving it back without the secret's
+        // ID. The one-time move of the plaintext key into the keychain was
+        // removed on 2026-10-28, once no synced data.json carried one.
       },
     ],
     [
@@ -192,9 +191,7 @@ export function applyMigrations(
 }
 
 export type MigrationResult =
-  // legacyApiKey is a plaintext key found in the file, "" when there is none.
-  // Never part of settings: the plugin moves it into secret storage.
-  | { kind: "ok"; settings: MetadataToolSettings; legacyApiKey: string }
+  | { kind: "ok"; settings: MetadataToolSettings }
   | { kind: "missing" }
   | { kind: "future"; loadedSchemaVersion: number };
 
@@ -340,8 +337,5 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
   return {
     kind: "ok",
     settings: normalized,
-    legacyApiKey: readString(migrated.anthropicApiKey, "", {
-      maxLength: API_KEY_MAX_LENGTH,
-    }),
   };
 }

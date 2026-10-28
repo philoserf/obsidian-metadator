@@ -7,7 +7,7 @@ import {
   type MetadataToolSettings,
 } from "./settings";
 import { migrateSettings } from "./settingsMigrate";
-import { decideLoad, decideSave, migrateApiKey } from "./settingsStore";
+import { decideLoad, decideSave } from "./settingsStore";
 import { MetadataToolSettingTab } from "./settingsTab";
 import { generateMetadata } from "./singleNote";
 
@@ -68,9 +68,8 @@ export default class MetadataToolPlugin extends Plugin {
     this.addSettingTab(this.settingTab);
   }
 
-  // loadSettings writes only when the synced file carries a legacy plaintext
-  // key to move into the keychain, so an ordinary change is adopted without a
-  // write and cannot bounce data.json between devices. A file from a newer
+  // loadSettings never writes, so a synced change is adopted without a write
+  // and cannot bounce data.json between devices. A file from a newer
   // version is adopted as a block, exactly as at load.
   override async onExternalSettingsChange(): Promise<void> {
     await this.settingTab.reloadSettings(() => this.loadSettings());
@@ -98,15 +97,6 @@ export default class MetadataToolPlugin extends Plugin {
     this.settings = decision.settings;
     this.writesBlocked = decision.writesBlocked;
     if (decision.notice) new Notice(decision.notice, 12000);
-    if (
-      migrateApiKey(
-        this.settings,
-        decision.legacyApiKey,
-        this.app.secretStorage,
-      )
-    ) {
-      await this.saveSettings();
-    }
   }
 
   async saveSettings(): Promise<void> {
