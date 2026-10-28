@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  API_KEY_MAX_LENGTH,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   MAX_CONTENT_TOKEN_LIMIT,
@@ -379,43 +378,14 @@ describe("field-name collisions (#200)", () => {
   });
 });
 
-// #281: the key moved to Obsidian's keychain. A plaintext key in data.json is
-// handed to the plugin once, as legacyApiKey, and never kept in settings —
-// which is what saveSettings writes back.
-function legacy(loaded: unknown): string {
-  const result = migrateSettings(loaded);
-  if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-  return result.legacyApiKey;
-}
-
-describe("a plaintext API key is surfaced, not kept (#281)", () => {
-  test("a v3 key comes out as legacyApiKey and not in settings", () => {
+// #281: the key moved to Obsidian's keychain, and a plaintext key in data.json
+// is never kept in settings — which is what saveSettings writes back.
+describe("a plaintext API key is not kept (#281)", () => {
+  test("a v3 key is dropped from settings", () => {
     const key = `sk-ant-${"a".repeat(100)}`;
     const loaded = { schemaVersion: 3, anthropicApiKey: key };
-    expect(legacy(loaded)).toBe(key);
     expect(ok(loaded)).not.toHaveProperty("anthropicApiKey");
     expect(JSON.stringify(ok(loaded))).not.toContain(key);
-  });
-
-  test("a plaintext key is surfaced whatever the version", () => {
-    // Sync can merge an old device's key into a file already at v4.
-    expect(
-      legacy({ schemaVersion: CURRENT_SCHEMA_VERSION, anthropicApiKey: "k" }),
-    ).toBe("k");
-  });
-
-  test("no plaintext key is the empty string", () => {
-    expect(legacy({ schemaVersion: 3 })).toBe("");
-    expect(legacy({ anthropicApiKey: 42 })).toBe("");
-  });
-
-  test("an over-long key is not moved anywhere (#158)", () => {
-    // A stray paste of a whole file was accepted and persisted.
-    expect(
-      legacy({ anthropicApiKey: "x".repeat(API_KEY_MAX_LENGTH + 1) }),
-    ).toBe("");
-    const key = "x".repeat(API_KEY_MAX_LENGTH);
-    expect(legacy({ anthropicApiKey: key })).toBe(key);
   });
 });
 

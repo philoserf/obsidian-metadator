@@ -22,8 +22,6 @@ export interface LoadDecision {
   settings: MetadataToolSettings;
   writesBlocked: boolean;
   notice?: string;
-  // A plaintext key to move into secret storage (#281); "" when none.
-  legacyApiKey: string;
 }
 
 export function decideLoad(result: MigrationResult): LoadDecision {
@@ -31,7 +29,6 @@ export function decideLoad(result: MigrationResult): LoadDecision {
     return {
       settings: { ...result.settings },
       writesBlocked: false,
-      legacyApiKey: result.legacyApiKey,
     };
   }
   if (result.kind === "future") {
@@ -39,7 +36,6 @@ export function decideLoad(result: MigrationResult): LoadDecision {
       settings: { ...DEFAULT_SETTINGS },
       // The load that matters: block writes for the rest of the session.
       writesBlocked: true,
-      legacyApiKey: "",
       notice: `Metadator settings were written by a newer plugin version (schema v${result.loadedSchemaVersion}). Settings won't be saved until you upgrade the plugin to avoid corrupting your data.`,
     };
   }
@@ -49,41 +45,7 @@ export function decideLoad(result: MigrationResult): LoadDecision {
   return {
     settings: { ...DEFAULT_SETTINGS },
     writesBlocked: false,
-    legacyApiKey: "",
   };
-}
-
-// Secret IDs for a migrated key. The generic one lets another plugin that
-// needs an Anthropic key pick it from the keychain; the plugin-specific one is
-// used only when the generic one already holds a different key.
-export const SHARED_KEY_ID = "anthropic-api-key";
-export const OWN_KEY_ID = "metadator-anthropic-api-key";
-
-// The slice of app.secretStorage the migration uses, so it runs under test.
-export interface SecretStore {
-  getSecret(id: string): string | null;
-  setSecret(id: string, secret: string): void;
-}
-
-// Moves a plaintext key from before #281 into the keychain, recording the
-// secret's ID on `settings`. Returns whether settings must be saved — which is
-// what drops the plaintext from data.json. If an ID is already set (another
-// device migrated first and Sync merged its file), the plaintext is only
-// dropped: secrets do not sync, so this device enters the key once by hand.
-export function migrateApiKey(
-  settings: MetadataToolSettings,
-  legacyApiKey: string,
-  secrets: SecretStore,
-): boolean {
-  if (!legacyApiKey) return false;
-  if (!settings.anthropicApiKeySecret) {
-    const shared = secrets.getSecret(SHARED_KEY_ID);
-    const id =
-      shared === null || shared === legacyApiKey ? SHARED_KEY_ID : OWN_KEY_ID;
-    secrets.setSecret(id, legacyApiKey);
-    settings.anthropicApiKeySecret = id;
-  }
-  return true;
 }
 
 export type SaveDecision =

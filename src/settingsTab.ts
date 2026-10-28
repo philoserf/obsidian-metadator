@@ -17,7 +17,6 @@ import {
   WRITE_POLICY_LABELS,
 } from "./settings";
 import { migrateSettings } from "./settingsMigrate";
-import { SHARED_KEY_ID } from "./settingsStore";
 
 export const SETTINGS_SAVE_DEBOUNCE_MS = 400;
 
@@ -53,7 +52,7 @@ export function createDebouncer(
 
 // The name a new key is suggested under. Generic on purpose, so another plugin
 // that needs an Anthropic key can pick the same secret.
-const SUGGESTED_KEY_NAME = SHARED_KEY_ID;
+const SUGGESTED_KEY_NAME = "anthropic-api-key";
 
 /**
  * What the API key row says about the secret it points at. The plugin row and
