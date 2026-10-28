@@ -5,7 +5,11 @@ import {
   parseYaml,
   type TFile,
 } from "obsidian";
-import { type FileResult, generateMetadataForFile } from "./metadata";
+import {
+  type FileResult,
+  generateMetadataForFile,
+  type Proposed,
+} from "./metadata";
 import {
   anyFieldEnabled,
   type MetadataConfig,
@@ -20,9 +24,11 @@ interface Fields {
 // What `obsidian metadator:generate` prints: one JSON object, so a skill can
 // parse the outcome instead of scraping a sentence. `reason` on a skip is the
 // closed SkipReason union and safe to match; on an error it is prose, for
-// display only.
+// display only. A `preview` (from `dry-run`) carries only the fields the run
+// would write, with the values it would write; nothing was written.
 export type CliOutput =
   | ({ status: "changed" | "skipped"; file: string; reason?: string } & Fields)
+  | ({ status: "preview"; file: string } & Proposed)
   | { status: "error"; file?: string; reason: string };
 
 // The CLI is the second entry point beside the command, and like it renders a FileResult rather than deciding anything: the key check, the
@@ -59,6 +65,20 @@ async function run(
   }
 
   try {
+    // A boolean flag arrives as "true" when given.
+    if (params["dry-run"] === "true") {
+      const preview = await generateMetadataForFile(app, file, settings, {
+        signal,
+        dryRun: true,
+      });
+      if (preview.kind === "error") {
+        return { status: "error", file: path, reason: preview.reason };
+      }
+      if (preview.kind === "skipped") {
+        return { status: "skipped", file: path, reason: preview.reason };
+      }
+      return { status: "preview", file: path, ...preview.proposed };
+    }
     const result = await generateMetadataForFile(app, file, settings, {
       signal,
     });

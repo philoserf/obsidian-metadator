@@ -23,7 +23,7 @@ There are two ways in.
 
 **One note.** Run **Generate metadata for current note** on the active note.
 
-**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title` and `description` as they stand after the run. One file per call.
+**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title` and `description` as they stand after the run. One file per call. Add `dry-run` to see what would be written without writing it: `status` is `preview` and only the fields a run would write appear, with the values it would write. The call is still made and billed.
 
 Both do the same thing. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description.
 

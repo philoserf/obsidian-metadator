@@ -177,3 +177,60 @@ describe("metadator:generate with both fields disabled (#305)", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("metadator:generate dry-run", () => {
+  const dryRun = { "dry-run": "true" };
+
+  test("prints what would be written and writes nothing", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
+    const app = makeApp({});
+
+    const out = await run(app, settings({ titlePolicy: "regenerate" }), dryRun);
+
+    expect(out).toEqual({
+      status: "preview",
+      file: "Inbox/X.md",
+      title: "T",
+      description: "d",
+    });
+    expect(await app.vault.read({} as never)).toBe("---\n{}\n---\nbody");
+  });
+
+  test("leaves out a field that preserve would keep", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
+
+    const out = await run(
+      makeApp({ frontmatter: { title: "Kept" } }),
+      settings({ titlePolicy: "preserve" }),
+      dryRun,
+    );
+
+    expect(out).toEqual({
+      status: "preview",
+      file: "Inbox/X.md",
+      description: "d",
+    });
+  });
+
+  test("skips like a real run, before any call", async () => {
+    const out = await run(
+      makeApp({ frontmatter: { title: "Kept", description: "Kept" } }),
+      settings({ titlePolicy: "preserve", descriptionPolicy: "preserve" }),
+      dryRun,
+    );
+
+    expect(out).toMatchObject({
+      status: "skipped",
+      reason: "already_populated",
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test("an API failure comes back as an error", async () => {
+    mockCreate.mockRejectedValueOnce(new Error("boom"));
+
+    const out = await run(makeApp({}), settings(), dryRun);
+
+    expect(out.status).toBe("error");
+  });
+});
