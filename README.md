@@ -23,7 +23,12 @@ There are two ways in.
 
 **One note.** Run **Generate metadata for current note** on the active note.
 
-**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title`, `description` and `eyebrow` as they stand after the run. One file per call. Add `dry-run` to see what would be written without writing it: `status` is `preview` and only the fields a run would write appear, with the values it would write. The call is still made and billed.
+**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open. The Obsidian CLI stops waiting for a plugin after a few milliseconds, far less than an API call takes, so the run is read back in two steps:
+
+1. `metadator:generate` prints `{"status":"started","id":"…","file":"…"}` and the run goes on in the background. When the answer needs no API call — no such file, no key, every enabled field already populated under `preserve`, every field switched off — it prints that final result instead, and nothing is started.
+2. `obsidian metadator:result id=…` prints `{"status":"running","id":"…"}` until the run is done, then its result: one JSON object with `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title`, `description` and `eyebrow` as they stand after the run, plus the `id`.
+
+One file per call. Add `dry-run` to see what would be written without writing it: the result's `status` is `preview` and only the fields a run would write appear, with the values it would write. The call is still made and billed. Results are kept in memory, for the last 50 runs, and go when Obsidian reloads the plugin.
 
 Both do the same thing. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description.
 

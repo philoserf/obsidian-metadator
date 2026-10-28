@@ -1,5 +1,5 @@
 import { Notice, Plugin } from "obsidian";
-import { generateForPath } from "./cli";
+import { CliRuns, readResult, startGenerate } from "./cli";
 import { clearInFlight } from "./inFlight";
 import {
   DEFAULT_SETTINGS,
@@ -24,6 +24,8 @@ export default class MetadataToolPlugin extends Plugin {
   // kept between the two calls.
   private writesBlocked = false;
   private settingTab!: MetadataToolSettingTab;
+  // CLI runs started and not yet read back, for `metadator:result` (#323).
+  private readonly cliRuns = new CliRuns();
 
   override async onload(): Promise<void> {
     this.runController = new AbortController();
@@ -40,10 +42,12 @@ export default class MetadataToolPlugin extends Plugin {
     });
 
     // For automation driving Obsidian through its CLI, whose `command id=` acts
-    // on the active note and prints nothing. One file per call.
+    // on the active note and prints nothing. One file per call. The CLI stops
+    // waiting long before a generation finishes, so this starts the run and
+    // `metadator:result` reads it back (#323).
     this.registerCliHandler(
       "metadator:generate",
-      "Generate metadata for one note and print the result as JSON",
+      "Start generating metadata for one note; prints a run id, or the result when no API call is needed",
       {
         path: {
           value: "<path>",
@@ -52,16 +56,30 @@ export default class MetadataToolPlugin extends Plugin {
         },
         "dry-run": {
           description:
-            "Print what would be written without writing it (still billed)",
+            "Report what would be written without writing it (still billed)",
         },
       },
       (params) =>
-        generateForPath(
+        startGenerate(
           this.app,
           this.config(),
           params,
+          this.cliRuns,
           this.runController.signal,
         ),
+    );
+
+    this.registerCliHandler(
+      "metadator:result",
+      "Print a started run's result as JSON, or that it is still running",
+      {
+        id: {
+          value: "<id>",
+          description: "Run id printed by metadator:generate",
+          required: true,
+        },
+      },
+      (params) => readResult(params, this.cliRuns),
     );
 
     this.settingTab = new MetadataToolSettingTab(this.app, this);
