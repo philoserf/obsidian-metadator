@@ -1,5 +1,7 @@
 import {
   areFieldNamesDistinct,
+  CHOICE_VALUE_MAX_LENGTH,
+  CHOICE_VALUES_MAX,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   enabledFields,
@@ -56,6 +58,31 @@ function isTruncateMethod(
 
 function isWritePolicy(value: string): value is WritePolicy {
   return Object.hasOwn(WRITE_POLICY_LABELS, value);
+}
+
+function readPolicy(value: unknown, fallback: WritePolicy): WritePolicy {
+  const candidate = readString(value, fallback);
+  return isWritePolicy(candidate) ? candidate : fallback;
+}
+
+// A choice list is trimmed, de-duplicated and bounded. An empty string is not
+// a value: it is the tool's "none" answer. A list left with nothing — or
+// anything but an array of strings — falls back whole to the default, since a
+// choice field with no values could never write.
+function readChoiceValues(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value) || !value.every((v) => typeof v === "string")) {
+    return [...fallback];
+  }
+  const values = [
+    ...new Set(
+      (value as string[]).map((v) => v.trim()).filter((v) => v !== ""),
+    ),
+  ];
+  return values.length === 0 ||
+    values.length > CHOICE_VALUES_MAX ||
+    values.some((v) => v.length > CHOICE_VALUE_MAX_LENGTH)
+    ? [...fallback]
+    : values;
 }
 
 // Schema migrations, keyed by the version they produce. To add migration N,
@@ -154,6 +181,17 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
         delete s.tagsPrompt;
       },
     ],
+    [
+      7,
+      () => {
+        // 6 → 7: the eyebrow choice field (#308). Nothing to rewrite —
+        // normalization fills its five keys from the defaults, with the field
+        // off. The bump is the point, as with v4 to v6: a v6 build syncing this
+        // file would otherwise save it back without the eyebrow keys,
+        // silently switching the field off on every device; seeing a future
+        // version, it goes read-only instead.
+      },
+    ],
   ]);
 
 function readSchemaVersion(raw: Record<string, unknown>): number {
@@ -220,14 +258,6 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     migrated.truncateMethod,
     DEFAULT_SETTINGS.truncateMethod,
   );
-  const descriptionPolicyCandidate = readString(
-    migrated.descriptionPolicy,
-    DEFAULT_SETTINGS.descriptionPolicy,
-  );
-  const titlePolicyCandidate = readString(
-    migrated.titlePolicy,
-    DEFAULT_SETTINGS.titlePolicy,
-  );
 
   const normalized: MetadataToolSettings = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -252,6 +282,11 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       DEFAULT_SETTINGS.titleFieldName,
       { nonEmpty: true },
     ).trim(),
+    eyebrowFieldName: readString(
+      migrated.eyebrowFieldName,
+      DEFAULT_SETTINGS.eyebrowFieldName,
+      { nonEmpty: true },
+    ).trim(),
     enableDescription: readBoolean(
       migrated.enableDescription,
       DEFAULT_SETTINGS.enableDescription,
@@ -259,6 +294,10 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     enableTitle: readBoolean(
       migrated.enableTitle,
       DEFAULT_SETTINGS.enableTitle,
+    ),
+    enableEyebrow: readBoolean(
+      migrated.enableEyebrow,
+      DEFAULT_SETTINGS.enableEyebrow,
     ),
     debugLogging: readBoolean(
       migrated.debugLogging,
@@ -276,12 +315,15 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     truncateMethod: isTruncateMethod(truncateMethodCandidate)
       ? truncateMethodCandidate
       : DEFAULT_SETTINGS.truncateMethod,
-    descriptionPolicy: isWritePolicy(descriptionPolicyCandidate)
-      ? descriptionPolicyCandidate
-      : DEFAULT_SETTINGS.descriptionPolicy,
-    titlePolicy: isWritePolicy(titlePolicyCandidate)
-      ? titlePolicyCandidate
-      : DEFAULT_SETTINGS.titlePolicy,
+    descriptionPolicy: readPolicy(
+      migrated.descriptionPolicy,
+      DEFAULT_SETTINGS.descriptionPolicy,
+    ),
+    titlePolicy: readPolicy(migrated.titlePolicy, DEFAULT_SETTINGS.titlePolicy),
+    eyebrowPolicy: readPolicy(
+      migrated.eyebrowPolicy,
+      DEFAULT_SETTINGS.eyebrowPolicy,
+    ),
     descriptionPrompt: readString(
       migrated.descriptionPrompt,
       DEFAULT_SETTINGS.descriptionPrompt,
@@ -295,9 +337,18 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
         maxLength: PROMPT_MAX_LENGTH,
       },
     ),
+    eyebrowPrompt: readString(
+      migrated.eyebrowPrompt,
+      DEFAULT_SETTINGS.eyebrowPrompt,
+      { nonEmpty: true, maxLength: PROMPT_MAX_LENGTH },
+    ),
+    eyebrowValues: readChoiceValues(
+      migrated.eyebrowValues,
+      DEFAULT_SETTINGS.eyebrowValues,
+    ),
   };
 
-  // Both reset together. It is the only rule that is order-independent and
+  // All reset together. It is the only rule that is order-independent and
   // cannot itself produce a new collision, since the defaults are distinct by
   // construction.
   //
@@ -307,10 +358,12 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
   // had been using, with nothing anywhere saying why (#248).
   if (!areFieldNamesDistinct(normalized)) {
     console.warn(
-      "[Metadator] Frontmatter field names collide; resetting both to their defaults.",
+      "[Metadator] Frontmatter field names collide; resetting them all to their defaults.",
     );
-    normalized.descriptionFieldName = DEFAULT_SETTINGS.descriptionFieldName;
-    normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
+    for (const field of METADATA_FIELDS) {
+      const key = FIELD_NAME_KEY[field];
+      normalized[key] = DEFAULT_SETTINGS[key];
+    }
   } else {
     // The in-use name is fine and only an inert one collides. Resetting both
     // here would destroy valid settings to fix a value nothing reads —

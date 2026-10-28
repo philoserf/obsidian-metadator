@@ -190,6 +190,20 @@ describe("MetadataToolSettingTab", () => {
     );
   });
 
+  test("a choice list is edited as one comma-separated line (#308)", async () => {
+    const { tab, plugin } = makeTab();
+    expect(tab.getControlValue("eyebrowValues")).toBe(
+      "Poem, Fiction, Quotation",
+    );
+    tab.setControlValue("eyebrowValues", "Poem,  Letter , ");
+    expect(plugin.settings.eyebrowValues).toEqual(["Poem", "Letter"]);
+    expect(tab.getControlValue("eyebrowValues")).toBe("Poem, Letter");
+    expect(await validate(tab, "eyebrowValues", " , ")).toBeTruthy();
+    expect(
+      await validate(tab, "eyebrowValues", "Poem, Letter"),
+    ).toBeUndefined();
+  });
+
   test("rejects colliding field names inline (#200)", async () => {
     const { tab } = makeTab();
     expect(await validate(tab, "descriptionFieldName", "title")).toBeTruthy();

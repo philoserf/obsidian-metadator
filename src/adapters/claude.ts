@@ -1,12 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { isAbortError } from "../errors";
 import {
+  choiceValues,
   enabledFields,
+  METADATA_FIELDS,
   type MetadataConfig,
   type MetadataField,
+  type MetadataToolSettings,
 } from "../settings";
 
-// Output budget for the model's tool-use response (description + title).
+// Output budget for the model's tool-use response (every generated field).
 // Distinct from settings.contentTokenLimit, which bounds the input note content.
 const MAX_RESPONSE_TOKENS = 2048;
 // Models on the auto-tool-choice path think before answering, and thinking
@@ -51,12 +54,11 @@ export class ClaudeApiError extends Error {
   }
 }
 
-// A field is present exactly when it was enabled for the request: a disabled
-// field is neither declared in the tool schema nor read from the response.
-export interface MetadataFields {
-  description?: string;
-  title?: string;
-}
+// A free-text field is present exactly when it was enabled for the request: a
+// disabled field is neither declared in the tool schema nor read from the
+// response. A choice field may also be absent when enabled — the model chose
+// none, or answered off the list — and absent means "write nothing" (#308).
+export type MetadataFields = Partial<Record<MetadataField, string>>;
 
 // `| undefined`: callers forward an optional signal, and absent and undefined
 // both mean "not cancellable".
@@ -67,29 +69,41 @@ export interface CallClaudeOptions {
 interface JsonSchemaProperty {
   type: "string";
   description: string;
+  enum?: string[];
 }
+
+const SCHEMA_DESCRIPTION: Record<MetadataField, string> = {
+  description:
+    "Brief summary of the article. Follow the user's description instructions.",
+  title: "Concise title for the article. Follow the user's title instructions.",
+  eyebrow:
+    "The article's form. Follow the user's eyebrow instructions; an empty string means none applies.",
+};
+
+// The answer a choice field gives when none of its values applies. In the
+// enum beside the values, so "none" is a choice the model makes rather than a
+// field it leaves out, and it cannot collide with a configured value.
+export const NO_CHOICE = "";
 
 // Only the enabled fields are declared, and every declared field is required.
 // A disabled field is absent from both lists, so the model is never asked for
-// it (#305). Exported for tests.
-export function buildToolSchema(fields: ReadonlySet<MetadataField>) {
+// it (#305). A choice field is an enum of its values plus NO_CHOICE (#308).
+// Exported for tests.
+export function buildToolSchema(
+  fields: ReadonlySet<MetadataField>,
+  settings: Pick<MetadataToolSettings, "eyebrowValues">,
+) {
   const properties: Record<string, JsonSchemaProperty> = {};
   const required: MetadataField[] = [];
-  if (fields.has("description")) {
-    properties.description = {
+  for (const field of METADATA_FIELDS) {
+    if (!fields.has(field)) continue;
+    const values = choiceValues(settings, field);
+    properties[field] = {
       type: "string",
-      description:
-        "Brief summary of the article. Follow the user's description instructions.",
+      description: SCHEMA_DESCRIPTION[field],
+      ...(values && { enum: [...values, NO_CHOICE] }),
     };
-    required.push("description");
-  }
-  if (fields.has("title")) {
-    properties.title = {
-      type: "string",
-      description:
-        "Concise title for the article. Follow the user's title instructions.",
-    };
-    required.push("title");
+    required.push(field);
   }
   return {
     name: TOOL_NAME,
@@ -130,29 +144,33 @@ function classifyError(error: unknown): ClaudeApiError {
 export function validateMetadataInput(
   input: unknown,
   fields: ReadonlySet<MetadataField>,
+  settings: Pick<MetadataToolSettings, "eyebrowValues">,
 ): MetadataFields {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new ClaudeApiError("api", "Tool input was not an object");
   }
   const obj = input as Record<string, unknown>;
   const out: MetadataFields = {};
-  if (fields.has("description")) {
-    if (typeof obj.description !== "string") {
+  for (const field of METADATA_FIELDS) {
+    if (!fields.has(field)) continue;
+    const value = obj[field];
+    const values = choiceValues(settings, field);
+    if (values) {
+      // A choice field never fails the request: none, a missing value and an
+      // off-list value all mean "write nothing", so the free-text fields that
+      // arrived correctly are kept (#308).
+      if (typeof value === "string" && values.includes(value)) {
+        out[field] = value;
+      }
+      continue;
+    }
+    if (typeof value !== "string") {
       throw new ClaudeApiError(
         "api",
-        "Tool input field 'description' is missing or not a string",
+        `Tool input field '${field}' is missing or not a string`,
       );
     }
-    out.description = obj.description;
-  }
-  if (fields.has("title")) {
-    if (typeof obj.title !== "string") {
-      throw new ClaudeApiError(
-        "api",
-        "Tool input field 'title' is missing or not a string",
-      );
-    }
-    out.title = obj.title;
+    out[field] = value;
   }
   // No `else` branches: a disabled field is not declared by buildToolSchema,
   // so a volunteered one is already off-schema, and metadata.ts guards its
@@ -202,7 +220,7 @@ export async function callClaudeForMetadata(
   const anthropic = getClient(settings.anthropicApiKey);
 
   const fields = enabledFields(settings);
-  const tool = buildToolSchema(fields);
+  const tool = buildToolSchema(fields, settings);
   const autoToolChoice = usesAutoToolChoice(settings.anthropicModel);
 
   let message: Awaited<ReturnType<typeof anthropic.messages.create>>;
@@ -272,5 +290,5 @@ export async function callClaudeForMetadata(
     }
     throw new ClaudeApiError("api", "Model did not call the metadata tool");
   }
-  return validateMetadataInput(toolUse.input, fields);
+  return validateMetadataInput(toolUse.input, fields, settings);
 }

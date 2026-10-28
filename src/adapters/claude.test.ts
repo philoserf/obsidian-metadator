@@ -565,13 +565,20 @@ describe("buildToolSchema and validateMetadataInput per enabled-field subset", (
     const label = subset.join("+");
 
     test(`schema declares and requires exactly ${label}`, () => {
-      const schema = buildToolSchema(new Set(subset)).input_schema;
+      const schema = buildToolSchema(
+        new Set(subset),
+        DEFAULT_SETTINGS,
+      ).input_schema;
       expect(Object.keys(schema.properties).sort()).toEqual([...subset].sort());
       expect([...schema.required].sort()).toEqual([...subset].sort());
     });
 
     test(`validation returns exactly ${label} and ignores the rest`, () => {
-      const out = validateMetadataInput(full, new Set(subset));
+      const out = validateMetadataInput(
+        full,
+        new Set(subset),
+        DEFAULT_SETTINGS,
+      );
       expect(Object.keys(out).sort()).toEqual([...subset].sort());
     });
 
@@ -579,9 +586,9 @@ describe("buildToolSchema and validateMetadataInput per enabled-field subset", (
       for (const missing of subset) {
         const input: Record<string, unknown> = { ...full };
         delete input[missing];
-        expect(() => validateMetadataInput(input, new Set(subset))).toThrow(
-          `'${missing}'`,
-        );
+        expect(() =>
+          validateMetadataInput(input, new Set(subset), DEFAULT_SETTINGS),
+        ).toThrow(`'${missing}'`);
       }
     });
   }
@@ -590,8 +597,69 @@ describe("buildToolSchema and validateMetadataInput per enabled-field subset", (
     const out = validateMetadataInput(
       { description: 7, title: "t" },
       new Set<MetadataField>(["title"]),
+      DEFAULT_SETTINGS,
     );
     expect(out).toEqual({ title: "t" });
+  });
+
+  // #308: a choice field is an enum of its values plus "" for none, and
+  // never fails a generation — none, missing and off-list all write nothing.
+  describe("a choice field", () => {
+    const eyebrow = new Set<MetadataField>(["description", "eyebrow"]);
+
+    test("is declared as an enum of its values plus the empty answer", () => {
+      const { properties, required } = buildToolSchema(
+        eyebrow,
+        DEFAULT_SETTINGS,
+      ).input_schema;
+      expect(properties.eyebrow?.enum).toEqual([
+        "Poem",
+        "Fiction",
+        "Quotation",
+        "",
+      ]);
+      expect(properties.description?.enum).toBeUndefined();
+      expect(required).toContain("eyebrow");
+    });
+
+    test("keeps a listed value", () => {
+      expect(
+        validateMetadataInput(
+          { description: "d", eyebrow: "Poem" },
+          eyebrow,
+          DEFAULT_SETTINGS,
+        ),
+      ).toEqual({ description: "d", eyebrow: "Poem" });
+    });
+
+    test("drops none, a missing value and an off-list value, keeping the rest", () => {
+      for (const input of [
+        { description: "d", eyebrow: "" },
+        { description: "d" },
+        { description: "d", eyebrow: "Essay" },
+        { description: "d", eyebrow: "poem" },
+        { description: "d", eyebrow: 3 },
+      ]) {
+        expect(validateMetadataInput(input, eyebrow, DEFAULT_SETTINGS)).toEqual(
+          { description: "d" },
+        );
+      }
+    });
+
+    test("takes its list from the settings", () => {
+      const settings = { eyebrowValues: ["Letter"] };
+      expect(
+        buildToolSchema(eyebrow, settings).input_schema.properties.eyebrow
+          ?.enum,
+      ).toEqual(["Letter", ""]);
+      expect(
+        validateMetadataInput(
+          { description: "d", eyebrow: "Poem" },
+          eyebrow,
+          settings,
+        ),
+      ).toEqual({ description: "d" });
+    });
   });
 
   test("callClaudeForMetadata sends the schema the settings enable", async () => {

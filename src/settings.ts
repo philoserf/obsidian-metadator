@@ -11,7 +11,7 @@ export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
 
 // Bump CURRENT_SCHEMA_VERSION whenever a new migration is added to MIGRATIONS
 // in settingsMigrate.ts. Each migration's key is the schema version it produces.
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export interface MetadataToolSettings {
   schemaVersion: number;
@@ -25,11 +25,13 @@ export interface MetadataToolSettings {
   // Field names in frontmatter
   descriptionFieldName: string;
   titleFieldName: string;
+  eyebrowFieldName: string;
 
   // Feature toggles, one per field. A field that is off is not asked for, not
   // in the prompt, and never written (#305).
   enableDescription: boolean;
   enableTitle: boolean;
+  enableEyebrow: boolean;
   debugLogging: boolean;
 
   // Content truncation
@@ -40,10 +42,16 @@ export interface MetadataToolSettings {
   // Write policy, one per field
   descriptionPolicy: WritePolicy;
   titlePolicy: WritePolicy;
+  eyebrowPolicy: WritePolicy;
 
   // Prompts
   descriptionPrompt: string;
   titlePrompt: string;
+  eyebrowPrompt: string;
+
+  // The values a choice field may take (#308). Anything else the model
+  // returns is not written.
+  eyebrowValues: string[];
 }
 
 // Settings with the API key resolved out of secret storage. Built in one
@@ -56,27 +64,74 @@ export type MetadataConfig = MetadataToolSettings & { anthropicApiKey: string };
 const MODEL_ID_PATTERN = /^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MODEL_ID_MAX_LENGTH = 100;
 
-// The two generated fields, in prompt order.
-export type MetadataField = "description" | "title";
+// The generated fields, in prompt order. Two kinds: a free-text field takes
+// whatever string the model writes; a choice field (one with an entry in
+// CHOICE_VALUES_KEY) takes one of a configured list, or nothing at all when
+// none applies (#308). Every layer walks this list and the key maps below, so
+// a field is added by declaring it here, not by editing each layer.
+export type MetadataField = "description" | "title" | "eyebrow";
 export const METADATA_FIELDS: readonly MetadataField[] = [
   "description",
   "title",
+  "eyebrow",
 ];
+
+export const FIELD_LABEL = {
+  description: "Description",
+  title: "Title",
+  eyebrow: "Eyebrow",
+} as const satisfies Record<MetadataField, string>;
 
 // Each field's settings keys, so code that walks the fields names them once.
 export const FIELD_NAME_KEY = {
   description: "descriptionFieldName",
   title: "titleFieldName",
+  eyebrow: "eyebrowFieldName",
 } as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
 
 export const FIELD_ENABLE_KEY = {
   description: "enableDescription",
   title: "enableTitle",
+  eyebrow: "enableEyebrow",
 } as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
+
+export const FIELD_POLICY_KEY = {
+  description: "descriptionPolicy",
+  title: "titlePolicy",
+  eyebrow: "eyebrowPolicy",
+} as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
+
+export const FIELD_PROMPT_KEY = {
+  description: "descriptionPrompt",
+  title: "titlePrompt",
+  eyebrow: "eyebrowPrompt",
+} as const satisfies Record<MetadataField, keyof MetadataToolSettings>;
+
+// The choice fields and where each keeps its allowed values. A field absent
+// here is free text.
+export const CHOICE_VALUES_KEY = {
+  eyebrow: "eyebrowValues",
+} as const satisfies Partial<Record<MetadataField, keyof MetadataToolSettings>>;
+
+// Bounds on a choice list, so a stray paste cannot become a tool schema of
+// thousands of values.
+export const CHOICE_VALUES_MAX = 20;
+export const CHOICE_VALUE_MAX_LENGTH = 50;
+
+// The allowed values of a choice field, or undefined for a free-text field.
+export function choiceValues(
+  settings: Pick<MetadataToolSettings, "eyebrowValues">,
+  field: MetadataField,
+): readonly string[] | undefined {
+  const key = (
+    CHOICE_VALUES_KEY as Partial<Record<MetadataField, "eyebrowValues">>
+  )[field];
+  return key === undefined ? undefined : settings[key];
+}
 
 type FieldToggles = Pick<
   MetadataToolSettings,
-  "enableDescription" | "enableTitle"
+  "enableDescription" | "enableTitle" | "enableEyebrow"
 >;
 
 // The one answer to "which fields does a run generate?". The command, the CLI
@@ -93,9 +148,9 @@ export function anyFieldEnabled(settings: FieldToggles): boolean {
 // What every entry point says when both are off. One string, so the
 // Notice and the CLI error name the same settings.
 export const NO_FIELDS_ENABLED_MESSAGE =
-  "Nothing to generate: Enable description and Enable title are both off in Settings → Metadator.";
+  "Nothing to generate: every field is switched off in Settings → Metadator.";
 
-// The two frontmatter field names must differ. If they collide, the writes
+// The frontmatter field names must differ. If they collide, the writes
 // clobber each other in the user's note rather than in plugin state: the
 // description is written and then the title overwrites the same key, the run
 // reports success, and nothing surfaces the loss (#200).
@@ -103,7 +158,10 @@ export const NO_FIELDS_ENABLED_MESSAGE =
 // Shared so the load-time and edit-time rules cannot drift apart, the same
 // reason isEmptyValue lives on its own.
 export function areFieldNamesDistinct(
-  names: Pick<MetadataToolSettings, "descriptionFieldName" | "titleFieldName"> &
+  names: Pick<
+    MetadataToolSettings,
+    "descriptionFieldName" | "titleFieldName" | "eyebrowFieldName"
+  > &
     FieldToggles,
 ): boolean {
   // Only the names actually in use. A disabled field's name is inert —
@@ -165,9 +223,13 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
 
   descriptionFieldName: "description",
   titleFieldName: "title",
+  eyebrowFieldName: "eyebrow",
 
+  // Off by default: a note's form is a publishing concern, and turning it on
+  // changes what every run asks for.
   enableDescription: true,
   enableTitle: true,
+  enableEyebrow: false,
   debugLogging: false,
 
   truncateContent: true,
@@ -180,6 +242,8 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   // silently changes a note's public identity.
   descriptionPolicy: "regenerate",
   titlePolicy: "preserve",
+  // A form set by hand is a decision, not a draft to refresh.
+  eyebrowPolicy: "preserve",
 
   // These are starting points a user is expected to edit, so they are written
   // as rules a model can actually check itself against rather than adjectives
@@ -192,4 +256,9 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
     'Write 1-2 sentences, at most 40 words, saying what the note covers and its most useful specifics. Begin with the subject itself — no "This note...", "This article..." or similar preamble. Do not restate the title. Use plain present-tense prose.',
   titlePrompt:
     "Write a title in sentence case: capitalize only the first word and proper nouns. Keep it under 10 words, state the topic directly, and leave out adjectives that add no information. Return the title text only — no surrounding quotation marks and no trailing punctuation.",
+  // Most notes are essays and get nothing, so the prompt names that answer
+  // as plainly as the three forms.
+  eyebrowPrompt:
+    "Name the piece's form. Poem: verse. Fiction: a story, or a voice that is not the author's own. Quotation: chiefly someone else's words, quoted. Anything else, including any essay, gets none.",
+  eyebrowValues: ["Poem", "Fiction", "Quotation"],
 };

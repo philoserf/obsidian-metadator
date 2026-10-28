@@ -1,4 +1,11 @@
-import { enabledFields, type MetadataToolSettings } from "./settings";
+import {
+  choiceValues,
+  enabledFields,
+  FIELD_LABEL,
+  FIELD_PROMPT_KEY,
+  METADATA_FIELDS,
+  type MetadataToolSettings,
+} from "./settings";
 
 export interface PromptParts {
   system: string;
@@ -25,10 +32,17 @@ export function buildPrompt(
   // Only the enabled fields' instructions, numbered in order, so a disabled
   // field is never mentioned to the model (#305).
   const sections: string[] = [];
-  if (fields.has("description")) {
-    sections.push(`Description: ${settings.descriptionPrompt}`);
+  for (const field of METADATA_FIELDS) {
+    if (!fields.has(field)) continue;
+    let section = `${FIELD_LABEL[field]}: ${settings[FIELD_PROMPT_KEY[field]]}`;
+    // The tool schema enforces the list; saying it here lets the model weigh
+    // "none" as an answer rather than discover it as a constraint.
+    const values = choiceValues(settings, field);
+    if (values) {
+      section += ` Answer with exactly one of: ${values.join(", ")}; or an empty string when none applies.`;
+    }
+    sections.push(section);
   }
-  if (fields.has("title")) sections.push(`Title: ${settings.titlePrompt}`);
   sections.forEach((section, i) => {
     systemParts.push("", `${i + 1}. ${section}`);
   });
