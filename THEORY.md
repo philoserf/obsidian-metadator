@@ -61,7 +61,7 @@ remainder read as instructions.
 Every action is one note and one billed call. There used to be a recursive folder run,
 with a confirm dialog, a worst-case cost estimate, a files-that-will-change cap, a retry
 schedule and a halt policy around it; it was removed in #311 because the one vault this
-serves did not use it. Covering many notes is now a loop over `metadator:generate path=`,
+serves did not use it. Covering many notes is now a loop over `metadator:generate path=` and `metadator:result id=`,
 and the cost of that loop is the caller's decision, made one call at a time.
 
 What still guards the money is narrower:

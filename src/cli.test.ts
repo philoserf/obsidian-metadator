@@ -20,7 +20,8 @@ mock.module("@anthropic-ai/sdk", () => {
   return { default: Anthropic };
 });
 
-const { generateForPath } = await import("./cli");
+const { CliRuns, generate, MAX_CLI_RUNS, readResult, startGenerate } =
+  await import("./cli");
 const { resetClientCache } = await import("./adapters/claude");
 
 beforeEach(() => {
@@ -69,7 +70,9 @@ const settings = (o: Partial<MetadataConfig> = {}) => ({
 });
 
 const run = async (app: App, s: MetadataConfig, params = {}) =>
-  JSON.parse(await generateForPath(app, s, { path: "Inbox/X.md", ...params }));
+  JSON.parse(
+    JSON.stringify(await generate(app, s, { path: "Inbox/X.md", ...params })),
+  );
 
 describe("metadator:generate", () => {
   test("writes the note and prints what it now holds", async () => {
@@ -147,7 +150,7 @@ describe("metadator:generate", () => {
   test("a missing or bare path flag is an error", async () => {
     const app = makeApp({});
     for (const params of [{}, { path: "true" }]) {
-      const out = JSON.parse(await generateForPath(app, settings(), params));
+      const out = await generate(app, settings(), params);
       expect(out.status).toBe("error");
     }
   });
@@ -306,5 +309,134 @@ describe("metadator:generate with the eyebrow field (#308)", () => {
       description: "d",
       eyebrow: "Quotation",
     });
+  });
+});
+
+// #323: the Obsidian CLI stops waiting after ~10-20 ms, so generate starts
+// the run and `metadator:result` reads it back.
+describe("metadator:generate starts, metadator:result reads (#323)", () => {
+  const start = (
+    app: App,
+    s: MetadataConfig,
+    runs: InstanceType<typeof CliRuns>,
+    params = {},
+  ) =>
+    JSON.parse(startGenerate(app, s, { path: "Inbox/X.md", ...params }, runs));
+  const result = (runs: InstanceType<typeof CliRuns>, id: string) =>
+    JSON.parse(readResult({ id }, runs));
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  test("answers started at once, before the API call resolves", async () => {
+    let answer: (v: unknown) => void = () => {};
+    mockCreate.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const runs = new CliRuns();
+
+    const started = start(makeApp({}), settings(), runs);
+
+    expect(started).toMatchObject({ status: "started", file: "Inbox/X.md" });
+    expect(started.id).toMatch(/^[0-9a-f]{8}$/);
+    expect(result(runs, started.id)).toEqual({
+      status: "running",
+      id: started.id,
+    });
+
+    answer(toolUse({ description: "d", title: "T" }));
+    await settle();
+
+    expect(result(runs, started.id)).toEqual({
+      status: "changed",
+      file: "Inbox/X.md",
+      title: "T",
+      description: "d",
+      id: started.id,
+    });
+  });
+
+  test("a dry run's preview is read back the same way", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse({ description: "d", title: "T" }));
+    const runs = new CliRuns();
+
+    const { id } = start(
+      makeApp({}),
+      settings({ titlePolicy: "regenerate" }),
+      runs,
+      {
+        "dry-run": "true",
+      },
+    );
+    await settle();
+
+    expect(result(runs, id)).toEqual({
+      status: "preview",
+      file: "Inbox/X.md",
+      title: "T",
+      description: "d",
+      id,
+    });
+  });
+
+  test("an API failure is read back as an error", async () => {
+    mockCreate.mockRejectedValueOnce(new Error("boom"));
+    const runs = new CliRuns();
+
+    const { id } = start(makeApp({}), settings(), runs);
+    await settle();
+
+    expect(result(runs, id)).toMatchObject({ status: "error", id });
+  });
+
+  test("what needs no API call answers at once, with no run started", () => {
+    const runs = new CliRuns();
+    const app = makeApp({
+      frontmatter: { title: "Kept", description: "Kept" },
+    });
+
+    expect(start(makeApp({}), settings(), runs, { path: "Nope.md" })).toEqual({
+      status: "error",
+      file: "Nope.md",
+      reason: "no such file",
+    });
+    expect(
+      start(makeApp({}), settings({ anthropicApiKey: "" }), runs),
+    ).toMatchObject({ status: "skipped", reason: "no_api_key" });
+    expect(
+      start(app, settings({ descriptionPolicy: "preserve" }), runs),
+    ).toEqual({
+      status: "skipped",
+      file: "Inbox/X.md",
+      reason: "already_populated",
+      title: "Kept",
+      description: "Kept",
+    });
+    expect(
+      start(
+        makeApp({}),
+        settings({ enableDescription: false, enableTitle: false }),
+        runs,
+      ),
+    ).toEqual({ status: "error", reason: NO_FIELDS_ENABLED_MESSAGE });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test("an unknown or missing id is an error", () => {
+    const runs = new CliRuns();
+    expect(result(runs, "deadbeef")).toEqual({
+      status: "error",
+      reason: "no run deadbeef",
+    });
+    expect(JSON.parse(readResult({}, runs))).toEqual({
+      status: "error",
+      reason: "id=<run id> is required",
+    });
+  });
+
+  test("keeps only the most recent runs", () => {
+    const runs = new CliRuns();
+    const never = new Promise<never>(() => {});
+    for (let i = 0; i <= MAX_CLI_RUNS; i++) runs.start(`run${i}`, never);
+    expect(runs.read("run0")).toBeUndefined();
+    expect(runs.read(`run${MAX_CLI_RUNS}`)).toBe("running");
   });
 });

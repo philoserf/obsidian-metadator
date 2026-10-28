@@ -125,6 +125,24 @@ export interface GenerateOptions {
   dryRun?: boolean;
 }
 
+// The skips decided before anything is awaited — no I/O, no lock, no call —
+// or undefined when the run should go ahead. Synchronous so the CLI can answer
+// with them at once instead of starting a run that would only skip (#323).
+// generateMetadataForFile calls it too, so the two cannot disagree.
+export function skipBeforeCall(
+  app: App,
+  file: TFile,
+  settings: MetadataConfig,
+  signal?: AbortSignal,
+): SkipReason | undefined {
+  if (file.extension !== "md") return "not_markdown";
+  if (!settings.anthropicApiKey) return "no_api_key";
+  const frontMatter = app.metadataCache.getFileCache(file)?.frontmatter || {};
+  if (!shouldGenerate(frontMatter, settings)) return "already_populated";
+  if (signal?.aborted) return "cancelled";
+  return undefined;
+}
+
 export function generateMetadataForFile(
   app: App,
   file: TFile,
@@ -143,24 +161,9 @@ export async function generateMetadataForFile(
   settings: MetadataConfig,
   opts: GenerateOptions = {},
 ): Promise<FileResult | PreviewResult> {
-  if (file.extension !== "md") {
-    return { kind: "skipped", file, reason: "not_markdown" };
-  }
-
-  if (!settings.anthropicApiKey) {
-    return { kind: "skipped", file, reason: "no_api_key" };
-  }
-
-  const fm = app.metadataCache.getFileCache(file);
-  const frontMatter = fm?.frontmatter || {};
-
-  if (!shouldGenerate(frontMatter, settings)) {
-    return { kind: "skipped", file, reason: "already_populated" };
-  }
-
-  if (opts.signal?.aborted) {
-    return { kind: "skipped", file, reason: "cancelled" };
-  }
+  const skip = skipBeforeCall(app, file, settings, opts.signal);
+  if (skip) return { kind: "skipped", file, reason: skip };
+  const frontMatter = app.metadataCache.getFileCache(file)?.frontmatter || {};
 
   // Guards both entry points at the one place they share. Without it, a
   // double-triggered hotkey — or the command run on a file a CLI call is
