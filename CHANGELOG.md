@@ -1,5 +1,26 @@
 # Changelog
 
+## 5.0.0
+
+Metadator now does one note at a time and two fields, description and title. The folder run and tag generation are removed, and `metadator:generate` can preview a run without writing.
+
+### Breaking Changes
+
+- **The recursive folder run is gone.** The "Generate metadata (recursive)" file-menu item, its confirm, progress and summary modals, and the outer retry schedule and halt policy are removed. The command and `metadator:generate` remain, and rely on the SDK's own retries as before (`SDK_MAX_RETRIES = 2`). The `maxBulkFiles` setting goes with it; a stored value is dropped on the next save. (#311, #312)
+- **Tag generation is gone.** Tags leave the prompt, the `submit_metadata` tool schema, the writes and the CLI's JSON output. A note's existing `tags` are left alone: the plugin neither reads nor writes the field. (#310, #313)
+- **Settings schema 5 → 6.** The migration deletes `tagsFieldName`, `enableTags`, `tagsPolicy` and `tagsPrompt`. As with v4 and v5, the bump makes a 4.x install syncing the same `data.json` go read-only instead of saving the tag keys back. Update every device. (#313)
+- **A plaintext API key is no longer moved into the keychain.** The one-time migration from 4.0.0 is removed. A plaintext `anthropicApiKey` in `data.json` is still dropped on the next save, never written back; enter the key in Settings → Keychain on each device. (#316, #317)
+
+### Added
+
+- **`dry-run` for `metadator:generate`.** It runs the same guards, lock and API call, then prints `{status: "preview", file, title?, description?}` with only the fields a run would write, and writes nothing. The call is still billed. Every write is now decided before any is made, so a preview and a real run cannot disagree. (#314)
+
+### Internal
+
+- `bun run build` installs `main.js` and `manifest.json` into the vault through `OBSIDIAN_DEPLOY_DEST` in `.env.local`, and the separate `deploy` script is gone. `main.js` is gitignored and no longer tracked; the release attaches a fresh build. (#315)
+- `main.js` shrinks from 387,076 to 374,096 bytes.
+- Dev tooling: `@types/node` 26.6.6. (#318)
+
 ## 4.2.0
 
 Tags and description can be switched off, the way title already could.
