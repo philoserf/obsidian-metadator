@@ -172,7 +172,9 @@ migration is a legitimate tool here, not an oversight. Schema v5 uses it again: 
 migration only adds the field toggles, and the bump keeps a v4 build from saving the file
 back without them, which would silently turn a switched-off field back on. Schema v6 uses
 it a third time: its migration deletes the four tag settings (#310), and the bump keeps a
-v5 build from saving them back.
+v5 build from saving them back. Schema v7 is the empty migration again: normalization
+fills the eyebrow keys (#308), and the bump keeps a v6 build from saving the file back
+without them.
 
 ## What it accommodates, and what it does not
 

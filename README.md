@@ -2,7 +2,7 @@
 
 ![Status: Stable](https://img.shields.io/badge/Status-Stable-brightgreen.svg)
 
-Generate metadata (description, title) for [Obsidian](https://obsidian.md/) notes using the [Anthropic Claude API](https://www.anthropic.com/api).
+Generate metadata (description, title, and optionally eyebrow) for [Obsidian](https://obsidian.md/) notes using the [Anthropic Claude API](https://www.anthropic.com/api).
 
 ## You probably shouldn't install this
 
