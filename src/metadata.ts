@@ -160,8 +160,8 @@ export async function generateMetadataForFile(
   }
 
   // Guards both entry points at the one place they share. Without it, a
-  // double-triggered hotkey — or the single-note command run on a file a
-  // folder pass is already working through — makes two billed calls whose
+  // double-triggered hotkey — or the command run on a file a CLI call is
+  // already working on — makes two billed calls whose
   // writes both derive from equally stale pre-call snapshots.
   // Captured once: Obsidian mutates TFile.path in place on rename (which is
   // why its rename event has to hand you oldPath separately), so releasing
