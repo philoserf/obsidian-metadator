@@ -56,7 +56,6 @@ const {
   buildToolSchema,
   callClaudeForMetadata,
   ClaudeApiError,
-  MAX_TAGS_PER_RESPONSE,
   resetClientCache,
   usesAutoToolChoice,
   validateMetadataInput,
@@ -91,7 +90,6 @@ describe("callClaudeForMetadata", () => {
   test("returns parsed tool input from successful response", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["a", "b"],
         description: "summary",
         title: "Test",
       }),
@@ -103,7 +101,6 @@ describe("callClaudeForMetadata", () => {
       settings,
     );
     expect(result).toEqual({
-      tags: ["a", "b"],
       description: "summary",
       title: "Test",
     });
@@ -126,7 +123,7 @@ describe("callClaudeForMetadata", () => {
 
   test("rejects tool input that has the wrong field types", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: 123, description: "d", title: "t" }),
+      toolUseResponse({ description: 123, title: "t" }),
     );
 
     let caught: unknown;
@@ -140,7 +137,7 @@ describe("callClaudeForMetadata", () => {
   });
 
   test("rejects tool input that omits a required field", async () => {
-    mockCreate.mockResolvedValueOnce(toolUseResponse({ tags: ["a", "b"] }));
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ title: "t" }));
 
     let caught: unknown;
     try {
@@ -154,9 +151,7 @@ describe("callClaudeForMetadata", () => {
   });
 
   test("rejects tool input that omits title when enableTitle is true", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d" }),
-    );
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ description: "d" }));
 
     let caught: unknown;
     try {
@@ -275,11 +270,11 @@ describe("callClaudeForMetadata", () => {
 
   // With enableTitle off, buildToolSchema does not declare `title`, so a model
   // that volunteers one is off-schema. Validating it anyway turned a non-string
-  // into a thrown error that discarded the tags and description that arrived
+  // into a thrown error that discarded the description that arrived
   // correctly — a failure mode invented by validating an unwanted field (#250).
   test("ignores an off-schema title instead of failing the generation", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d", title: 42 }),
+      toolUseResponse({ description: "d", title: 42 }),
     );
 
     const result = await callClaudeForMetadata("s", "u", {
@@ -287,50 +282,13 @@ describe("callClaudeForMetadata", () => {
       enableTitle: false,
     });
 
-    expect(result.tags).toEqual(["a"]);
     expect(result.description).toBe("d");
     expect(result.title).toBeUndefined();
   });
 
-  test("declares tags as a bounded array of strings (#251)", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
-    );
-
-    await callClaudeForMetadata("system", "user", settings);
-
-    const body = mockCreate.mock.calls[0]?.[0] as {
-      tools: { input_schema: { properties: Record<string, unknown> } }[];
-    };
-    // A bare comma-separated string let one tag containing a comma become two,
-    // and put no ceiling at all on how many came back.
-    expect(body.tools[0]?.input_schema.properties.tags).toEqual({
-      type: "array",
-      items: { type: "string" },
-      minItems: 1,
-      maxItems: MAX_TAGS_PER_RESPONSE,
-      description: expect.any(String),
-    });
-  });
-
-  test("rejects a tags array holding a non-string", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["ok", 7], description: "d", title: "t" }),
-    );
-
-    let caught: unknown;
-    try {
-      await callClaudeForMetadata("s", "u", settings);
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(ClaudeApiError);
-    expect((caught as Error).message).toContain("array of strings");
-  });
-
   test("forces the submit_metadata tool and includes a title field when enabled", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
+      toolUseResponse({ description: "d", title: "t" }),
     );
 
     await callClaudeForMetadata("system", "user", settings);
@@ -346,11 +304,7 @@ describe("callClaudeForMetadata", () => {
           expect.objectContaining({
             name: "submit_metadata",
             input_schema: expect.objectContaining({
-              required: expect.arrayContaining([
-                "tags",
-                "description",
-                "title",
-              ]),
+              required: expect.arrayContaining(["description", "title"]),
             }),
           }),
         ]),
@@ -360,9 +314,7 @@ describe("callClaudeForMetadata", () => {
   });
 
   test("omits title from required when enableTitle is false", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d" }),
-    );
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ description: "d" }));
 
     await callClaudeForMetadata("system", "user", {
       ...settings,
@@ -373,15 +325,12 @@ describe("callClaudeForMetadata", () => {
     const body = call?.[0] as {
       tools: { input_schema: { required: string[] } }[];
     };
-    expect(body.tools[0]?.input_schema.required).toEqual([
-      "tags",
-      "description",
-    ]);
+    expect(body.tools[0]?.input_schema.required).toEqual(["description"]);
   });
 
   test("sets an explicit request timeout", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
+      toolUseResponse({ description: "d", title: "t" }),
     );
 
     await callClaudeForMetadata("system", "user", settings);
@@ -394,7 +343,7 @@ describe("callClaudeForMetadata", () => {
 
   test("passes abort signal when provided", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
+      toolUseResponse({ description: "d", title: "t" }),
     );
     const controller = new AbortController();
 
@@ -417,7 +366,7 @@ describe("tool_choice by model family", () => {
 
   test("forces the metadata tool on models that support it", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
+      toolUseResponse({ description: "d", title: "t" }),
     );
     await callClaudeForMetadata("system prompt", "u", {
       ...settings,
@@ -432,7 +381,7 @@ describe("tool_choice by model family", () => {
 
   test("uses auto tool_choice plus an instruction on the fable family", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "d", title: "t" }),
+      toolUseResponse({ description: "d", title: "t" }),
     );
     await callClaudeForMetadata("system prompt", "u", {
       ...settings,
@@ -471,7 +420,6 @@ describe("truncated responses (#174)", () => {
           id: "tu_1",
           name: "submit_metadata",
           input: {
-            tags: ["ai", "testing"],
             description: "A description cut off mid-sen",
             title: "A Title",
           },
@@ -492,7 +440,7 @@ describe("truncated responses (#174)", () => {
           type: "tool_use",
           id: "tu_1",
           name: "submit_metadata",
-          input: { tags: ["ai"], description: "d", title: "T" },
+          input: { description: "d", title: "T" },
         },
       ],
     });
@@ -509,13 +457,13 @@ describe("truncated responses (#174)", () => {
           type: "tool_use",
           id: "tu_1",
           name: "submit_metadata",
-          input: { tags: ["ai"], description: "d", title: "T" },
+          input: { description: "d", title: "T" },
         },
       ],
     });
 
     const result = await callClaudeForMetadata("system", "user", settings);
-    expect(result.tags).toEqual(["ai"]);
+    expect(result.description).toBe("d");
   });
 });
 
@@ -567,8 +515,7 @@ describe("client caching (#207)", () => {
 
     // Once-per-call rather than a sticky default, so this queue cannot leak
     // into any test added after this one.
-    const ok = () =>
-      toolUseResponse({ tags: ["a"], description: "d", title: "T" });
+    const ok = () => toolUseResponse({ description: "d", title: "T" });
     mockCreate
       .mockResolvedValueOnce(ok())
       .mockResolvedValueOnce(ok())
@@ -592,8 +539,7 @@ describe("client caching (#207)", () => {
     mock.module("@anthropic-ai/sdk", () => ({ default: Recording }));
     resetClientCache();
 
-    const ok = () =>
-      toolUseResponse({ tags: ["a"], description: "d", title: "T" });
+    const ok = () => toolUseResponse({ description: "d", title: "T" });
     mockCreate.mockResolvedValueOnce(ok()).mockResolvedValueOnce(ok());
     await callClaudeForMetadata("system", "user", settings);
     await callClaudeForMetadata("system", "user", {
@@ -608,21 +554,12 @@ describe("client caching (#207)", () => {
 // A disabled field is not asked for: absent from the schema's properties and
 // from `required`, so the model has nothing to fill in (#305).
 describe("buildToolSchema and validateMetadataInput per enabled-field subset", () => {
-  const ALL: MetadataField[] = ["tags", "description", "title"];
+  const ALL: MetadataField[] = ["description", "title"];
   const subsets: MetadataField[][] = [];
   for (let mask = 1; mask < 1 << ALL.length; mask++) {
     subsets.push(ALL.filter((_, i) => mask & (1 << i)));
   }
-  const full = { tags: ["a"], description: "d", title: "t" };
-
-  test("buildToolSchema omits tags when tags are disabled", () => {
-    const schema = buildToolSchema(
-      new Set<MetadataField>(["description", "title"]),
-    ).input_schema;
-    expect("tags" in schema.properties).toBe(false);
-    expect(schema.required).not.toContain("tags");
-    expect(schema.required).toEqual(["description", "title"]);
-  });
+  const full = { description: "d", title: "t" };
 
   for (const subset of subsets) {
     const label = subset.join("+");
@@ -651,7 +588,7 @@ describe("buildToolSchema and validateMetadataInput per enabled-field subset", (
 
   test("a malformed disabled field does not fail the generation", () => {
     const out = validateMetadataInput(
-      { tags: "not-an-array", description: 7, title: "t" },
+      { description: 7, title: "t" },
       new Set<MetadataField>(["title"]),
     );
     expect(out).toEqual({ title: "t" });
@@ -662,7 +599,6 @@ describe("buildToolSchema and validateMetadataInput per enabled-field subset", (
 
     const result = await callClaudeForMetadata("s", "u", {
       ...settings,
-      enableTags: false,
       enableTitle: false,
     });
 

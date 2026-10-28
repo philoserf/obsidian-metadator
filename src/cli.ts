@@ -15,7 +15,6 @@ import {
 interface Fields {
   title?: unknown;
   description?: unknown;
-  tags?: unknown;
 }
 
 // What `obsidian metadator:generate` prints: one JSON object, so a skill can
@@ -85,8 +84,8 @@ function skipReason(result: FileResult): { reason?: string } {
   return result.kind === "skipped" ? { reason: result.reason } : {};
 }
 
-// Read back from disk, not from what the pipeline sent: under `merge` and
-// `preserve` the note holds something other than the model's answer, and the
+// Read back from disk, not from what the pipeline sent: under `preserve` the
+// note holds something other than the model's answer, and the
 // metadata cache lags a write that has just landed. Reading the file is the
 // one source that cannot disagree with the note.
 async function readFields(
@@ -102,6 +101,5 @@ async function readFields(
   return {
     title: fm[settings.titleFieldName],
     description: fm[settings.descriptionFieldName],
-    tags: fm[settings.tagsFieldName],
   };
 }

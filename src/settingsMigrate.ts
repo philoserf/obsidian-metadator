@@ -10,10 +10,9 @@ import {
   METADATA_FIELDS,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
-  SCALAR_POLICY_LABELS,
-  type ScalarPolicy,
-  TAGS_POLICY_LABELS,
   TRUNCATE_METHOD_LABELS,
+  WRITE_POLICY_LABELS,
+  type WritePolicy,
 } from "./settings";
 
 function readString(
@@ -56,14 +55,8 @@ function isTruncateMethod(
   return Object.hasOwn(TRUNCATE_METHOD_LABELS, value);
 }
 
-function isTagsPolicy(
-  value: string,
-): value is MetadataToolSettings["tagsPolicy"] {
-  return Object.hasOwn(TAGS_POLICY_LABELS, value);
-}
-
-function isScalarPolicy(value: string): value is ScalarPolicy {
-  return Object.hasOwn(SCALAR_POLICY_LABELS, value);
+function isWritePolicy(value: string): value is WritePolicy {
+  return Object.hasOwn(WRITE_POLICY_LABELS, value);
 }
 
 // Schema migrations, keyed by the version they produce. To add migration N,
@@ -103,26 +96,19 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
       3,
       (s) => {
         // 2 → 3: one global updateMethod becomes a policy per field (#252).
-        // The three fields are different kinds of value, and no single enum
-        // value could express "clean up tags" without also meaning "rewrite
+        // The fields are kept differently, and no single enum value could
+        // express "refresh the description" without also meaning "rewrite
         // every title".
         //
         // preserve_existing mapped to leaving every populated field alone, so
-        // all three become `preserve` and nothing about that user's runs
-        // changes.
-        //
-        // always_regenerate mapped to: tags appended (never replaced —
-        // the #230 bug), description and title overwritten. All three become
-        // `regenerate`. For tags that is a deliberate behavior change on
-        // upgrade rather than a rename of the old append: append could never
-        // remove a tag, so the sprawl it produced was unfixable from the
-        // settings tab. `merge` remains available for anyone who wants the old
-        // behavior back.
+        // every policy becomes `preserve`; always_regenerate mapped to
+        // overwriting, so every policy becomes `regenerate`. Nothing about
+        // that user's runs changes. (This step also set a tags policy; tag
+        // generation is gone since v6, so it no longer does.)
         //
         // An absent updateMethod means the bag predates the setting or never
         // set it, in which case preserve_existing was its effective default.
         const regenerate = s.updateMethod === "always_regenerate";
-        s.tagsPolicy = regenerate ? "regenerate" : "preserve";
         s.descriptionPolicy = regenerate ? "regenerate" : "preserve";
         s.titlePolicy = regenerate ? "regenerate" : "preserve";
         delete s.updateMethod;
@@ -142,15 +128,31 @@ const MIGRATIONS: ReadonlyMap<number, (s: Record<string, unknown>) => void> =
     [
       5,
       (s) => {
-        // 4 → 5: tags and description get on/off toggles beside enableTitle
-        // (#305). Both default on, so an upgrade changes nothing. The bump is
-        // the point, as with v4: a v4 build on another device (say, the iPad
-        // a note is published from) syncing this file would otherwise save it
-        // back without the new keys, and with them gone tag generation would
-        // silently turn back on. Seeing a future version, that build goes
-        // read-only instead.
-        if (s.enableTags === undefined) s.enableTags = true;
+        // 4 → 5: the other generated fields get on/off toggles beside
+        // enableTitle (#305). They default on, so an upgrade changes nothing.
+        // The bump is the point, as with v4: a v4 build on another device
+        // (say, the iPad a note is published from) syncing this file would
+        // otherwise save it back without the new keys, silently turning a
+        // switched-off field back on. Seeing a future version, that build goes
+        // read-only instead. (This step also defaulted a tags toggle; tag
+        // generation is gone since v6, so it no longer does.)
         if (s.enableDescription === undefined) s.enableDescription = true;
+      },
+    ],
+    [
+      6,
+      (s) => {
+        // 5 → 6: tag generation is removed (#310). Its four settings are
+        // deleted here rather than left for normalization to drop, so the
+        // removal is stated once, as a migration. Notes keep whatever tags
+        // they hold — the plugin no longer reads or writes the field. The bump
+        // matters as with v4 and v5: a v5 build syncing this file would
+        // otherwise save the tag keys back with tag generation switched on;
+        // seeing a future version, it goes read-only instead.
+        delete s.tagsFieldName;
+        delete s.enableTags;
+        delete s.tagsPolicy;
+        delete s.tagsPrompt;
       },
     ],
   ]);
@@ -221,10 +223,6 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     migrated.truncateMethod,
     DEFAULT_SETTINGS.truncateMethod,
   );
-  const tagsPolicyCandidate = readString(
-    migrated.tagsPolicy,
-    DEFAULT_SETTINGS.tagsPolicy,
-  );
   const descriptionPolicyCandidate = readString(
     migrated.descriptionPolicy,
     DEFAULT_SETTINGS.descriptionPolicy,
@@ -246,12 +244,7 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       ? anthropicModel
       : DEFAULT_SETTINGS.anthropicModel,
     // Field names are trimmed here, the one place both a load and a settings
-    // edit pass through, so " tags " cannot become a malformed YAML key (#186).
-    tagsFieldName: readString(
-      migrated.tagsFieldName,
-      DEFAULT_SETTINGS.tagsFieldName,
-      { nonEmpty: true },
-    ).trim(),
+    // edit pass through, so " title " cannot become a malformed YAML key (#186).
     descriptionFieldName: readString(
       migrated.descriptionFieldName,
       DEFAULT_SETTINGS.descriptionFieldName,
@@ -262,7 +255,6 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       DEFAULT_SETTINGS.titleFieldName,
       { nonEmpty: true },
     ).trim(),
-    enableTags: readBoolean(migrated.enableTags, DEFAULT_SETTINGS.enableTags),
     enableDescription: readBoolean(
       migrated.enableDescription,
       DEFAULT_SETTINGS.enableDescription,
@@ -287,19 +279,12 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     truncateMethod: isTruncateMethod(truncateMethodCandidate)
       ? truncateMethodCandidate
       : DEFAULT_SETTINGS.truncateMethod,
-    tagsPolicy: isTagsPolicy(tagsPolicyCandidate)
-      ? tagsPolicyCandidate
-      : DEFAULT_SETTINGS.tagsPolicy,
-    descriptionPolicy: isScalarPolicy(descriptionPolicyCandidate)
+    descriptionPolicy: isWritePolicy(descriptionPolicyCandidate)
       ? descriptionPolicyCandidate
       : DEFAULT_SETTINGS.descriptionPolicy,
-    titlePolicy: isScalarPolicy(titlePolicyCandidate)
+    titlePolicy: isWritePolicy(titlePolicyCandidate)
       ? titlePolicyCandidate
       : DEFAULT_SETTINGS.titlePolicy,
-    tagsPrompt: readString(migrated.tagsPrompt, DEFAULT_SETTINGS.tagsPrompt, {
-      nonEmpty: true,
-      maxLength: PROMPT_MAX_LENGTH,
-    }),
     descriptionPrompt: readString(
       migrated.descriptionPrompt,
       DEFAULT_SETTINGS.descriptionPrompt,
@@ -315,9 +300,9 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
     ),
   };
 
-  // All three reset together, not just the colliding pair. It is the only rule
-  // that is order-independent and cannot itself produce a new collision, since
-  // the defaults are distinct by construction.
+  // Both reset together. It is the only rule that is order-independent and
+  // cannot itself produce a new collision, since the defaults are distinct by
+  // construction.
   //
   // Both branches warn. This path used to be silent, unlike the forward-schema
   // path above — so a user whose field names were reset saw their notes acquire
@@ -325,17 +310,16 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
   // had been using, with nothing anywhere saying why (#248).
   if (!areFieldNamesDistinct(normalized)) {
     console.warn(
-      "[Metadator] Frontmatter field names collide; resetting all three to their defaults.",
+      "[Metadator] Frontmatter field names collide; resetting both to their defaults.",
     );
-    normalized.tagsFieldName = DEFAULT_SETTINGS.tagsFieldName;
     normalized.descriptionFieldName = DEFAULT_SETTINGS.descriptionFieldName;
     normalized.titleFieldName = DEFAULT_SETTINGS.titleFieldName;
   } else {
-    // The in-use names are fine and only an inert one collides. Resetting all
-    // three here would destroy valid settings to fix a value nothing reads —
+    // The in-use name is fine and only an inert one collides. Resetting both
+    // here would destroy valid settings to fix a value nothing reads —
     // the bug this replaces. Normalizing it anyway, rather than leaving it,
     // so that turning that field back on later does not then trip the branch
-    // above and take the others down with it. Collisions are judged against
+    // above and take the other down with it. Collisions are judged against
     // the names as loaded, so two disabled fields sharing a name both reset.
     const enabled = enabledFields(normalized);
     const loadedNames = METADATA_FIELDS.map(
@@ -347,7 +331,7 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       const name = normalized[key];
       if (loadedNames.filter((n) => n === name).length < 2) continue;
       console.warn(
-        `[Metadator] ${key} "${name}" collides with another field name; resetting it to "${DEFAULT_SETTINGS[key]}". ${field[0]?.toUpperCase()}${field.slice(1)} generation is off, so the other names are unaffected.`,
+        `[Metadator] ${key} "${name}" collides with another field name; resetting it to "${DEFAULT_SETTINGS[key]}". ${field[0]?.toUpperCase()}${field.slice(1)} generation is off, so the other name is unaffected.`,
       );
       normalized[key] = DEFAULT_SETTINGS[key];
     }

@@ -103,15 +103,15 @@ describe("MetadataToolSettingTab", () => {
     const saves: string[] = [];
     const { tab, plugin } = makeTab();
     plugin.saveSettings = async () => {
-      saves.push(plugin.settings.tagsFieldName);
+      saves.push(plugin.settings.descriptionFieldName);
     };
     const order: string[] = [];
     tab.update = () => order.push("update");
 
-    tab.setControlValue("tagsFieldName", "edited-here");
+    tab.setControlValue("descriptionFieldName", "edited-here");
     await tab.reloadSettings(async () => {
       order.push("load");
-      plugin.settings = { ...DEFAULT_SETTINGS, tagsFieldName: "synced" };
+      plugin.settings = { ...DEFAULT_SETTINGS, descriptionFieldName: "synced" };
     });
     tab.hide(); // flushes anything still pending
     await new Promise((r) => setTimeout(r, 0));
@@ -182,9 +182,9 @@ describe("MetadataToolSettingTab", () => {
 
   test("writes go through migrateSettings, as a reload would", () => {
     const { tab, plugin } = makeTab();
-    tab.setControlValue("tagsFieldName", "  keywords  ");
+    tab.setControlValue("descriptionFieldName", "  summary  ");
     tab.setControlValue("descriptionPrompt", "");
-    expect(plugin.settings.tagsFieldName).toBe("keywords");
+    expect(plugin.settings.descriptionFieldName).toBe("summary");
     expect(plugin.settings.descriptionPrompt).toBe(
       DEFAULT_SETTINGS.descriptionPrompt,
     );
@@ -192,7 +192,7 @@ describe("MetadataToolSettingTab", () => {
 
   test("rejects colliding field names inline (#200)", async () => {
     const { tab } = makeTab();
-    expect(await validate(tab, "descriptionFieldName", "tags")).toBeTruthy();
+    expect(await validate(tab, "descriptionFieldName", "title")).toBeTruthy();
     expect(
       await validate(tab, "descriptionFieldName", "summary"),
     ).toBeUndefined();
@@ -201,15 +201,15 @@ describe("MetadataToolSettingTab", () => {
   test("refuses a colliding title name even while titles are off (#248)", async () => {
     // migrateSettings would reset it on the very write that stored it.
     const { tab } = makeTab({ enableTitle: false });
-    expect(await validate(tab, "titleFieldName", "tags")).toBeTruthy();
+    expect(await validate(tab, "titleFieldName", "description")).toBeTruthy();
   });
 
   test("rejects an over-long prompt inline", async () => {
     const { tab } = makeTab();
     expect(
-      await validate(tab, "tagsPrompt", "x".repeat(PROMPT_MAX_LENGTH + 1)),
+      await validate(tab, "titlePrompt", "x".repeat(PROMPT_MAX_LENGTH + 1)),
     ).toBeTruthy();
-    expect(await validate(tab, "tagsPrompt", "short")).toBeUndefined();
+    expect(await validate(tab, "titlePrompt", "short")).toBeUndefined();
   });
 
   test("bounds the content token limit (#184)", async () => {
@@ -227,23 +227,14 @@ describe("MetadataToolSettingTab", () => {
     expect(isDisabled(tab, "titleFieldName")).toBe(true);
     expect(isDisabled(tab, "titlePrompt")).toBe(true);
     expect(isDisabled(tab, "titlePolicy")).toBe(true);
-    expect(isDisabled(tab, "tagsPrompt")).toBe(false);
+    expect(isDisabled(tab, "descriptionPrompt")).toBe(false);
   });
 
   test("each field has a toggle (#305)", () => {
     const { tab } = makeTab();
-    for (const key of ["enableTags", "enableDescription", "enableTitle"]) {
+    for (const key of ["enableDescription", "enableTitle"]) {
       expect(control(tab, key).type).toBe("toggle");
     }
-  });
-
-  test("the tags toggle disables the tags name, prompt and policy (#305)", () => {
-    const { tab } = makeTab({ enableTags: false });
-    expect(isDisabled(tab, "tagsFieldName")).toBe(true);
-    expect(isDisabled(tab, "tagsPrompt")).toBe(true);
-    expect(isDisabled(tab, "tagsPolicy")).toBe(true);
-    expect(isDisabled(tab, "descriptionPrompt")).toBe(false);
-    expect(isDisabled(tab, "titlePrompt")).toBe(false);
   });
 
   test("the description toggle disables the description name, prompt and policy (#305)", () => {
@@ -251,12 +242,12 @@ describe("MetadataToolSettingTab", () => {
     expect(isDisabled(tab, "descriptionFieldName")).toBe(true);
     expect(isDisabled(tab, "descriptionPrompt")).toBe(true);
     expect(isDisabled(tab, "descriptionPolicy")).toBe(true);
-    expect(isDisabled(tab, "tagsPrompt")).toBe(false);
+    expect(isDisabled(tab, "titlePrompt")).toBe(false);
   });
 
-  test("refuses a colliding tags name even while tags are off (#305)", async () => {
-    const { tab } = makeTab({ enableTags: false });
-    expect(await validate(tab, "tagsFieldName", "description")).toBeTruthy();
+  test("refuses a colliding description name even while it is off (#305)", async () => {
+    const { tab } = makeTab({ enableDescription: false });
+    expect(await validate(tab, "descriptionFieldName", "title")).toBeTruthy();
   });
 });
 

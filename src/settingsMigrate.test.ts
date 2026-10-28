@@ -61,32 +61,31 @@ describe("migrateSettings", () => {
   test("does not change current values", () => {
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
-      tagsPolicy: "merge",
+      titlePolicy: "regenerate",
       anthropicModel: "claude-sonnet-5",
     });
-    expect(settings.tagsPolicy).toBe("merge");
+    expect(settings.titlePolicy).toBe("regenerate");
     expect(settings.anthropicModel).toBe("claude-sonnet-5");
   });
 
   test("preserves unrelated settings", () => {
     const settings = ok({
       anthropicApiKeySecret: "anthropic-api-key",
-      tagsFieldName: "tags",
+      descriptionFieldName: "summary",
       contentTokenLimit: 500,
     });
     expect(settings.anthropicApiKeySecret).toBe("anthropic-api-key");
-    expect(settings.tagsFieldName).toBe("tags");
+    expect(settings.descriptionFieldName).toBe("summary");
     expect(settings.contentTokenLimit).toBe(500);
   });
 
   test("normalizes invalid trust-boundary settings to defaults", () => {
     const settings = ok({
       // Pinned to the current version so no migration runs: migration 3 sets
-      // the three policies itself, which would mask the invalid values below.
+      // the policies itself, which would mask the invalid values below.
       schemaVersion: CURRENT_SCHEMA_VERSION,
       anthropicApiKey: 123,
       anthropicModel: "not-a-real-model",
-      tagsFieldName: false,
       descriptionFieldName: null,
       titleFieldName: ["title"],
       enableTitle: "true",
@@ -94,10 +93,8 @@ describe("migrateSettings", () => {
       truncateContent: "yes",
       contentTokenLimit: -10,
       truncateMethod: "bogus",
-      tagsPolicy: "bogus",
-      descriptionPolicy: "regenerate",
+      descriptionPolicy: "bogus",
       titlePolicy: 7,
-      tagsPrompt: 123,
       descriptionPrompt: false,
       titlePrompt: null,
     });
@@ -106,7 +103,7 @@ describe("migrateSettings", () => {
   });
 
   // The option lists are the key sets of TRUNCATE_METHOD_LABELS and
-  // UPDATE_METHOD_LABELS, so membership is an own-property test. Written with
+  // WRITE_POLICY_LABELS, so membership is an own-property test. Written with
   // `in` instead of Object.hasOwn it would walk the prototype chain and accept
   // every name below as a valid setting.
   test.each(["toString", "constructor", "valueOf", "__proto__"])(
@@ -115,13 +112,11 @@ describe("migrateSettings", () => {
       const settings = ok({
         schemaVersion: CURRENT_SCHEMA_VERSION,
         truncateMethod: inherited,
-        tagsPolicy: inherited,
         descriptionPolicy: inherited,
         titlePolicy: inherited,
       });
 
       expect(settings.truncateMethod).toBe(DEFAULT_SETTINGS.truncateMethod);
-      expect(settings.tagsPolicy).toBe(DEFAULT_SETTINGS.tagsPolicy);
       expect(settings.descriptionPolicy).toBe(
         DEFAULT_SETTINGS.descriptionPolicy,
       );
@@ -134,20 +129,16 @@ describe("migrateSettings", () => {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       anthropicApiKeySecret: "anthropic-api-key",
       anthropicModel: "claude-haiku-4-5",
-      tagsFieldName: "keywords",
       descriptionFieldName: "summary",
       titleFieldName: "headline",
-      enableTags: false,
       enableDescription: false,
       enableTitle: false,
       debugLogging: true,
       truncateContent: false,
       contentTokenLimit: 42,
       truncateMethod: "heading",
-      tagsPolicy: "merge",
       descriptionPolicy: "preserve",
       titlePolicy: "regenerate",
-      tagsPrompt: "t",
       descriptionPrompt: "d",
       titlePrompt: "h",
     };
@@ -157,11 +148,9 @@ describe("migrateSettings", () => {
 
   test("falls back to default for empty or whitespace-only prompts", () => {
     const settings = ok({
-      tagsPrompt: "",
       descriptionPrompt: "   ",
       titlePrompt: "\t\n",
     });
-    expect(settings.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
     expect(settings.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
     expect(settings.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
   });
@@ -169,18 +158,16 @@ describe("migrateSettings", () => {
   test("falls back to default for prompts exceeding max length", () => {
     const tooLong = "x".repeat(PROMPT_MAX_LENGTH + 1);
     const settings = ok({
-      tagsPrompt: tooLong,
       descriptionPrompt: tooLong,
       titlePrompt: tooLong,
     });
-    expect(settings.tagsPrompt).toBe(DEFAULT_SETTINGS.tagsPrompt);
     expect(settings.descriptionPrompt).toBe(DEFAULT_SETTINGS.descriptionPrompt);
     expect(settings.titlePrompt).toBe(DEFAULT_SETTINGS.titlePrompt);
   });
 
   test("preserves prompts exactly at the max length boundary", () => {
     const atLimit = "x".repeat(PROMPT_MAX_LENGTH);
-    expect(ok({ tagsPrompt: atLimit }).tagsPrompt).toBe(atLimit);
+    expect(ok({ titlePrompt: atLimit }).titlePrompt).toBe(atLimit);
   });
 
   test("drops the retired maxBulkFiles key (#311)", () => {
@@ -376,26 +363,17 @@ describe("numeric bounds (#184)", () => {
 });
 
 describe("field-name collisions (#200)", () => {
-  test("colliding names reset all three, not just the pair", () => {
-    // Resetting only the second collider is order-dependent and can produce a
-    // fresh collision; resetting all three cannot, since the defaults differ.
-    const s = ok({
-      tagsFieldName: "meta",
-      descriptionFieldName: "meta",
-      titleFieldName: "headline",
-    });
-    expect(s.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+  test("colliding names reset both", () => {
+    const s = ok({ descriptionFieldName: "meta", titleFieldName: "meta" });
     expect(s.descriptionFieldName).toBe(DEFAULT_SETTINGS.descriptionFieldName);
     expect(s.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
   });
 
   test("distinct custom names are left alone", () => {
     const s = ok({
-      tagsFieldName: "keywords",
       descriptionFieldName: "summary",
       titleFieldName: "headline",
     });
-    expect(s.tagsFieldName).toBe("keywords");
     expect(s.descriptionFieldName).toBe("summary");
     expect(s.titleFieldName).toBe("headline");
   });
@@ -448,21 +426,16 @@ describe("migration 2 → 3: updateMethod becomes a policy per field (#252)", ()
       updateMethod: "preserve_existing",
     });
 
-    expect(settings.tagsPolicy).toBe("preserve");
     expect(settings.descriptionPolicy).toBe("preserve");
     expect(settings.titlePolicy).toBe("preserve");
   });
 
-  // Deliberately not `merge`. Append could never remove a tag, so the sprawl it
-  // produced was unfixable from the settings tab; this is the upgrade applying
-  // the fix. `merge` stays available for anyone who wants the old behavior.
-  test("always_regenerate moves tags to regenerate, not merge", () => {
+  test("always_regenerate moves every field to regenerate", () => {
     const settings = ok({
       schemaVersion: 2,
       updateMethod: "always_regenerate",
     });
 
-    expect(settings.tagsPolicy).toBe("regenerate");
     expect(settings.descriptionPolicy).toBe("regenerate");
     expect(settings.titlePolicy).toBe("regenerate");
   });
@@ -470,7 +443,6 @@ describe("migration 2 → 3: updateMethod becomes a policy per field (#252)", ()
   test("an absent updateMethod is treated as preserve_existing, its old default", () => {
     const settings = ok({ schemaVersion: 2 });
 
-    expect(settings.tagsPolicy).toBe("preserve");
     expect(settings.descriptionPolicy).toBe("preserve");
     expect(settings.titlePolicy).toBe("preserve");
   });
@@ -490,64 +462,72 @@ describe("migration 2 → 3: updateMethod becomes a policy per field (#252)", ()
   // what decides a new user's policies.
   test("a brand-new install gets the defaults, not the migration's output", () => {
     expect(migrateSettings(null)).toEqual({ kind: "missing" });
-    expect(DEFAULT_SETTINGS.tagsPolicy).toBe("regenerate");
     expect(DEFAULT_SETTINGS.descriptionPolicy).toBe("regenerate");
     expect(DEFAULT_SETTINGS.titlePolicy).toBe("preserve");
   });
 });
 
-describe("field-name collision while title generation is off (#248)", () => {
-  test("keeps the two names in use and resets only the inert one", () => {
+describe("field-name collision with a field disabled (#248, #305)", () => {
+  test("title off: keeps the name in use and resets only the inert one", () => {
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       enableTitle: false,
-      tagsFieldName: "keywords",
       descriptionFieldName: "summary",
-      titleFieldName: "keywords",
+      titleFieldName: "summary",
     });
 
-    // These used to be destroyed to fix a value nothing reads.
-    expect(settings.tagsFieldName).toBe("keywords");
+    // This used to be destroyed to fix a value nothing reads.
     expect(settings.descriptionFieldName).toBe("summary");
     expect(settings.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
   });
 
-  test("still resets all three when the names in use collide", () => {
+  test("description off: keeps the name in use and resets only the inert one", () => {
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
-      enableTitle: false,
-      tagsFieldName: "keywords",
-      descriptionFieldName: "keywords",
+      enableDescription: false,
+      descriptionFieldName: "headline",
       titleFieldName: "headline",
     });
 
-    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+    expect(settings.descriptionFieldName).toBe(
+      DEFAULT_SETTINGS.descriptionFieldName,
+    );
+    expect(settings.titleFieldName).toBe("headline");
+  });
+
+  test("both off and sharing a name: both reset", () => {
+    const settings = ok({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enableDescription: false,
+      enableTitle: false,
+      descriptionFieldName: "x",
+      titleFieldName: "x",
+    });
+
     expect(settings.descriptionFieldName).toBe(
       DEFAULT_SETTINGS.descriptionFieldName,
     );
     expect(settings.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
   });
 
-  test("with title generation on, a title collision still resets all three", () => {
+  test("with both on, a collision resets both", () => {
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       enableTitle: true,
-      tagsFieldName: "keywords",
       descriptionFieldName: "summary",
-      titleFieldName: "keywords",
+      titleFieldName: "summary",
     });
 
-    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
     expect(settings.descriptionFieldName).toBe(
       DEFAULT_SETTINGS.descriptionFieldName,
     );
+    expect(settings.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
   });
 
   test("a valid inert titleFieldName is left alone", () => {
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       enableTitle: false,
-      tagsFieldName: "keywords",
       descriptionFieldName: "summary",
       titleFieldName: "headline",
     });
@@ -556,107 +536,66 @@ describe("field-name collision while title generation is off (#248)", () => {
   });
 });
 
-describe("schema v5: tags and description toggles (#305)", () => {
-  test("a v4 file gains both toggles, on", () => {
+describe("schema v5: the description toggle (#305)", () => {
+  test("a v4 file gains the toggle, on", () => {
     const settings = ok({ schemaVersion: 4, enableTitle: false });
 
-    expect(settings.schemaVersion).toBe(5);
-    expect(settings.enableTags).toBe(true);
     expect(settings.enableDescription).toBe(true);
     expect(settings.enableTitle).toBe(false);
   });
 
-  test("the v5 migration keeps values already present", () => {
-    const migrated = applyMigrations(
-      { enableTags: false, enableDescription: false },
-      4,
-    );
-    expect(migrated.enableTags).toBe(false);
+  test("the v5 migration keeps a value already present", () => {
+    const migrated = applyMigrations({ enableDescription: false }, 4);
     expect(migrated.enableDescription).toBe(false);
   });
 
-  test("the toggles survive a reload at the current version", () => {
+  test("the toggle survives a reload at the current version", () => {
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
-      enableTags: false,
       enableDescription: false,
     });
-    expect(settings.enableTags).toBe(false);
     expect(settings.enableDescription).toBe(false);
   });
 
   test("a non-boolean toggle falls back to on", () => {
     const settings = ok({
       schemaVersion: CURRENT_SCHEMA_VERSION,
-      enableTags: "false",
       enableDescription: 0,
     });
-    expect(settings.enableTags).toBe(true);
     expect(settings.enableDescription).toBe(true);
   });
 });
 
-describe("field-name collision with any field disabled (#305)", () => {
-  test("tags off: keeps the names in use and resets only tagsFieldName", () => {
-    const settings = ok({
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      enableTags: false,
-      tagsFieldName: "summary",
-      descriptionFieldName: "summary",
-      titleFieldName: "headline",
-    });
+describe("schema v6: tag generation removed (#310)", () => {
+  const v5 = {
+    schemaVersion: 5,
+    tagsFieldName: "keywords",
+    enableTags: false,
+    tagsPolicy: "merge",
+    tagsPrompt: "Select 3-5 tags.",
+    descriptionFieldName: "summary",
+    descriptionPolicy: "preserve",
+  };
+  const tagKeys = ["tagsFieldName", "enableTags", "tagsPolicy", "tagsPrompt"];
 
-    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
+  test("the v6 migration deletes the four tag keys from the raw bag", () => {
+    const migrated = applyMigrations(v5, 5);
+    expect(migrated.schemaVersion).toBe(6);
+    for (const key of tagKeys) expect(migrated).not.toHaveProperty(key);
+    expect(migrated.descriptionFieldName).toBe("summary");
+    expect(migrated.descriptionPolicy).toBe("preserve");
+  });
+
+  test("a v5 file loads at v6 without them, other settings kept", () => {
+    const settings = ok(v5);
+    expect(settings.schemaVersion).toBe(6);
+    for (const key of tagKeys) expect(settings).not.toHaveProperty(key);
     expect(settings.descriptionFieldName).toBe("summary");
-    expect(settings.titleFieldName).toBe("headline");
+    expect(settings.descriptionPolicy).toBe("preserve");
   });
 
-  test("description off: keeps the names in use and resets only descriptionFieldName", () => {
-    const settings = ok({
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      enableDescription: false,
-      tagsFieldName: "keywords",
-      descriptionFieldName: "headline",
-      titleFieldName: "headline",
-    });
-
-    expect(settings.tagsFieldName).toBe("keywords");
-    expect(settings.descriptionFieldName).toBe(
-      DEFAULT_SETTINGS.descriptionFieldName,
-    );
-    expect(settings.titleFieldName).toBe("headline");
-  });
-
-  test("two disabled fields sharing a name both reset; the in-use one stays", () => {
-    const settings = ok({
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      enableTags: false,
-      enableDescription: false,
-      tagsFieldName: "x",
-      descriptionFieldName: "x",
-      titleFieldName: "headline",
-    });
-
-    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
-    expect(settings.descriptionFieldName).toBe(
-      DEFAULT_SETTINGS.descriptionFieldName,
-    );
-    expect(settings.titleFieldName).toBe("headline");
-  });
-
-  test("an in-use collision still resets all three", () => {
-    const settings = ok({
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      enableTags: false,
-      tagsFieldName: "keywords",
-      descriptionFieldName: "summary",
-      titleFieldName: "summary",
-    });
-
-    expect(settings.tagsFieldName).toBe(DEFAULT_SETTINGS.tagsFieldName);
-    expect(settings.descriptionFieldName).toBe(
-      DEFAULT_SETTINGS.descriptionFieldName,
-    );
-    expect(settings.titleFieldName).toBe(DEFAULT_SETTINGS.titleFieldName);
+  test("an older file carrying tag keys loses them too", () => {
+    const settings = ok({ schemaVersion: 2, tagsPolicy: "merge" });
+    for (const key of tagKeys) expect(settings).not.toHaveProperty(key);
   });
 });

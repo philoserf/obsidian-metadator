@@ -4,7 +4,7 @@ import { stripFrontMatter } from "./frontmatter";
 describe("stripFrontMatter", () => {
   test("removes a leading frontmatter block", () => {
     expect(
-      stripFrontMatter("---\ntitle: Test\ntags: []\n---\nBody text."),
+      stripFrontMatter("---\ntitle: Test\naliases: []\n---\nBody text."),
     ).toBe("Body text.");
   });
 
@@ -35,9 +35,9 @@ describe("stripFrontMatter", () => {
   });
 
   test("a frontmatter-only note strips to nothing", () => {
-    expect(stripFrontMatter("---\ntitle: Test\ntags: []\n---\n").trim()).toBe(
-      "",
-    );
+    expect(
+      stripFrontMatter("---\ntitle: Test\naliases: []\n---\n").trim(),
+    ).toBe("");
   });
 
   test("keeps a horizontal rule that appears later in the body", () => {

@@ -34,7 +34,7 @@ describe("getContent frontmatter handling", () => {
   }
 
   test("frontmatter does not spend the token budget", async () => {
-    const frontmatter = `---\ntags: [${Array.from({ length: 60 }, (_, i) => `t${i}`).join(", ")}]\n---\n`;
+    const frontmatter = `---\naliases: [${Array.from({ length: 60 }, (_, i) => `t${i}`).join(", ")}]\n---\n`;
     const body = "The article body that should survive truncation.";
     const result = await getContent(
       appWith(frontmatter + body),
@@ -48,7 +48,7 @@ describe("getContent frontmatter handling", () => {
 
   test("a frontmatter-only note yields nothing, not a YAML Body section", async () => {
     const result = await getContent(
-      appWith("---\ntitle: Test\ntags: []\n---\n"),
+      appWith("---\ntitle: Test\naliases: []\n---\n"),
       {} as never,
       1000,
       "heading",

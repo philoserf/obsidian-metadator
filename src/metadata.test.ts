@@ -58,7 +58,7 @@ function makeApp(opts: {
   frontmatter?: Record<string, unknown>;
   content?: string;
   // Number of leading processFrontMatter calls that should throw, simulating a
-  // vault that has become unwritable. Writes go in `updates` order: tags,
+  // vault that has become unwritable. Writes go in `updates` order:
   // description, title.
   failWrites?: number;
   // When true, metadataCache hands back a *copy* of the frontmatter, the way
@@ -108,7 +108,6 @@ function makeFile(path = "note.md"): { path: string; extension: string } {
 // The #178 live re-check is what `preserve` does; these suites used to get it
 // from the old global preserve_existing default.
 const PRESERVE_ALL = {
-  tagsPolicy: "preserve",
   descriptionPolicy: "preserve",
   titlePolicy: "preserve",
 } as const;
@@ -126,10 +125,9 @@ describe("generateMetadata integration", () => {
     mockCreate.mockClear();
   });
 
-  test("full flow: generates and writes tags, description, and title", async () => {
+  test("full flow: generates and writes description and title", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["ai", "testing"],
         description: "A test article",
         title: "Test Title",
       }),
@@ -140,7 +138,6 @@ describe("generateMetadata integration", () => {
 
     await generateMetadata(app, settings);
 
-    expect(fm.tags).toEqual(["ai", "testing"]);
     expect(fm.description).toBe("A test article");
     expect(fm.title).toBe("Test Title");
   });
@@ -173,7 +170,6 @@ describe("generateMetadata integration", () => {
   test("preserve_existing skips populated fields", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["new-tag"],
         description: "new desc",
         title: "New Title",
       }),
@@ -181,35 +177,22 @@ describe("generateMetadata integration", () => {
 
     const { app, fm } = makeApp({
       frontmatter: {
-        tags: ["existing-tag"],
         description: "existing desc",
       },
     });
-    const settings = makeSettings({
-      tagsPolicy: "preserve",
-      descriptionPolicy: "preserve",
-      titlePolicy: "preserve",
-    });
+    const settings = makeSettings(PRESERVE_ALL);
 
     await generateMetadata(app, settings);
 
-    // Tags should be kept (not appended) since preserve_existing
-    expect(fm.tags).toEqual(["existing-tag"]);
     // Description should be kept
     expect(fm.description).toBe("existing desc");
     // Title was empty, so it gets populated
     expect(fm.title).toBe("New Title");
   });
 
-  // The predecessor of this test was named "always_regenerate updates all
-  // fields" and asserted tags === ["old-tag", "new-tag"] — a merge, under a
-  // name promising an overwrite. That mismatch is exactly what #230 reported,
-  // and it stayed invisible because the name described the documented
-  // behavior while the assertion pinned the real one.
-  test("regenerate replaces the tag list instead of growing it (#230)", async () => {
+  test("regenerate overwrites populated fields", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["new-tag"],
         description: "new desc",
         title: "New Title",
       }),
@@ -217,51 +200,24 @@ describe("generateMetadata integration", () => {
 
     const { app, fm } = makeApp({
       frontmatter: {
-        tags: ["old-tag"],
         description: "old desc",
         title: "Old Title",
       },
     });
     const settings = makeSettings({
-      tagsPolicy: "regenerate",
       descriptionPolicy: "regenerate",
       titlePolicy: "regenerate",
     });
 
     await generateMetadata(app, settings);
 
-    // "old-tag" is gone — under the old append this was impossible, which is
-    // why a sprawling tag list could not be cleaned from the settings tab.
-    expect(fm.tags).toEqual(["new-tag"]);
     expect(fm.description).toBe("new desc");
     expect(fm.title).toBe("New Title");
-  });
-
-  test("merge keeps the old behavior for anyone who wants it", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({
-        tags: ["new-tag"],
-        description: "new desc",
-        title: "New Title",
-      }),
-    );
-
-    const { app, fm } = makeApp({
-      frontmatter: { tags: ["old-tag"], description: "old desc" },
-    });
-
-    await generateMetadata(
-      app,
-      makeSettings({ tagsPolicy: "merge", descriptionPolicy: "regenerate" }),
-    );
-
-    expect(fm.tags).toEqual(["old-tag", "new-tag"]);
   });
 
   test("each field's policy is independent of the others (#252)", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["new-tag"],
         description: "new desc",
         title: "New Title",
       }),
@@ -269,24 +225,21 @@ describe("generateMetadata integration", () => {
 
     const { app, fm } = makeApp({
       frontmatter: {
-        tags: ["stale-one", "stale-two"],
         description: "old desc",
         title: "Load-Bearing Title",
       },
     });
 
-    // The bind #252 exists to break: cleaning up tags used to require
+    // The bind #252 exists to break: refreshing one field used to require
     // always_regenerate, which also rewrote every title unconditionally.
     await generateMetadata(
       app,
       makeSettings({
-        tagsPolicy: "regenerate",
         descriptionPolicy: "regenerate",
         titlePolicy: "preserve",
       }),
     );
 
-    expect(fm.tags).toEqual(["new-tag"]);
     expect(fm.description).toBe("new desc");
     expect(fm.title).toBe("Load-Bearing Title");
   });
@@ -294,7 +247,6 @@ describe("generateMetadata integration", () => {
   test("strips surrounding quotes from generated title before writing", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["a", "b"],
         description: "desc",
         title: '"Quoted Title"',
       }),
@@ -307,23 +259,20 @@ describe("generateMetadata integration", () => {
   });
 
   test("does not generate title when enableTitle is false", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a", "b"], description: "desc" }),
-    );
+    mockCreate.mockResolvedValueOnce(toolUseResponse({ description: "desc" }));
 
     const { app, fm } = makeApp({});
     const settings = makeSettings({ enableTitle: false });
 
     await generateMetadata(app, settings);
 
-    expect(fm.tags).toEqual(["a", "b"]);
     expect(fm.description).toBe("desc");
     expect(fm.title).toBeUndefined();
   });
 
   test("passes abort signal to API call when provided", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a", "b"], description: "desc", title: "T" }),
+      toolUseResponse({ description: "desc", title: "T" }),
     );
     const controller = new AbortController();
     const { app } = makeApp({});
@@ -346,7 +295,6 @@ describe("generateMetadata integration", () => {
     await generateMetadata(app, makeSettings(), { signal: controller.signal });
 
     expect(mockCreate).not.toHaveBeenCalled();
-    expect(fm.tags).toBeUndefined();
     expect(fm.description).toBeUndefined();
     expect(fm.title).toBeUndefined();
   });
@@ -374,7 +322,6 @@ describe("generateMetadata integration", () => {
     if (result.kind === "error") {
       expect((result.error as Error).name).toBe("ClaudeApiError");
     }
-    expect(fm.tags).toBeUndefined();
     expect(fm.description).toBeUndefined();
   });
 
@@ -430,7 +377,6 @@ describe("concurrent edits during the API call (#178)", () => {
     mockCreate.mockImplementationOnce(async () => {
       fm.description = "what the user typed";
       return toolUseResponse({
-        tags: ["ai", "testing"],
         description: "what Claude generated",
         title: "Generated Title",
       });
@@ -441,7 +387,6 @@ describe("concurrent edits during the API call (#178)", () => {
     expect(fm.description).toBe("what the user typed");
     // Fields the user did not touch are still filled in.
     expect(fm.title).toBe("Generated Title");
-    expect(fm.tags).toEqual(["ai", "testing"]);
   });
 
   test("preserve does not open the file for a field it is keeping", async () => {
@@ -450,20 +395,18 @@ describe("concurrent edits during the API call (#178)", () => {
     // have already decided to leave alone cost an mtime bump and a vault
     // modify event per skipped field, per file (#185).
     //
-    // tags is empty so generation still runs; description and title are
-    // populated, so under preserve_existing they resolve to keep. Exactly one
-    // write should reach the file — before the fix there were three.
+    // title is empty so generation still runs; description is populated, so
+    // under preserve it resolves to keep. Exactly one write should reach the
+    // file — before the fix there were two.
     const { app, writes } = makeApp({
       frontmatter: {
         description: "existing description",
-        title: "Existing Title",
       },
       snapshotCache: true,
     });
 
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["ai", "testing"],
         description: "generated",
         title: "Generated",
       }),
@@ -483,9 +426,29 @@ describe("concurrent edits during the API call (#178)", () => {
       snapshotCache: true,
     });
 
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as never,
+      makeSettings(PRESERVE_ALL),
+    );
+
+    expect(result).toMatchObject({
+      kind: "skipped",
+      reason: "already_populated",
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(fm.description).toBe(0);
+    expect(fm.title).toBe(false);
+  });
+
+  test("the live re-check keeps a 0 too, while the empty field is filled", async () => {
+    const { app, fm } = makeApp({
+      frontmatter: { description: 0 },
+      snapshotCache: true,
+    });
+
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["ai", "testing"],
         description: "what Claude generated",
         title: "Generated Title",
       }),
@@ -494,7 +457,7 @@ describe("concurrent edits during the API call (#178)", () => {
     await generateMetadata(app, makeSettings(PRESERVE_ALL));
 
     expect(fm.description).toBe(0);
-    expect(fm.title).toBe(false);
+    expect(fm.title).toBe("Generated Title");
   });
 
   test("regenerate still overwrites, since the user asked for it", async () => {
@@ -503,7 +466,6 @@ describe("concurrent edits during the API call (#178)", () => {
     mockCreate.mockImplementationOnce(async () => {
       fm.description = "what the user typed";
       return toolUseResponse({
-        tags: ["ai"],
         description: "what Claude generated",
         title: "Generated Title",
       });
@@ -512,7 +474,6 @@ describe("concurrent edits during the API call (#178)", () => {
     await generateMetadata(
       app,
       makeSettings({
-        tagsPolicy: "regenerate",
         descriptionPolicy: "regenerate",
         titlePolicy: "regenerate",
       }),
@@ -530,12 +491,11 @@ describe("failed frontmatter writes (#187)", () => {
   test("all writes failing reports an error, not a skip", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["ai"],
         description: "A test article",
         title: "Test Title",
       }),
     );
-    const { app, fm } = makeApp({ failWrites: 3 });
+    const { app, fm } = makeApp({ failWrites: 2 });
 
     const result = await generateMetadataForFile(
       app,
@@ -547,7 +507,7 @@ describe("failed frontmatter writes (#187)", () => {
     expect(fm.description).toBeUndefined();
     if (result.kind === "error") {
       expect(result.reason).toContain("failed to write frontmatter");
-      expect(result.reason).toContain("tags");
+      expect(result.reason).toContain("description");
       expect(result.reason).not.toContain("other fields were written");
     }
   });
@@ -555,7 +515,6 @@ describe("failed frontmatter writes (#187)", () => {
   test("a partial write failure is still reported as an error", async () => {
     mockCreate.mockResolvedValueOnce(
       toolUseResponse({
-        tags: ["ai"],
         description: "A test article",
         title: "Test Title",
       }),
@@ -569,30 +528,10 @@ describe("failed frontmatter writes (#187)", () => {
     );
 
     expect(result.kind).toBe("error");
-    expect(fm.description).toBe("A test article");
+    expect(fm.title).toBe("Test Title");
     if (result.kind === "error") {
       expect(result.reason).toContain("other fields were written");
     }
-  });
-
-  test("a blank-only tags array writes nothing and reports no change", async () => {
-    // A non-empty array of blanks passes validateMetadataInput, but
-    // normalizeTags reduces it to []. That empty array was written as
-    // `tags: []` and reported as a change (#161).
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["", "  ", " "], description: "", title: "" }),
-    );
-    const { app, fm, writes } = makeApp({});
-
-    const result = await generateMetadataForFile(
-      app,
-      makeFile() as unknown as Parameters<typeof generateMetadataForFile>[1],
-      makeSettings(),
-    );
-
-    expect("tags" in fm).toBe(false);
-    expect(writes()).toBe(0);
-    expect(result.kind).toBe("skipped");
   });
 
   test("a quoted-empty title and a blank description write nothing", async () => {
@@ -601,7 +540,7 @@ describe("failed frontmatter writes (#187)", () => {
     // an empty title and reported "Metadata updated successfully"; the same
     // holds for a whitespace-only description.
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: [], description: "   ", title: '""' }),
+      toolUseResponse({ description: "   ", title: '""' }),
     );
     const { app, fm, writes } = makeApp({});
 
@@ -621,7 +560,7 @@ describe("failed frontmatter writes (#187)", () => {
     // The model returned nothing usable, so no write is even attempted — the
     // case "skipped: no changes" is supposed to describe.
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: [], description: "", title: "" }),
+      toolUseResponse({ description: "", title: "" }),
     );
     const { app } = makeApp({});
 
@@ -711,106 +650,6 @@ describe("stripSurroundingQuotes", () => {
   });
 });
 
-describe("existing tags reach the request (#251)", () => {
-  beforeEach(() => {
-    mockCreate.mockClear();
-  });
-
-  function sentUserMessage(): string {
-    const body = mockCreate.mock.calls[0]?.[0] as {
-      messages: { content: string }[];
-    };
-    return body.messages[0]?.content ?? "";
-  }
-
-  function sentSystem(): string {
-    const body = mockCreate.mock.calls[0]?.[0] as { system: string };
-    return body.system;
-  }
-
-  // getContent strips frontmatter before the request (#164), so without this
-  // wiring the model never sees the tags it is being asked to replace and every
-  // run is an independent draw from the body.
-  test("a note's current tags are sent for reconciliation", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
-    );
-    const { app } = makeApp({
-      frontmatter: { tags: ["science-fiction", "review"] },
-      content: "body text",
-    });
-
-    await generateMetadata(
-      app,
-      makeSettings({
-        tagsPolicy: "regenerate",
-        descriptionPolicy: "regenerate",
-        titlePolicy: "regenerate",
-      }),
-    );
-
-    expect(sentUserMessage()).toContain("science-fiction\nreview");
-    expect(sentSystem()).toContain("keep each tag that still fits");
-  });
-
-  test("a scalar tags value is read too, not just a list", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
-    );
-    const { app } = makeApp({
-      frontmatter: { tags: "solo-tag" },
-      content: "body text",
-    });
-
-    await generateMetadata(
-      app,
-      makeSettings({
-        tagsPolicy: "regenerate",
-        descriptionPolicy: "regenerate",
-        titlePolicy: "regenerate",
-      }),
-    );
-
-    expect(sentUserMessage()).toContain("solo-tag");
-  });
-
-  test("a note with no tags gets no reconciliation instruction", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
-    );
-    const { app } = makeApp({ content: "body text" });
-
-    await generateMetadata(app, makeSettings());
-
-    expect(sentSystem()).not.toContain("current tags");
-    expect(sentUserMessage()).not.toContain("current-tags");
-  });
-
-  // The field name is configurable, so the read must follow the setting rather
-  // than assume "tags".
-  test("reads the configured tags field name", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["fresh"], description: "d", title: "T" }),
-    );
-    const { app } = makeApp({
-      frontmatter: { keywords: ["from-keywords"] },
-      content: "body text",
-    });
-
-    await generateMetadata(
-      app,
-      makeSettings({
-        tagsFieldName: "keywords",
-        tagsPolicy: "regenerate",
-        descriptionPolicy: "regenerate",
-        titlePolicy: "regenerate",
-      }),
-    );
-
-    expect(sentUserMessage()).toContain("from-keywords");
-  });
-});
-
 // A disabled field is never written, and whatever the note already holds for
 // it is left exactly as it is — not deleted, not overwritten (#305).
 describe("disabled fields are not written (#305)", () => {
@@ -818,41 +657,9 @@ describe("disabled fields are not written (#305)", () => {
     mockCreate.mockClear();
   });
 
-  test("tags disabled: existing tags are untouched even if the model volunteers some", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["new"], description: "desc", title: "T" }),
-    );
-    const { app, fm } = makeApp({ frontmatter: { tags: ["old"] } });
-
-    const result = await generateMetadataForFile(
-      app,
-      makeFile() as never,
-      makeSettings({ enableTags: false }),
-    );
-
-    expect(result.kind).toBe("changed");
-    expect(fm.tags).toEqual(["old"]);
-    expect(fm.description).toBe("desc");
-  });
-
-  test("tags disabled: a note without tags does not gain them", async () => {
-    mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["new"], description: "desc", title: "T" }),
-    );
-    const { app, fm } = makeApp({});
-
-    await generateMetadataForFile(
-      app,
-      makeFile() as never,
-      makeSettings({ enableTags: false }),
-    );
-
-    expect("tags" in fm).toBe(false);
-  });
-
   test("description disabled: the existing description is untouched", async () => {
     mockCreate.mockResolvedValueOnce(
-      toolUseResponse({ tags: ["a"], description: "new", title: "T" }),
+      toolUseResponse({ description: "new", title: "T" }),
     );
     const { app, fm } = makeApp({ frontmatter: { description: "keep" } });
 
@@ -863,18 +670,18 @@ describe("disabled fields are not written (#305)", () => {
     );
 
     expect(fm.description).toBe("keep");
-    expect(fm.tags).toEqual(["a"]);
+    expect(fm.title).toBe("T");
   });
 
   test("a missing disabled field does not make a note worth a call", async () => {
     const { app } = makeApp({
-      frontmatter: { description: "d", title: "t" },
+      frontmatter: { title: "t" },
     });
 
     const result = await generateMetadataForFile(
       app,
       makeFile() as never,
-      makeSettings({ ...PRESERVE_ALL, enableTags: false }),
+      makeSettings({ ...PRESERVE_ALL, enableDescription: false }),
     );
 
     expect(result).toMatchObject({
@@ -884,14 +691,13 @@ describe("disabled fields are not written (#305)", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  test("all three disabled: no API call and nothing written", async () => {
+  test("both disabled: no API call and nothing written", async () => {
     const { app, writes } = makeApp({});
 
     const result = await generateMetadataForFile(
       app,
       makeFile() as never,
       makeSettings({
-        enableTags: false,
         enableDescription: false,
         enableTitle: false,
       }),
@@ -900,5 +706,48 @@ describe("disabled fields are not written (#305)", () => {
     expect(result.kind).toBe("skipped");
     expect(mockCreate).not.toHaveBeenCalled();
     expect(writes()).toBe(0);
+  });
+});
+
+// Tag generation is gone (#310). A note's existing tags are neither read into
+// the request nor written, whatever the model volunteers.
+describe("a note's tags are left alone (#310)", () => {
+  beforeEach(() => {
+    mockCreate.mockClear();
+  });
+
+  test("existing tags survive a run, even if the model volunteers some", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["new"], description: "desc", title: "T" }),
+    );
+    const { app, fm } = makeApp({
+      frontmatter: { tags: ["old"] },
+      content: "body text",
+    });
+
+    const result = await generateMetadataForFile(
+      app,
+      makeFile() as never,
+      makeSettings(),
+    );
+
+    expect(result.kind).toBe("changed");
+    expect(fm.tags).toEqual(["old"]);
+    expect(fm.description).toBe("desc");
+    const body = mockCreate.mock.calls[0]?.[0] as {
+      messages: { content: string }[];
+    };
+    expect(body.messages[0]?.content).not.toContain("old");
+  });
+
+  test("a note without tags does not gain them", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({ tags: ["new"], description: "desc", title: "T" }),
+    );
+    const { app, fm } = makeApp({});
+
+    await generateMetadataForFile(app, makeFile() as never, makeSettings());
+
+    expect("tags" in fm).toBe(false);
   });
 });
