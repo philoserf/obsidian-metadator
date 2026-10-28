@@ -13,16 +13,15 @@ The current next step for this repo is tracked in the workspace backlog at `../N
 ## Development Commands
 
 ```bash
-bun run build            # check + bundle (the gate; no CI); minified, no sourcemap
+bun run build            # check + bundle (the gate; no CI) + install into the vault
 bun test src/metadata.test.ts            # one file
 bun test -t "preserve"                   # one test / describe by name pattern
-bun run deploy           # Copy main.js + manifest.json to $OBSIDIAN_DEPLOY_DEST
 bun run compare-models   # Send the same note to the live API once per configurable model
 ```
 
 `compare-models` hits the live API and bills real tokens; it is not part of any check.
 
-The `deploy` script reads `OBSIDIAN_DEPLOY_DEST` from `.env.local` (gitignored). Set it to the target plugin directory, e.g.:
+`bun run build` ends with `deploy.ts`, which copies `main.js` and `manifest.json` to `OBSIDIAN_DEPLOY_DEST` from `.env.local` (gitignored), or does nothing when it is unset. There is no separate deploy step. Set it to the target plugin directory, e.g.:
 
 ```text
 OBSIDIAN_DEPLOY_DEST=/absolute/path/to/vault/.obsidian/plugins/metadator
@@ -67,9 +66,7 @@ Most of `src/` is self-describing. These three exist in the shape they do for re
 
 ## Build System
 
-`main.js` is committed on purpose — Obsidian distributes the committed bundle, so any change to `src/` or to dependencies needs a rebuilt `main.js` committed alongside it.
-
-Nothing automated enforces that: run `bun run build` and confirm `git diff --exit-code main.js` is clean before committing. Bun is deliberately unpinned, so a bun release that shifts bundler output shows up the same way. The fix is identical either way — rebuild and commit `main.js`.
+`main.js` is build output and gitignored. The vault gets it from `bun run build`, and a release attaches a fresh build, so nothing reads a committed copy. It was tracked until 2026-10-28; the reason given for tracking it (template #28, install from a GitHub checkout) does not apply to a plugin with one installation.
 
 ## Release Process
 

@@ -8,7 +8,7 @@
   "scripts": {
     "audit": "bun audit --audit-level=critical",
     "dev": "bun build src/main.ts --outdir . --format cjs --external obsidian --external electron --sourcemap=linked --watch",
-    "build": "bun run check && bun build src/main.ts --outdir . --format cjs --external obsidian --external electron --minify",
+    "build": "bun run check && bun build src/main.ts --outdir . --format cjs --external obsidian --external electron --minify && bun run deploy.ts",
     "check": "bun run typecheck && biome check . && bun fmt --check \"**/*.md\"",
     "typecheck": "bun --check",
     "lint": "biome check .",
@@ -17,7 +17,6 @@
     "format:check": "biome format .",
     "version": "bun run version-bump.ts",
     "test": "bun test",
-    "deploy": "bun run build && bun run deploy.ts",
     "compare-models": "bun run scripts/compare-models.ts"
   },
   "dependencies": {
