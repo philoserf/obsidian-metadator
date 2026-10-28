@@ -1,5 +1,29 @@
 # Changelog
 
+## 5.1.0
+
+Metadator can name a note's form from a fixed list, and `metadator:generate` answers before the Obsidian CLI stops listening.
+
+### Added
+
+- **The `eyebrow` field, the first choice field.** It names a note's form from a fixed list, `eyebrowValues` (default `Poem`, `Fiction`, `Quotation`), and writes nothing when none applies, as for an essay. Its tool schema property is an enum of the listed values plus `""`, the "none" answer. A listed value is written; none, a missing value or an off-list one (a case mismatch such as `poem` included) is never written and never fails the other fields. `eyebrowPolicy` defaults to `preserve`, and `enableEyebrow` defaults to off, so an upgrade changes nothing. With eyebrow on, a note without one is never `already_populated`, so every run on it makes a billed call. (#308, #321)
+- **Eyebrow settings.** The settings tab gains an Eyebrow group (toggle, field name, values and prompt, with the values edited as one comma-separated line) and an eyebrow row under Write policy. The list is trimmed and de-duplicated, and falls back to the default when it is empty, longer than 20 values or holds a value over 50 characters. (#321)
+- **`metadator:result id=` CLI verb.** It prints `{"status":"running","id"}` until a started run finishes, then that run's final JSON plus `id`. Runs are kept in memory, the last 50; a reload forgets them. (#323, #324)
+
+### Changed
+
+- **`metadator:generate` answers at once.** The Obsidian CLI stops waiting for a handler after roughly 10–20 ms, so a generation's output never arrived. When no API call is needed (every field off, no path, no such file, `not_markdown`, `no_api_key`, `already_populated`) it prints the final JSON immediately and starts nothing; otherwise it prints `{"status":"started","id","file"}`, and `metadator:result` reads the outcome back. A caller that parsed `metadator:generate`'s output must now poll `metadator:result`. (#323, #324)
+- **Settings schema 6 → 7.** The migration is a bump only: normalization fills the eyebrow keys with the field off. As with v4 to v6, a 5.0.0 install syncing the same `data.json` goes read-only instead of saving it back without them. Update every device. (#321)
+- The CLI output's read-back fields now include `eyebrow` beside `title` and `description`. (#321)
+
+### Internal
+
+- Fields are declared once in `settings.ts` (`METADATA_FIELDS`, a key map per setting, and `CHOICE_VALUES_KEY` for choice fields), and the prompt, tool schema, validation, `shouldGenerate`, the write plan, the CLI read-back and the field-name collision rule loop over them. (#321)
+- The pre-call skips are one synchronous `skipBeforeCall`, shared by `generateMetadataForFile` and the CLI's immediate answer; `generateForPath` is replaced by `generate`. (#324)
+- A lock comment named the removed folder run; it now names the CLI. (#320)
+- `main.js` grows from 374,096 to 377,985 bytes.
+- `WALKTHROUGH.md` is regenerated for the declared fields, the choice field and the split CLI.
+
 ## 5.0.0
 
 Metadator now does one note at a time and two fields, description and title. The folder run and tag generation are removed, and `metadator:generate` can preview a run without writing.
