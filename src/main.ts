@@ -1,8 +1,6 @@
-import { Notice, Plugin, TFolder } from "obsidian";
-import { runBulkForFolder } from "./bulkOrchestrator";
+import { Notice, Plugin } from "obsidian";
 import { generateForPath } from "./cli";
 import { clearInFlight } from "./inFlight";
-import { logError } from "./logger";
 import {
   DEFAULT_SETTINGS,
   type MetadataConfig,
@@ -42,8 +40,7 @@ export default class MetadataToolPlugin extends Plugin {
     });
 
     // For automation driving Obsidian through its CLI, whose `command id=` acts
-    // on the active note and prints nothing. One file per call: a bulk run's
-    // cost cap and confirmation step stay in the folder menu.
+    // on the active note and prints nothing. One file per call.
     this.registerCliHandler(
       "metadator:generate",
       "Generate metadata for one note and print the result as JSON",
@@ -61,40 +58,6 @@ export default class MetadataToolPlugin extends Plugin {
           params,
           this.runController.signal,
         ),
-    );
-
-    this.registerEvent(
-      this.app.workspace.on("file-menu", (menu, fileOrFolder) => {
-        if (!(fileOrFolder instanceof TFolder)) return;
-        menu.addItem((item) =>
-          item
-            .setTitle("Generate metadata (recursive)")
-            .setIcon("tags")
-            .onClick(async () => {
-              // Obsidian does not await this handler, so a rejection here would
-              // be an unhandled promise: no notice, no log, and a menu item that
-              // silently does nothing. The single-note command reaches the same
-              // guarantee through generateMetadata's own try/catch.
-              try {
-                await runBulkForFolder(this.app, fileOrFolder, this.config(), {
-                  signal: this.runController.signal,
-                });
-              } catch (error) {
-                const errorMessage =
-                  error instanceof Error ? error.message : String(error);
-                new Notice(
-                  `Bulk metadata generation failed: ${errorMessage}`,
-                  8000,
-                );
-                logError({
-                  event: "generation_failed",
-                  file: fileOrFolder.path,
-                  errorMessage,
-                });
-              }
-            }),
-        );
-      }),
     );
 
     this.settingTab = new MetadataToolSettingTab(this.app, this);

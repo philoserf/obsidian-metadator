@@ -9,7 +9,6 @@ import {
   areFieldNamesDistinct,
   DEFAULT_SETTINGS,
   isModelId,
-  MAX_BULK_FILES,
   MAX_CONTENT_TOKEN_LIMIT,
   type MetadataToolSettings,
   MODEL_OPTION_LABELS,
@@ -287,18 +286,6 @@ export class MetadataToolSettingTab extends PluginSettingTab {
               key: "titlePolicy",
               options: SCALAR_POLICY_LABELS,
               disabled: titleOff,
-            },
-          },
-          {
-            name: "Max bulk files",
-            desc: "Confirmation gate on files-that-will-change in a single bulk run. Above this, the run is refused unless you tick the override in the confirm dialog.",
-            control: {
-              type: "number",
-              key: "maxBulkFiles",
-              min: 1,
-              max: MAX_BULK_FILES,
-              step: 1,
-              validate: this.boundedInt(MAX_BULK_FILES),
             },
           },
           {

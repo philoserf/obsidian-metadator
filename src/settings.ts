@@ -8,13 +8,10 @@ export const PROMPT_MAX_LENGTH = 1000;
 // plaintext value a pre-v4 data.json can carry into the migration.
 export const API_KEY_MAX_LENGTH = 256;
 
-// Ceilings for the two numeric settings. Without them "positive integer" was
-// the only rule, so an all-digit paste became a precision-lossy double that
-// still satisfied n > 0 — and maxBulkFiles, whose whole job is to gate a
-// bulk run, could be set to a value that defeats it (#184).
-export const MAX_BULK_FILES = 100_000;
-// Context windows currently run 200k-1M tokens, so a content limit above that
-// is meaningless rather than dangerous. Rounded generously so this does not
+// Ceiling for the numeric setting. Without one "positive integer" was the only
+// rule, so an all-digit paste became a precision-lossy double that still
+// satisfied n > 0 (#184). Context windows currently run 200k-1M tokens, so a
+// content limit above that is meaningless rather than dangerous. Rounded generously so this does not
 // have to track model specifications.
 export const MAX_CONTENT_TOKEN_LIMIT = 1_000_000;
 
@@ -52,10 +49,6 @@ export interface MetadataToolSettings {
   tagsPolicy: TagsPolicy;
   descriptionPolicy: ScalarPolicy;
   titlePolicy: ScalarPolicy;
-
-  // Bulk-run safeguard: warn and require explicit override above this many
-  // files-that-will-change. Tracks API-call count, not total candidates.
-  maxBulkFiles: number;
 
   // Prompts
   tagsPrompt: string;
@@ -100,7 +93,7 @@ type FieldToggles = Pick<
 >;
 
 // The one answer to "which fields does a run generate?". The command, the CLI
-// handler, the folder run, the tool schema, the prompt and the write loop all
+// handler, the tool schema, the prompt and the write loop all
 // read it, so no two of them can disagree about a field being on (#305).
 export function enabledFields(settings: FieldToggles): Set<MetadataField> {
   return new Set(METADATA_FIELDS.filter((f) => settings[FIELD_ENABLE_KEY[f]]));
@@ -223,8 +216,6 @@ export const DEFAULT_SETTINGS: MetadataToolSettings = {
   tagsPolicy: "regenerate",
   descriptionPolicy: "regenerate",
   titlePolicy: "preserve",
-
-  maxBulkFiles: 500,
 
   // These are starting points a user is expected to edit, so they are written
   // as rules a model can actually check itself against rather than adjectives

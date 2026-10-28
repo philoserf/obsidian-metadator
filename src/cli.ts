@@ -26,8 +26,7 @@ export type CliOutput =
   | ({ status: "changed" | "skipped"; file: string; reason?: string } & Fields)
   | { status: "error"; file?: string; reason: string };
 
-// The CLI is a third entry point beside the command and the folder run, and
-// like them it renders a FileResult rather than deciding anything: the key check, the
+// The CLI is the second entry point beside the command, and like it renders a FileResult rather than deciding anything: the key check, the
 // lock and the write policies are all generateMetadataForFile's. It never
 // throws — Obsidian prints whatever string comes back, and a thrown error
 // would reach the automation as nothing at all.

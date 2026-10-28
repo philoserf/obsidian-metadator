@@ -5,7 +5,6 @@ import {
   DEFAULT_SETTINGS,
   enabledFields,
   isModelId,
-  MAX_BULK_FILES,
   MAX_CONTENT_TOKEN_LIMIT,
   PROMPT_MAX_LENGTH,
 } from "./settings";
@@ -72,7 +71,6 @@ describe("DEFAULT_SETTINGS satisfies its own validators", () => {
   }
 
   test("the numeric defaults are within their ceilings", () => {
-    expect(DEFAULT_SETTINGS.maxBulkFiles).toBeLessThanOrEqual(MAX_BULK_FILES);
     expect(DEFAULT_SETTINGS.contentTokenLimit).toBeLessThanOrEqual(
       MAX_CONTENT_TOKEN_LIMIT,
     );

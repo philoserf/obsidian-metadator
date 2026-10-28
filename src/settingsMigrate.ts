@@ -6,7 +6,6 @@ import {
   enabledFields,
   FIELD_NAME_KEY,
   isModelId,
-  MAX_BULK_FILES,
   MAX_CONTENT_TOKEN_LIMIT,
   METADATA_FIELDS,
   type MetadataToolSettings,
@@ -284,11 +283,6 @@ export function migrateSettings(loaded: unknown | null): MigrationResult {
       migrated.contentTokenLimit,
       DEFAULT_SETTINGS.contentTokenLimit,
       MAX_CONTENT_TOKEN_LIMIT,
-    ),
-    maxBulkFiles: readPositiveInt(
-      migrated.maxBulkFiles,
-      DEFAULT_SETTINGS.maxBulkFiles,
-      MAX_BULK_FILES,
     ),
     truncateMethod: isTruncateMethod(truncateMethodCandidate)
       ? truncateMethodCandidate

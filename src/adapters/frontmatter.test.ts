@@ -276,7 +276,7 @@ describe("replace", () => {
 
   // Idempotence is the point of #251 + #252 together: a rerun on an unchanged
   // note whose tags the model reconciles to the same set must not report a
-  // change, or every bulk run dirties every file.
+  // change, or every rerun dirties the file.
   test("an identical list is not a change", async () => {
     const { app, fm } = makeApp({ tags: ["a", "b"] });
     const changed = await updateFrontMatter(
