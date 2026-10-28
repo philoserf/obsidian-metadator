@@ -98,23 +98,48 @@ interface WriteOutcome {
   failures: { field: string; error: unknown }[];
 }
 
-export type FileResult =
-  | { kind: "changed"; file: TFile }
+type NotWritten =
   | { kind: "skipped"; file: TFile; reason: SkipReason }
   | { kind: "error"; file: TFile; reason: string; error: unknown };
+
+export type FileResult = { kind: "changed"; file: TFile } | NotWritten;
+
+// The values a run would write, keyed by field ("title", "description"), not
+// by the configured frontmatter name. A field left out would not be written:
+// disabled, preserved and already populated, or blank in the model's answer.
+export type Proposed = Partial<Record<"title" | "description", string>>;
+
+// A dry run makes the same billed call and writes nothing. Its own result type,
+// so the command — which never previews — cannot be handed a preview.
+export type PreviewResult =
+  | { kind: "preview"; file: TFile; proposed: Proposed }
+  | NotWritten;
 
 // `| undefined`: callers forward an optional signal, and absent and undefined
 // both mean "not cancellable".
 export interface GenerateOptions {
   signal?: AbortSignal | undefined;
+  dryRun?: boolean;
 }
 
+export function generateMetadataForFile(
+  app: App,
+  file: TFile,
+  settings: MetadataConfig,
+  opts: GenerateOptions & { dryRun: true },
+): Promise<PreviewResult>;
+export function generateMetadataForFile(
+  app: App,
+  file: TFile,
+  settings: MetadataConfig,
+  opts?: GenerateOptions & { dryRun?: false },
+): Promise<FileResult>;
 export async function generateMetadataForFile(
   app: App,
   file: TFile,
   settings: MetadataConfig,
   opts: GenerateOptions = {},
-): Promise<FileResult> {
+): Promise<FileResult | PreviewResult> {
   if (file.extension !== "md") {
     return { kind: "skipped", file, reason: "not_markdown" };
   }
@@ -148,11 +173,26 @@ export async function generateMetadataForFile(
   }
 
   try {
-    const outcome = await addMetadataWithClaude(
+    const { requestId, metadata } = await requestMetadata(
       app,
       file,
       settings,
-      frontMatter,
+      opts.signal,
+    );
+    if (opts.signal?.aborted) {
+      return { kind: "skipped", file, reason: "nothing_written" };
+    }
+    const updates = planUpdates(metadata, settings, frontMatter);
+    if (opts.dryRun) {
+      const proposed: Proposed = {};
+      for (const u of updates) proposed[u.field] = u.value;
+      return { kind: "preview", file, proposed };
+    }
+    const outcome = await writeUpdates(
+      app,
+      file,
+      updates,
+      requestId,
       opts.signal,
     );
     if (outcome.failures.length > 0) {
@@ -187,13 +227,12 @@ export async function generateMetadataForFile(
   }
 }
 
-async function addMetadataWithClaude(
+async function requestMetadata(
   app: App,
   file: TFile,
   settings: MetadataConfig,
-  frontMatter: Record<string, unknown>,
   signal?: AbortSignal,
-): Promise<WriteOutcome> {
+): Promise<{ requestId: string; metadata: MetadataFields }> {
   const requestId = newRequestId();
 
   // truncateContent: false is a limit of "no limit", which is what -1 means to
@@ -253,21 +292,76 @@ async function addMetadataWithClaude(
     });
   }
 
+  return { requestId, metadata };
+}
+
+// Each field carries its own policy, so the write method is decided per field
+// rather than from one global flag (#252).
+interface FieldUpdate {
+  field: keyof Proposed;
+  fieldName: string;
+  value: string;
+  policy: WritePolicy;
+}
+
+// What a run would write. Decided whole before any write, so a dry run can
+// report it and a real run writes exactly this.
+function planUpdates(
+  metadata: MetadataFields,
+  settings: MetadataConfig,
+  frontMatter: Record<string, unknown>,
+): FieldUpdate[] {
+  const updates: FieldUpdate[] = [];
+  // Every update is guarded on the same set that built the tool schema, so a
+  // disabled field is never written and its existing value is left as it is —
+  // not deleted (#305).
+  const fields = enabledFields(settings);
+
+  // Judge the value that would actually be written, not the raw string.
+  // validateMetadataInput only checks that these are strings, so "   " reaches
+  // here as truthy and wrote a blank description.
+  const description = metadata.description ?? "";
+  if (fields.has("description") && description.trim() !== "") {
+    updates.push({
+      field: "description",
+      fieldName: settings.descriptionFieldName,
+      value: description,
+      policy: settings.descriptionPolicy,
+    });
+  }
+  // stripSurroundingQuotes trims and can empty the string outright — `""`
+  // unwraps to "". Guarding on metadata.title instead let that through and
+  // wrote an empty title while reporting "Metadata updated successfully".
+  const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
+  if (fields.has("title") && title !== "") {
+    updates.push({
+      field: "title",
+      fieldName: settings.titleFieldName,
+      value: title,
+      policy: settings.titlePolicy,
+    });
+  }
+
+  // A populated field under `preserve` is left alone — and left alone means
+  // not opening the file at all. processFrontMatter serializes and writes back
+  // on every call regardless of whether the callback mutated anything, so
+  // calling it here cost an mtime bump, a vault modify event and disk I/O per
+  // skipped field, per file (#185).
+  return updates.filter(
+    (u) =>
+      !(u.policy === "preserve" && !isEmptyValue(frontMatter[u.fieldName])),
+  );
+}
+
+async function writeUpdates(
+  app: App,
+  file: TFile,
+  updates: FieldUpdate[],
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<WriteOutcome> {
   const failures: WriteOutcome["failures"] = [];
-
-  if (signal?.aborted) {
-    return { changed: false, failures };
-  }
-
   let hasChanges = false;
-
-  // Each field carries its own policy, so the write method is decided per
-  // field rather than from one global flag (#252).
-  interface FieldUpdate {
-    fieldName: string;
-    value: string;
-    policy: WritePolicy;
-  }
 
   // `preserve` re-checks emptiness against the live frontmatter inside
   // processFrontMatter rather than the `frontMatter` snapshot, which was taken
@@ -298,46 +392,9 @@ async function addMetadataWithClaude(
     }
   }
 
-  const updates: FieldUpdate[] = [];
-  // Every write below is guarded on the same set that built the tool schema,
-  // so a disabled field is never written and its existing value is left as it
-  // is — not deleted (#305).
-  const fields = enabledFields(settings);
-
-  // Judge the value that would actually be written, not the raw string.
-  // validateMetadataInput only checks that these are strings, so "   " reaches
-  // here as truthy and wrote a blank description.
-  const description = metadata.description ?? "";
-  if (fields.has("description") && description.trim() !== "") {
-    updates.push({
-      fieldName: settings.descriptionFieldName,
-      value: description,
-      policy: settings.descriptionPolicy,
-    });
-  }
-  // stripSurroundingQuotes trims and can empty the string outright — `""`
-  // unwraps to "". Guarding on metadata.title instead let that through and
-  // wrote an empty title while reporting "Metadata updated successfully".
-  const title = metadata.title ? stripSurroundingQuotes(metadata.title) : "";
-  if (fields.has("title") && title !== "") {
-    updates.push({
-      fieldName: settings.titleFieldName,
-      value: title,
-      policy: settings.titlePolicy,
-    });
-  }
-
   for (const u of updates) {
     if (signal?.aborted) {
       return { changed: hasChanges, failures };
-    }
-    // A populated field under `preserve` is left alone — and left alone means
-    // not opening the file at all. processFrontMatter serializes and writes
-    // back on every call regardless of whether the callback mutated anything,
-    // so calling it here cost an mtime bump, a vault modify event and disk I/O
-    // per skipped field, per file (#185).
-    if (u.policy === "preserve" && !isEmptyValue(frontMatter[u.fieldName])) {
-      continue;
     }
     if (await writeField(u)) {
       hasChanges = true;

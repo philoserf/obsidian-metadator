@@ -50,6 +50,10 @@ export default class MetadataToolPlugin extends Plugin {
           description: "Vault path of the note",
           required: true,
         },
+        "dry-run": {
+          description:
+            "Print what would be written without writing it (still billed)",
+        },
       },
       (params) =>
         generateForPath(
