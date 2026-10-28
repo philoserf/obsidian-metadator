@@ -212,12 +212,12 @@ describe("MetadataToolSettingTab", () => {
     expect(await validate(tab, "tagsPrompt", "short")).toBeUndefined();
   });
 
-  test("bounds the two numeric settings (#184)", async () => {
+  test("bounds the content token limit (#184)", async () => {
     const { tab } = makeTab();
-    expect(await validate(tab, "maxBulkFiles", 0)).toBeTruthy();
-    expect(await validate(tab, "maxBulkFiles", 1.5)).toBeTruthy();
-    expect(await validate(tab, "maxBulkFiles", 1e12)).toBeTruthy();
-    expect(await validate(tab, "maxBulkFiles", 300)).toBeUndefined();
+    expect(await validate(tab, "contentTokenLimit", 0)).toBeTruthy();
+    expect(await validate(tab, "contentTokenLimit", 1.5)).toBeTruthy();
+    expect(await validate(tab, "contentTokenLimit", 1e12)).toBeTruthy();
+    expect(await validate(tab, "contentTokenLimit", 300)).toBeUndefined();
   });
 
   test("truncate and title toggles disable their dependent rows", () => {

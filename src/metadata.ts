@@ -164,8 +164,8 @@ export async function generateMetadataForFile(
     if (outcome.failures.length > 0) {
       // A write that threw is not "nothing to do": the request was made and
       // billed, and the note did not get what the user asked for. Report it as
-      // an error so the bulk summary counts it and the single-note flow shows a
-      // notice, both of which treat "skipped" as unremarkable.
+      // an error so the single-note flow shows a notice and the CLI reports
+      // `error`; both treat "skipped" as unremarkable.
       const fields = outcome.failures.map((f) => f.field);
       const partial = outcome.changed ? " (other fields were written)" : "";
       return {
@@ -376,7 +376,7 @@ async function addMetadataWithClaude(
     // not opening the file at all. processFrontMatter serializes and writes
     // back on every call regardless of whether the callback mutated anything,
     // so calling it here cost an mtime bump, a vault modify event and disk I/O
-    // per skipped field, per file, across a whole bulk run (#185).
+    // per skipped field, per file (#185).
     if (u.policy === "preserve" && !isEmptyValue(frontMatter[u.fieldName])) {
       continue;
     }

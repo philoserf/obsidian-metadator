@@ -9,7 +9,7 @@ import {
   NO_FIELDS_ENABLED_MESSAGE,
 } from "./settings";
 
-// The single-note presentation layer, mirroring bulkOrchestrator.ts. Every
+// The single-note presentation layer. Every
 // user-facing sentence for this entry point lives here; metadata.ts returns
 // data and renders nothing (#239). Before the split it did both, and the two
 // collided — one failed frontmatter write produced four notices, the last of

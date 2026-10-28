@@ -14,11 +14,10 @@ const MAX_RESPONSE_TOKENS = 2048;
 // call to land, so give that path its own larger budget.
 const MAX_RESPONSE_TOKENS_AUTO_TOOL_CHOICE = 8192;
 const REQUEST_TIMEOUT_MS = 60_000;
-// The SDK retries internally beneath the bulk retry policy, so one logical
-// attempt can be several HTTP requests. Pinned rather than left to the SDK
-// default so the confirm modal's worst-case call estimate stays truthful.
+// The SDK's own retries are the only ones: a rate limit, overload or dropped
+// connection is retried up to twice, then surfaces to the user. Pinned rather
+// than left to the SDK default so a change to it is deliberate.
 export const SDK_MAX_RETRIES = 2;
-export const REQUESTS_PER_ATTEMPT = SDK_MAX_RETRIES + 1;
 const TOOL_NAME = "submit_metadata";
 
 // Models that reject a forced tool_choice ({type: "tool"}) with a 400: the
@@ -45,27 +44,11 @@ export type ClaudeErrorKind =
 
 export class ClaudeApiError extends Error {
   readonly kind: ClaudeErrorKind;
-  readonly retryAfterMs?: number | undefined;
-  constructor(kind: ClaudeErrorKind, message: string, retryAfterMs?: number) {
+  constructor(kind: ClaudeErrorKind, message: string) {
     super(message);
     this.kind = kind;
-    this.retryAfterMs = retryAfterMs;
     this.name = "ClaudeApiError";
   }
-}
-
-export function parseRetryAfterMs(
-  headers: { get?: (name: string) => string | null } | undefined,
-): number | undefined {
-  const raw = headers?.get?.("retry-after");
-  if (!raw) return undefined;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.round(seconds * 1000);
-  }
-  // Retry-After may also be an HTTP-date; fall back to the computed delay
-  // rather than parsing dates here.
-  return undefined;
 }
 
 // A field is present exactly when it was enabled for the request: a disabled
@@ -152,18 +135,10 @@ function classifyError(error: unknown): ClaudeApiError {
     return new ClaudeApiError("auth", error.message);
   }
   if (error instanceof Anthropic.RateLimitError) {
-    return new ClaudeApiError(
-      "rate_limit",
-      error.message,
-      parseRetryAfterMs(error.headers),
-    );
+    return new ClaudeApiError("rate_limit", error.message);
   }
   if (error instanceof Anthropic.InternalServerError) {
-    return new ClaudeApiError(
-      "overloaded",
-      error.message,
-      parseRetryAfterMs(error.headers),
-    );
+    return new ClaudeApiError("overloaded", error.message);
   }
   // Above the APIError branch on purpose: APIConnectionTimeoutError extends
   // APIConnectionError extends APIError, so the generic branch would swallow
@@ -228,10 +203,9 @@ export function validateMetadataInput(
   return out;
 }
 
-// One client per API key. Constructing it per call meant a folder run built one
-// per file, and one more per retry attempt, each starting with an empty
-// connection pool — so a several-hundred-note run paid TLS setup repeatedly and
-// forfeited keep-alive reuse (#207). Keyed on the key so a settings change is
+// One client per API key. Constructing it per call meant one per note, each
+// starting with an empty connection pool, so a run of CLI calls paid TLS setup
+// repeatedly and forfeited keep-alive reuse (#207). Keyed on the key so a settings change is
 // never served by a stale client.
 let cachedClient: { apiKey: string; client: Anthropic } | undefined;
 
@@ -308,8 +282,8 @@ export async function callClaudeForMetadata(
   // parse. validateMetadataInput only asserts the fields are strings, not that
   // they are complete, so a description cut off mid-sentence would be written
   // to frontmatter with nothing to signal it (#174). Not retryable: the same
-  // prompt overflows the same way, and after five in a row the bulk halt tells
-  // the user this is a configuration problem rather than a blip.
+  // prompt overflows the same way, so it is a configuration problem rather
+  // than a blip.
   if (message.stop_reason === "max_tokens") {
     throw new ClaudeApiError(
       "api",

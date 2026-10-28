@@ -19,8 +19,7 @@ export async function getContent(
   // cachedRead, not read: this is pure extraction — the string is tokenized,
   // truncated and embedded in a prompt, and nothing derives a write from it
   // (frontmatter writes go through processFrontMatter, which reads its own
-  // copy). Obsidian reserves read() for the read side of a modification, and
-  // a bulk run calls this once per note across a whole folder tree.
+  // copy). Obsidian reserves read() for the read side of a modification.
   const raw = await app.vault.cachedRead(file);
   // Stripped before the empty check, so a note that is nothing but frontmatter
   // returns "" rather than a "Body:" section full of YAML.

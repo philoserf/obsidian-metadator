@@ -3,7 +3,6 @@ import {
   API_KEY_MAX_LENGTH,
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
-  MAX_BULK_FILES,
   MAX_CONTENT_TOKEN_LIMIT,
   type MetadataToolSettings,
   PROMPT_MAX_LENGTH,
@@ -148,7 +147,6 @@ describe("migrateSettings", () => {
       tagsPolicy: "merge",
       descriptionPolicy: "preserve",
       titlePolicy: "regenerate",
-      maxBulkFiles: 250,
       tagsPrompt: "t",
       descriptionPrompt: "d",
       titlePrompt: "h",
@@ -185,27 +183,8 @@ describe("migrateSettings", () => {
     expect(ok({ tagsPrompt: atLimit }).tagsPrompt).toBe(atLimit);
   });
 
-  test("maxBulkFiles: preserves a valid positive integer", () => {
-    expect(ok({ maxBulkFiles: 1000 }).maxBulkFiles).toBe(1000);
-  });
-
-  test("maxBulkFiles: falls back to default for non-positive or non-integer values", () => {
-    expect(ok({ maxBulkFiles: 0 }).maxBulkFiles).toBe(
-      DEFAULT_SETTINGS.maxBulkFiles,
-    );
-    expect(ok({ maxBulkFiles: -5 }).maxBulkFiles).toBe(
-      DEFAULT_SETTINGS.maxBulkFiles,
-    );
-    expect(ok({ maxBulkFiles: 3.5 }).maxBulkFiles).toBe(
-      DEFAULT_SETTINGS.maxBulkFiles,
-    );
-    expect(ok({ maxBulkFiles: "100" }).maxBulkFiles).toBe(
-      DEFAULT_SETTINGS.maxBulkFiles,
-    );
-  });
-
-  test("maxBulkFiles: defaults when key is missing entirely", () => {
-    expect(ok({}).maxBulkFiles).toBe(DEFAULT_SETTINGS.maxBulkFiles);
+  test("drops the retired maxBulkFiles key (#311)", () => {
+    expect(ok({ maxBulkFiles: 250 })).not.toHaveProperty("maxBulkFiles");
   });
 
   test("stamps the current schemaVersion on migrated output", () => {
@@ -384,18 +363,12 @@ describe("model id validation", () => {
 
 describe("numeric bounds (#184)", () => {
   test("a stored value above the ceiling falls back to the default", () => {
-    expect(ok({ maxBulkFiles: 1_000_000 }).maxBulkFiles).toBe(
-      DEFAULT_SETTINGS.maxBulkFiles,
-    );
     expect(ok({ contentTokenLimit: 10_000_000 }).contentTokenLimit).toBe(
       DEFAULT_SETTINGS.contentTokenLimit,
     );
   });
 
   test("a value exactly at the ceiling is kept", () => {
-    expect(ok({ maxBulkFiles: MAX_BULK_FILES }).maxBulkFiles).toBe(
-      MAX_BULK_FILES,
-    );
     expect(
       ok({ contentTokenLimit: MAX_CONTENT_TOKEN_LIMIT }).contentTokenLimit,
     ).toBe(MAX_CONTENT_TOKEN_LIMIT);

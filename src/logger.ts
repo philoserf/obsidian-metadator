@@ -1,7 +1,7 @@
 // Lightweight structured logging for the request path.
 //
-// Bulk runs interleave log lines from many files. A short per-file
-// requestId plus a stable event vocabulary lets a reader scan the
+// Concurrent runs (the command and CLI calls) can interleave log lines
+// from several files. A short per-file requestId plus a stable event vocabulary lets a reader scan the
 // developer console and quickly pick out the lifecycle for any one
 // file, including retries and failures.
 
@@ -13,7 +13,6 @@ export interface LogFields {
   file?: string | undefined;
   model?: string | undefined;
   requestId?: string | undefined;
-  attempt?: number | undefined;
   durationMs?: number | undefined;
   errorKind?: string | undefined;
   errorMessage?: string | undefined;

@@ -11,22 +11,20 @@ This is personal tooling, not a general-purpose plugin. It is opinionated in way
 - **Single user.** The only known installation is the maintainer's. Breaking changes can ship without migration paths (see `CHANGELOG.md` — 2.0.0 renamed `maxTokens` to `contentTokenLimit`, 2.0.1 dropped all pre-2.0 settings migrations).
 - **Paid API required.** The plugin calls Anthropic's Claude API. You supply and pay for your own API key; there is no free tier, no provider abstraction and no local-model path — swapping in another API means rewriting `src/adapters/claude.ts`.
 - **Frontmatter only.** Generated `tags`, `description`, and `title` are written to YAML frontmatter via Obsidian's `processFrontMatter()`. There is no inline-tag or body-content mode.
-- **It will spend your money in bulk if you let it.** Besides the single-note command there is a recursive folder action, and a large folder means hundreds of billed API calls. It is gated by a confirm dialog and the `maxBulkFiles` setting, but the gate is a checkbox you can tick past.
+- **One note per action.** There is no folder or bulk run (removed in #311); covering many notes means scripting the CLI below, one billed call per note.
 - **No issue triage for feature requests.** Bugs are welcome; feature requests from other users will almost always be closed as out-of-scope.
 
 If you want something similar, the code is MIT-licensed — fork it and adapt. Don't expect upstream to accommodate your workflow.
 
 ## How It Works
 
-There are three ways in.
+There are two ways in.
 
 **One note.** Run **Generate metadata for current note** on the active note.
 
-**A folder.** Right-click a folder and choose **Generate metadata (recursive)**. Every markdown file in the tree is scanned and sorted into those that will change and those that will not; a confirm dialog reports both counts, the write policy, and a worst-case API-call estimate that includes retries. Above `maxBulkFiles` files-that-will-change (default 500) the confirm button is disabled until you tick an override. A progress dialog can cancel mid-run, and a summary reports what changed, what was skipped and what errored. The run halts early on an authentication error, and after a streak of consecutive failures of the same kind, rather than making hundreds of doomed calls.
+**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title`, `description` and `tags` as they stand after the run. One file per call.
 
-**From the command line.** `obsidian metadator:generate path="Inbox/Note.md"` runs the one-note path on the named file, with Obsidian open, and prints one JSON object: `status` (`changed`, `skipped` or `error`), `file`, a `reason` when it did not change, and the note's `title`, `description` and `tags` as they stand after the run. One file per call; bulk runs stay in the folder menu.
-
-All three do the same thing per note. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description. When the note already has tags, they are sent along in their own block and the model is asked to reconcile them rather than draw a fresh set.
+Both do the same thing. The plugin reads the note body — frontmatter stripped, optionally truncated — and sends it to Claude with a `submit_metadata` tool schema, requiring a structured tool call rather than asking for JSON in prose. The tool's input is type-checked before anything is written, and a response cut off at the token limit is rejected outright instead of writing a half-finished description. When the note already has tags, they are sent along in their own block and the model is asked to reconcile them rather than draw a fresh set.
 
 The results are written to `tags`, `description` and `title` in YAML frontmatter — whichever of the three are switched on — each according to its own write policy.
 
@@ -36,7 +34,7 @@ Four groups of settings shape what happens on each run.
 
 Each field has its own switch: `enableTags`, `enableDescription` and `enableTitle`, all on by default. A field that is off is left out of the prompt and the tool schema, so the model is never asked for it, and it is never written — an existing value in the note stays exactly as it is, neither overwritten nor deleted. Its field name, prompt and write policy are grayed out in the settings tab, and its field name no longer counts when the plugin checks that the three names differ.
 
-With all three off there is nothing to generate. The command and the folder action say so in a notice, and `metadator:generate` returns an error; none of them calls the API.
+With all three off there is nothing to generate. The command says so in a notice, and `metadator:generate` returns an error; neither calls the API.
 
 ### Write policy
 
@@ -73,7 +71,6 @@ Truncation can be disabled entirely (`truncateContent: false`), in which case th
 This plugin requires an Anthropic API key and transmits note content to a third-party API.
 
 - **Note content is sent to Anthropic.** Every run transmits the note's body (frontmatter stripped, possibly truncated) and its existing tags to Anthropic's API. Do not run this plugin on notes whose contents you would not paste into a web form.
-- **The folder action sends every note in the tree.** A recursive run transmits the body of each markdown file under the folder, not only the one you have open. Check what is in a folder before running it.
 - **API key storage.** The key is kept in Obsidian's keychain (Settings → Keychain), which encrypts it with the operating system's secure storage; `data.json` holds only the secret's name. Obsidian does not sync keychain secrets, so choose or enter the key once on each device you run the plugin from; the API key row names the secret it expects and says when this device does not have it. Requires Obsidian 1.13.0.
 - **Upgrading.** A plaintext key left in `data.json` by an earlier version is moved into the keychain on the first load and removed from `data.json`. Because that change syncs, every other device needs the key entered once.
 - **Recommendations:** Rotate the key periodically and set a usage cap on it in the Anthropic console.
