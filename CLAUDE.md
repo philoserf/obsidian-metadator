@@ -8,8 +8,6 @@ Metadator is an Obsidian plugin that generates metadata (description, title, and
 
 This is single-user personal tooling, not a general-purpose community plugin — the README says so out loud: the only known installation is the maintainer's, breaking changes ship without migration paths, and feature requests from other users are out of scope.
 
-The current next step for this repo is tracked in the workspace backlog at `../NEXT.md` (the `obsidian-metadator` row). Read it when starting work; update it when that step ships.
-
 ## Development Commands
 
 ```bash
