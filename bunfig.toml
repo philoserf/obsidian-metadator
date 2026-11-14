@@ -1,2 +1,11 @@
 [test]
 preload = ["./src/test-preload.ts"]
+
+[fmt]
+# Leave code in Markdown fences alone: a fenced snippet is quoted, and
+# formatting it would change what it quotes.
+embeddedLanguageFormatting = "off"
+ignorePatterns = [
+  # Generated bundle output.
+  "main.js",
+]
