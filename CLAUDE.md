@@ -73,7 +73,7 @@ Use the `release-gate` then `release-ship` skills — do not tag by hand. Tags a
 
 ## Tests and Code Style
 
-Style is enforced by Biome (`biome.json`) for code and by `bun fmt` for markdown (Prettier-compatible; it reads `.prettierrc.json` and `.prettierignore`); `bun run check`, and so `bun run build`, runs `bun fmt --check` on every `.md` file.
+Style is enforced by Biome (`biome.json`) for code and by `bun fmt` for markdown (configured by the `[fmt]` table in `bunfig.toml`); `bun run check`, and so `bun run build`, runs `bun fmt --check` on every `.md` file.
 
 `tsconfig.json` turns on `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Answer an indexed read with a narrowing local or `?.`, not `!`; an optional field filled from a value that may be undefined (a forwarded `signal`, a `LogFields` entry) is declared `?: T | undefined`.
 
